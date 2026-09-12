@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from mattstack.config import ProjectConfig
+from mattstack.templates.frontend_commands import frontend_commands
 
 
 def generate_makefile(config: ProjectConfig) -> str:
@@ -207,8 +208,21 @@ backend-studio: ## Open Drizzle Studio
 
 
 def _frontend_targets(config: ProjectConfig) -> str:
+    cmds = frontend_commands(config)
+    test_comment = "Run frontend tests" if cmds.test else "Frontend has no test script"
+    test_recipe = (
+        f"\tcd frontend && {cmds.test}"
+        if cmds.test
+        else "\t@echo 'This frontend has no test script; see frontend/package.json'"
+    )
+    typecheck_comment = "Type-check frontend" if cmds.typecheck else "No type-check script"
+    typecheck_recipe = (
+        f"\tcd frontend && {cmds.typecheck}"
+        if cmds.typecheck
+        else "\t@echo 'This frontend has no type-check script'"
+    )
     return f"""
-.PHONY: frontend-setup frontend-dev frontend-build frontend-test frontend-lint
+.PHONY: frontend-setup frontend-dev frontend-build frontend-test frontend-lint frontend-typecheck
 frontend-setup: ## Install frontend deps
 \tcd frontend && bun install
 
@@ -218,11 +232,14 @@ frontend-dev: ## Run frontend dev server
 frontend-build: ## Build frontend
 \tcd frontend && bun run build
 
-frontend-test: ## Run frontend {"typecheck" if not config.is_nextjs else "lint"}
-\tcd frontend && bun run {"typecheck" if not config.is_nextjs else "lint"}
+frontend-test: ## {test_comment}
+{test_recipe}
+
+frontend-typecheck: ## {typecheck_comment}
+{typecheck_recipe}
 
 frontend-lint: ## Lint frontend
-\tcd frontend && bun run lint"""
+\tcd frontend && {cmds.lint}"""
 
 
 def _ios_targets(config: ProjectConfig) -> str:
@@ -243,25 +260,33 @@ def _combined_targets(config: ProjectConfig) -> str:
 
 
 def _combined_targets_django(config: ProjectConfig) -> str:
-    return """
-.PHONY: test lint format sync-types clean
-test: ## Run all tests
+    cmds = frontend_commands(config)
+    frontend_check = cmds.typecheck or "echo 'No frontend type-check script'"
+    frontend_test = cmds.test or "echo 'No frontend test script'"
+    return f"""
+.PHONY: test lint typecheck format sync-types gauntlet clean
+test: ## Run backend tests and the frontend test suite
 \t@echo 'Running backend tests...'
 \tcd backend && uv run pytest -v
-\t@echo 'Running frontend type check...'
-\tcd frontend && bun run typecheck
+\t@echo 'Running frontend tests...'
+\tcd frontend && {frontend_test}
 
 lint: ## Lint all code
 \tcd backend && uv run ruff check . && uv run ruff format --check .
-\tcd frontend && bun run lint
+\tcd frontend && {cmds.lint}
+
+typecheck: ## Type-check the frontend
+\tcd frontend && {frontend_check}
 
 format: ## Format all code
 \tcd backend && uv run ruff format .
 \tcd frontend && bun run format
 
 sync-types: ## Sync backend types to frontend TypeScript
-\tcd backend && uv run python manage.py sync_types \
-\t\t--target typescript --output ../frontend/src/types
+\tmattstack sync types
+
+gauntlet: ## Run the verification gate
+\tmattstack audit
 
 clean: ## Clean all build artifacts
 \tdocker compose down -v
@@ -270,21 +295,25 @@ clean: ## Clean all build artifacts
 
 
 def _combined_targets_nestjs(config: ProjectConfig) -> str:
-    return """
-.PHONY: test lint format clean
+    cmds = frontend_commands(config)
+    return f"""
+.PHONY: test lint format gauntlet clean
 test: ## Run all tests
 \t@echo 'Running backend tests...'
 \tcd backend && bun run test
-\t@echo 'Running frontend type check...'
-\tcd frontend && bun run typecheck
+\t@echo 'Running frontend tests...'
+\tcd frontend && {cmds.test or "echo 'No frontend test script'"}
 
 lint: ## Lint all code
 \tcd backend && bun run lint
-\tcd frontend && bun run lint
+\tcd frontend && {cmds.lint}
 
 format: ## Format all code
 \tcd backend && bun run format
 \tcd frontend && bun run format
+
+gauntlet: ## Run the verification gate
+\tmattstack audit
 
 clean: ## Clean all build artifacts
 \tdocker compose down -v
