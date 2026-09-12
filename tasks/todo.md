@@ -14,6 +14,21 @@
 - [x] Install check — package installs clean
 - [x] CI re-enabled — workflow now runs on push/PR
 
+
+### Gate status update (2026-09-12)
+
+Measured after Phase 23. Tests: 783 passing.
+
+| Gate | Status | Evidence |
+|---|---|---|
+| LINT | pass | `ruff check src/ tests/ scripts/` clean |
+| TYPECHECK | pass | `mypy src/` — no issues in 99 files |
+| ARCHITECTURE | pass | `scripts/check_architecture.py` clean |
+| TEST | pass | 783 passed |
+| FORMAT | fail | 10 files need formatting (pre-existing, none from Phase 23) |
+| FILELENGTH | fail | 5 files over 400 lines: cli.py 605, context.py 575, generate.py 1870, rules.py 623, sync.py 621 |
+| SECURITY | warnings | bandit: 92 findings, all low severity except 2 medium (B310 urllib) |
+
 ---
 
 # mattstack TODO
@@ -627,3 +642,86 @@ First-class support for [django-matt](https://github.com/mattjaikaran/django-mat
 - Update `mattstack rules` — CLAUDE.md template for matt-fullstack projects
 - Documentation: README section, preset table update, example workflow
 
+
+---
+
+## Phase 23: Gauntlet Audit Delegation (audit feature)
+
+MattStack delegated every check to Gauntlet. MattStack scaffolds and manages the project;
+Gauntlet verifies it. The audit command is now a formatter and a subprocess call.
+
+Gauntlet lives at `~/dev/gauntlet` and will be public at
+https://github.com/mattjaikaran/gauntlet.
+
+### Completed
+
+- [x] Add `src/mattstack/gauntlet/models.py` — typed models for the Gauntlet JSON contract
+      (`Finding`, `CheckSummary`, `RunResult`, `Severity`, `CheckStatus`, `ENGINES`) with
+      `schema_version` validation
+- [x] Add `src/mattstack/gauntlet/client.py` — subprocess boundary: `check()` runs
+      `gauntlet check --tier=<tier> --json --target=<dir>` and parses stdout
+- [x] Add `src/mattstack/gauntlet/init.py` — generates `gauntlet.toml` for the detected stack;
+      never overwrites an existing file
+- [x] Add `src/mattstack/gauntlet/report.py` — Rich table, JSON, and the idempotent
+      `tasks/todo.md` writer; `html_report.py` holds the HTML dashboard
+- [x] Rewrite `commands/audit.py` as a formatter over Gauntlet findings
+- [x] Add `commands/gauntlet.py` — `mattstack gauntlet check|run` pass-through that forwards
+      undeclared options and preserves the Gauntlet exit code
+- [x] Wire `gauntlet.toml` generation into `commands/init.py`, guarded for `--dry-run`
+- [x] Delete `src/mattstack/auditors/` (11 modules, 1,805 lines) and the six auditors
+- [x] Delete `tests/test_auditors/` (102 tests) and the auditor tests in `test_django_matt.py`
+- [x] Delete the three parser modules only the auditors used —
+      `parsers/dependencies.py`, `parsers/test_files.py`, `parsers/nextjs_routes.py` — and
+      their tests (31 tests)
+- [x] Add `tests/test_gauntlet/` (client, models, config generator) and rewrite
+      `tests/test_commands/test_audit.py` against a fake Gauntlet binary
+- [x] Mark a skipped run in the JSON envelope (`skipped`, `skip_reason`) so an empty finding
+      list never reads as a clean pass
+- [x] Update README, CLAUDE.md, docs/architecture.md, docs/commands.md, docs/ecosystem.md
+- [x] Add `docs/gauntlet.md`; delete the obsolete `docs/plugin-guide.md`
+- [x] Read `[integrations]` from `gauntlet.toml` for `binary_path`, `skip_if_absent`,
+      and `default_target`
+- [x] Detect Gauntlet at runtime: skip with one line when the project opted in, fail when it
+      did not (mirrors the Rivet precedent in Gauntlet's `docs/INTEGRATIONS.md`)
+- [x] Update the scaffold templates that described the deleted auditors
+      (`templates/root_claude_md.py`, `templates/gsd_project.py`)
+- [x] Verify: 783 tests pass, mypy strict clean, architecture gate clean, smoke test over a
+      real subprocess for table/JSON/HTML/todo/exit-code/skip/pass-through paths
+
+### Remaining
+
+- [ ] Install Gauntlet on this machine and run `mattstack audit` on a real generated project
+      (the engine has no binary yet — the integration is verified against a fake)
+- [ ] Remove `--live`, `--base-url`, and `--fix` from `mattstack audit` once Gauntlet is
+      installed everywhere. They are deprecated and warn today
+- [ ] Raise the tier default from `full` if the review board needs an LLM; `full` requires
+      Ollama running locally
+- [ ] Add a `--tier fast` pre-commit example to `commands/hooks.py` so the scaffolded hook
+      runs the same gate
+- [ ] Replace the local audit of this repo (`make gauntlet`, `scripts/gauntlet.py`) with the
+      Gauntlet binary once it ships. Two tools share the name today; see CLAUDE.md
+- [ ] Report two Gauntlet spec defects upstream:
+      1. `docs/spec/init.md` writes `[checks.sentinel:coverage]` without quotes. Bare TOML
+         keys cannot contain `:`, so `gauntlet init` emits a file its own parser rejects.
+      2. The per-check key form is documented two ways: `[checks.coverage]` in
+         `docs/spec/gauntlet-toml.md` and `[checks.sentinel:coverage]` in
+         `docs/spec/init.md`. An unrecognized key is a hard config error, so this must be
+         settled before any consumer writes per-check tables. MattStack omits them and
+         relies on Gauntlet's documented defaults
+- [ ] Track the Gauntlet TypeScript adapter. Until it ships, a MattStack frontend is outside
+      the gate. The generated config records this
+
+### Deferred
+
+- Plan conformance for scaffolded projects. `[conformance.plan]` needs a roadmap file; the
+  generated config leaves it commented out
+- Ticket conformance. The generated config sets `[conformance.tickets] source = "none"`
+- Per-project check thresholds. Users edit `gauntlet.toml`; MattStack does not prompt
+- Mapping mattstack's `--type` values (`types`, `tests`, `endpoints`, `dependencies`,
+  `vulnerabilities`) to Gauntlet engines. Those domains have no Gauntlet equivalent yet;
+  `--type` selects an engine instead
+- `detected.py` does not detect Rust. `init` passes `has_rust=False`; a Rust backend preset
+  would need this
+- Re-add per-check tuning to the generated config once Gauntlet settles the key form.
+  Coverage, CRAP, and TDD currently rely on Gauntlet's defaults, which match what
+  `gauntlet init` writes

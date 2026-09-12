@@ -184,18 +184,39 @@ Format all code (ruff + biome/prettier).
 
 ## Audit
 
-Static analysis across six domains. Results are printed as a table and appended to `tasks/todo.md`.
+Run Gauntlet, the verification engine, and format the findings. MattStack implements no
+checks. See [the Gauntlet guide](gauntlet.md).
 
 ```bash
-mattstack audit                             # All domains
-mattstack audit --domain types              # Type drift (Pydantic ↔ TypeScript)
-mattstack audit --domain quality            # TODOs, stubs, hardcoded creds
-mattstack audit --domain endpoints          # Unimplemented endpoints
-mattstack audit --domain tests              # Missing test coverage
-mattstack audit --domain dependencies       # Outdated packages
-mattstack audit --domain vulnerabilities    # CVE scan
+mattstack audit                             # Full tier
+mattstack audit --tier standard             # Deterministic checks + conformance
+mattstack audit --type sentinel             # Deterministic engine only
+mattstack audit --type review               # AI review board only
+mattstack audit --severity error            # Errors only
+mattstack audit --json                      # Machine-readable output
 mattstack audit --html                      # Export HTML dashboard
-mattstack audit --output audit.json         # Export JSON
+mattstack audit --no-todo                   # Skip the tasks/todo.md update
+```
+
+| Flag | Description |
+|------|-------------|
+| `--tier` | Gauntlet tier: `fast`, `standard`, `full`, `release`. Default `full` |
+| `--type, -t` | Limit to a Gauntlet engine: `sentinel`, `conformance`, `review`, `quality` |
+| `--severity, -s` | Minimum severity: `error`, `warning`, `info` |
+| `--json` | Write the run as JSON |
+| `--html` | Write `audit-report.html` |
+| `--no-todo` | Skip the `tasks/todo.md` update |
+| `--skip-if-absent` | Skip the run when Gauntlet is not installed |
+| `--fail-if-absent` | Fail when Gauntlet is not installed |
+
+### `mattstack gauntlet`
+
+Call Gauntlet with the project's configuration. The exit code passes through unchanged.
+
+```bash
+mattstack gauntlet check --tier fast
+mattstack gauntlet check --tier full -- --offline
+mattstack gauntlet run vault show GAUNTLET-SENTINEL-SECRET-001
 ```
 
 ---

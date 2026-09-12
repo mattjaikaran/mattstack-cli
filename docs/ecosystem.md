@@ -1,6 +1,7 @@
 # mattstack Ecosystem Guide
 
-mattstack is designed to be extensible. You can bring your own boilerplate repos, define custom presets, and write audit plugins.
+mattstack is designed to be extensible. You can bring your own boilerplate repos and define
+custom presets. Verification checks live in Gauntlet, not in mattstack.
 
 ## Custom Boilerplate Repos
 
@@ -83,6 +84,10 @@ mattstack config path   # Print config file path
 mattstack config init   # Create template config
 ```
 
-## Plugin System
+## Custom checks
 
-See [Plugin Guide](plugin-guide.md) for writing custom audit plugins.
+Checks live in Gauntlet, not in MattStack. Add a declarative or shell check under
+`.gauntlet/checks/` in your project. See [the Gauntlet guide](gauntlet.md).
+
+The `mattstack-plugins/` auditor plugin system is removed. Gauntlet records every run in
+its vault, which a Python plugin could not do.
