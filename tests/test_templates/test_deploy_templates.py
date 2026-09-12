@@ -113,7 +113,7 @@ def test_railway_toml_fullstack(railway_fullstack_config: ProjectConfig) -> None
     assert "[build]" in content
     assert "[deploy]" in content
     assert "gunicorn" in content
-    assert "my_app" in content
+    assert "api.wsgi:application" in content
     assert "healthcheckPath" in content
 
 
@@ -121,14 +121,16 @@ def test_railway_toml_backend_only(railway_backend_config: ProjectConfig) -> Non
     content = generate_railway_toml(railway_backend_config)
     assert "[build]" in content
     assert "gunicorn" in content
-    assert "my_api" in content
+    assert "api.wsgi:application" in content
 
 
-def test_railway_toml_project_name_substitution(
+def test_railway_toml_uses_the_django_package(
     railway_fullstack_config: ProjectConfig,
 ) -> None:
+    """The boilerplate keeps `api` as its import package, not the project name."""
     content = generate_railway_toml(railway_fullstack_config)
-    assert "my_app.wsgi:application" in content
+    assert "api.wsgi:application" in content
+    assert "my_app.wsgi" not in content
 
 
 # --- Render YAML tests ---
@@ -173,8 +175,8 @@ def test_render_yaml_has_celery_when_configured(
     content = generate_render_yaml(render_fullstack_config)
     assert "my-app-celery-worker" in content
     assert "my-app-celery-beat" in content
-    assert "celery -A my_app worker" in content
-    assert "celery -A my_app beat" in content
+    assert "celery -A api worker" in content
+    assert "celery -A api beat" in content
 
 
 def test_render_yaml_no_celery_when_disabled(
@@ -188,8 +190,8 @@ def test_render_yaml_project_name_substitution(
     render_fullstack_config: ProjectConfig,
 ) -> None:
     content = generate_render_yaml(render_fullstack_config)
-    assert "my_app.wsgi:application" in content
-    assert "my_app.settings" in content
+    assert "api.wsgi:application" in content
+    assert "api.settings" in content
 
 
 def test_render_yaml_frontend_static_site(render_fullstack_config: ProjectConfig) -> None:

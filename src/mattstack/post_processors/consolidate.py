@@ -15,13 +15,17 @@ from pathlib import Path
 from mattstack.config import ProjectConfig
 
 # Files removed by glob (patterns are relative to the cloned subdirectory).
+#
+# README* is deliberately absent. `backend/pyproject.toml` declares
+# `readme = "README.md"`, so deleting it makes the package unbuildable and
+# `uv sync` fails with "Readme file does not exist". Keep the boilerplate
+# README in place; the monorepo root README does not replace it.
 _BACKEND_GLOBS: list[str] = [
     "Makefile",
     "docker-compose*.yml",
     "docker-compose*.yaml",
     "Dockerfile*",
     ".env*",
-    "README*",
     "CLAUDE.md",
     ".cursorrules",
     ".gitignore",
@@ -38,7 +42,6 @@ _FRONTEND_GLOBS: list[str] = [
     ".env*",
     "env.example",
     "env.monorepo.example",
-    "README*",
     "CLAUDE.md",
     ".gitignore",
     ".dockerignore",

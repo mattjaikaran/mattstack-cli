@@ -89,7 +89,6 @@ def test_fullstack_consolidates_boilerplate_files(mock_clone, tmp_path: Path) ->
         "docker-compose.yml",
         ".env",
         "Dockerfile",
-        "README.md",
         "CLAUDE.md",
         ".gitignore",
     ]:
@@ -99,7 +98,6 @@ def test_fullstack_consolidates_boilerplate_files(mock_clone, tmp_path: Path) ->
         "Makefile",
         "docker-compose.yml",
         "Dockerfile",
-        "README.md",
         "CLAUDE.md",
         ".gitignore",
     ]:
@@ -107,6 +105,9 @@ def test_fullstack_consolidates_boilerplate_files(mock_clone, tmp_path: Path) ->
     # Per-subpackage files preserved
     assert (config.backend_dir / "pyproject.toml").exists()
     assert (config.frontend_dir / "package.json").exists()
+    # backend/pyproject.toml declares readme = "README.md"; removing it makes
+    # `uv sync` fail, so consolidation keeps the boilerplate README.
+    assert (config.backend_dir / "README.md").exists()
     # Relocated Dockerfiles generated
     assert (config.path / "docker" / "backend" / "Dockerfile").exists()
     assert (config.path / "docker" / "frontend" / "Dockerfile").exists()

@@ -63,13 +63,23 @@ def test_backend_consolidates_boilerplate_files(mock_clone, tmp_path: Path) -> N
         "docker-compose.yml",
         ".env",
         "Dockerfile",
-        "README.md",
         "CLAUDE.md",
         ".gitignore",
     ]:
         assert not (config.backend_dir / f).exists(), f"{f} should be removed"
     assert (config.backend_dir / "pyproject.toml").exists()
     assert (config.backend_dir / "manage.py").exists()
+    # backend/pyproject.toml declares readme = "README.md"; keep it buildable.
+    assert (config.backend_dir / "README.md").exists()
+
+
+@patch("mattstack.generators.base.clone_repo", side_effect=_mock_clone)
+def test_backend_keeps_readme_for_packaging(mock_clone, tmp_path: Path) -> None:
+    """backend/pyproject.toml declares readme = "README.md", so it must survive."""
+    config = _make_config(tmp_path)
+    gen = BackendOnlyGenerator(config)
+    assert gen.run() is True
+    assert (config.backend_dir / "README.md").exists()
     assert (config.path / "docker" / "backend" / "Dockerfile").exists()
 
 

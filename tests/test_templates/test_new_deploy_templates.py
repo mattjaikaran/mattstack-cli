@@ -143,7 +143,7 @@ def test_copilot_manifest(aws_config: ProjectConfig) -> None:
     assert "name: my-app-api" in content
     assert "Load Balanced Web Service" in content
     assert "/api/health/" in content
-    assert "my_app.settings" in content
+    assert "api.settings" in content
 
 
 # --- GCP tests ---
@@ -156,7 +156,7 @@ def test_cloud_run_yaml(gcp_config: ProjectConfig) -> None:
     assert "name: my-app-api" in content
     assert "containerPort: 8000" in content
     assert "/api/health/" in content
-    assert "my_app.settings" in content
+    assert "api.settings" in content
 
 
 def test_app_engine_yaml(gcp_config: ProjectConfig) -> None:
@@ -164,7 +164,7 @@ def test_app_engine_yaml(gcp_config: ProjectConfig) -> None:
 
     content = generate_app_engine_yaml(gcp_config)
     assert "runtime: python312" in content
-    assert "gunicorn my_app.wsgi:application" in content
+    assert "gunicorn api.wsgi:application" in content
     assert "automatic_scaling:" in content
 
 
@@ -178,7 +178,7 @@ def test_hetzner_compose(hetzner_config: ProjectConfig) -> None:
     assert "caddy:" in content
     assert "api:" in content
     assert "db:" in content
-    assert "gunicorn my_app.wsgi" in content
+    assert "gunicorn api.wsgi" in content
     assert "postgres_data:" in content
 
 
@@ -209,7 +209,7 @@ def test_self_hosted_compose(self_hosted_config: ProjectConfig) -> None:
     assert "certbot:" in content
     assert "api:" in content
     assert "db:" in content
-    assert "gunicorn my_app.wsgi" in content
+    assert "gunicorn api.wsgi" in content
 
 
 def test_nginx_conf(self_hosted_config: ProjectConfig) -> None:
