@@ -105,10 +105,9 @@ def _gauntlet_job() -> str:
     do not rename it. It calls mattstack rather than the gauntlet binary,
     because `mattstack gauntlet` exits 1 when the binary is missing.
 
-    mattstack is not on PyPI yet, so install it from git. The job runs
-    `mattstack audit`, which delegates to the Gauntlet binary when it is
-    installed and falls back to the built-in auditors otherwise, so the
-    job is useful on any machine.
+    mattstack is not on PyPI yet, so install it from git. Pass
+    `--fail-if-absent`, because this job is a required status check: without
+    it, a skipped audit exits 0 and the check passes while verifying nothing.
     """
     return """  gauntlet:
     runs-on: ubuntu-latest
@@ -118,7 +117,7 @@ def _gauntlet_job() -> str:
       - name: Install mattstack
         run: uv tool install git+https://github.com/mattjaikaran/mattstack-cli
       - name: Run the Gauntlet gate
-        run: mattstack audit --no-todo"""
+        run: mattstack audit --no-todo --fail-if-absent"""
 
 
 def _generate_github_actions(path: Path, project_type: str, *, with_gauntlet: bool) -> str:
@@ -259,7 +258,7 @@ gauntlet:
   before_script:
     - pip install uv && uv tool install git+https://github.com/mattjaikaran/mattstack-cli
   script:
-    - mattstack audit --no-todo""")
+    - mattstack audit --no-todo --fail-if-absent""")
 
     if project_type in ("fullstack", "backend-only"):
         stages.extend(["lint", "test"])

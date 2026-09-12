@@ -728,16 +728,21 @@ https://github.com/mattjaikaran/gauntlet.
 
 ---
 
-## Cross-branch follow-up (after both branches land)
+## Gauntlet gate wiring (done on this branch)
 
-The scaffold branch (`fix/scaffold-correctness`) adds a `gauntlet` target to the generated
-Makefile that runs `mattstack audit` with no flags, and `mattstack init` writes
-`skip_if_absent = true`. That combination is a gate which exits 0 without checking anything.
+`mattstack init` writes `skip_if_absent = true`, so a bare `mattstack audit` exits 0 without
+checking anything. Two callers were exposed:
 
-Once this branch lands, change that target to `mattstack audit --fail-if-absent`, so a
-missing binary fails the local gate the way it fails CI, and add a `gauntlet-quick` target
-that runs `--tier fast`. Neither flag exists on `main`, which is why the scaffold branch
-could not use them.
+- The Makefile `gauntlet` target, added by the scaffold branch.
+- The generated CI `gauntlet` job, which is the required status check in
+  `DEFAULT_STATUS_CHECKS`. A skipped run would have gone green while verifying nothing, on
+  the one check that blocks a merge.
+
+Both now pass `--fail-if-absent`, so a missing binary fails the local gate and CI alike.
+The CI job's docstring no longer claims a fallback to built-in auditors, which this branch
+deletes.
+
+Still to do: add a `gauntlet-quick` target that runs `--tier fast`, for a pre-commit hook.
 
 Also: `src/mattstack/commands/sync.py` grew past 700 lines while fixing the type mappings,
 so it is further over the 400-line FILELENGTH gate than the 621 the table above records.
