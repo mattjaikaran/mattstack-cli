@@ -243,9 +243,7 @@ def _env_vars(config: ProjectConfig) -> str:
                 "- Root `.env`: `DATABASE_URL`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, `REDIS_URL`"
             )
         else:
-            parts.append(
-                "- Root `.env`: `DATABASE_URL`, `DJANGO_SECRET_KEY`, `REDIS_URL` (if Redis)"
-            )
+            parts.append("- Root `.env`: `DATABASE_URL`, `SECRET_KEY`, `REDIS_URL` (if Redis)")
     if config.has_frontend:
         if config.is_nextjs:
             api_var = "NEXT_PUBLIC_API_BASE_URL"

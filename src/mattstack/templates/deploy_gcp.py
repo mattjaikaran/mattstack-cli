@@ -7,7 +7,6 @@ from mattstack.config import ProjectConfig
 
 def generate_cloud_run_yaml(config: ProjectConfig) -> str:
     """Generate Cloud Run service YAML."""
-    pkg = config.python_package_name
     lines: list[str] = [
         "apiVersion: serving.knative.dev/v1",
         "kind: Service",
@@ -26,7 +25,7 @@ def generate_cloud_run_yaml(config: ProjectConfig) -> str:
         "            - containerPort: 8000",
         "          env:",
         "            - name: DJANGO_SETTINGS_MODULE",
-        f'              value: "{pkg}.settings"',
+        f'              value: "{config.wsgi_app}.settings"',
         "            - name: PYTHONUNBUFFERED",
         '              value: "1"',
         "          resources:",
@@ -45,13 +44,12 @@ def generate_cloud_run_yaml(config: ProjectConfig) -> str:
 
 def generate_app_engine_yaml(config: ProjectConfig) -> str:
     """Generate App Engine app.yaml."""
-    pkg = config.python_package_name
     lines: list[str] = [
         "runtime: python312",
-        f"entrypoint: gunicorn {pkg}.wsgi:application --bind :$PORT",
+        f"entrypoint: gunicorn {config.wsgi_app}.wsgi:application --bind :$PORT",
         "",
         "env_variables:",
-        f"  DJANGO_SETTINGS_MODULE: '{pkg}.settings'",
+        f"  DJANGO_SETTINGS_MODULE: '{config.wsgi_app}.settings'",
         "  PYTHONUNBUFFERED: '1'",
         "",
         "automatic_scaling:",

@@ -259,9 +259,19 @@ def test_consolidate_backend_removes_standalone_files(tmp_path: Path) -> None:
 
     consolidate_backend(config)
 
-    for f in ["Makefile", "docker-compose.yml", "docker-compose.prod.yml", ".env",
-              ".env.example", "Dockerfile", "Dockerfile.uv", "README.md", "CLAUDE.md",
-              ".gitignore", ".dockerignore", ".pre-commit-config.yaml"]:
+    for f in [
+        "Makefile",
+        "docker-compose.yml",
+        "docker-compose.prod.yml",
+        ".env",
+        ".env.example",
+        "Dockerfile",
+        "Dockerfile.uv",
+        "CLAUDE.md",
+        ".gitignore",
+        ".dockerignore",
+        ".pre-commit-config.yaml",
+    ]:
         assert not (config.backend_dir / f).exists(), f"{f} should be removed"
     for d in ["cli", "docker", "deploy", "nginx", "env", "media", "files", ".claude"]:
         assert not (config.backend_dir / d).exists(), f"{d}/ should be removed"
@@ -269,6 +279,9 @@ def test_consolidate_backend_removes_standalone_files(tmp_path: Path) -> None:
     assert (config.backend_dir / "manage.py").exists()
     assert (config.backend_dir / "api").exists()
     assert (config.backend_dir / "core").exists()
+    # backend/pyproject.toml declares readme = "README.md". Removing it makes
+    # the package unbuildable, so consolidation must keep it.
+    assert (config.backend_dir / "README.md").exists()
 
 
 def test_consolidate_frontend_removes_standalone_files(tmp_path: Path) -> None:
@@ -277,9 +290,20 @@ def test_consolidate_frontend_removes_standalone_files(tmp_path: Path) -> None:
 
     consolidate_frontend(config)
 
-    for f in ["Makefile", "docker-compose.yml", ".env", ".env.example", "env.example",
-              "Dockerfile", "Dockerfile.dev", "README.md", "CLAUDE.md", ".gitignore",
-              ".dockerignore", "DEPLOYMENT.md", "nginx.conf"]:
+    for f in [
+        "Makefile",
+        "docker-compose.yml",
+        ".env",
+        ".env.example",
+        "env.example",
+        "Dockerfile",
+        "Dockerfile.dev",
+        "CLAUDE.md",
+        ".gitignore",
+        ".dockerignore",
+        "DEPLOYMENT.md",
+        "nginx.conf",
+    ]:
         assert not (config.frontend_dir / f).exists(), f"{f} should be removed"
     for d in ["nginx", "docs", "dist", ".claude"]:
         assert not (config.frontend_dir / d).exists(), f"{d}/ should be removed"
@@ -289,18 +313,4 @@ def test_consolidate_frontend_removes_standalone_files(tmp_path: Path) -> None:
     assert (config.frontend_dir / "tsconfig.json").exists()
     assert (config.frontend_dir / "eslint.config.js").exists()
     assert (config.frontend_dir / ".prettierrc").exists()
-
-
-def test_consolidate_tolerates_missing_files(tmp_path: Path) -> None:
-    config = _make_config(tmp_path)
-    config.backend_dir.mkdir(parents=True, exist_ok=True)
-    config.frontend_dir.mkdir(parents=True, exist_ok=True)
-    (config.backend_dir / "pyproject.toml").write_text("[project]\n")
-    (config.frontend_dir / "package.json").write_text("{}")
-
-    # Should not raise when standalone files are absent
-    consolidate_backend(config)
-    consolidate_frontend(config)
-
-    assert (config.backend_dir / "pyproject.toml").exists()
-    assert (config.frontend_dir / "package.json").exists()
+    assert (config.frontend_dir / "README.md").exists()

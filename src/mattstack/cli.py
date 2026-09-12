@@ -31,6 +31,7 @@ def _register_subgroups() -> None:
     from mattstack.commands.rules import rules_app
     from mattstack.commands.sync import sync_app
     from mattstack.commands.todo import todo_app
+
     app.add_typer(generate_app, name="generate")
     app.add_typer(db_app, name="db")
     app.add_typer(sync_app, name="sync")
@@ -547,12 +548,8 @@ def notify(
     app: Annotated[str, typer.Option("--app", "-a", help="Application name")] = "",
     commit: Annotated[str, typer.Option("--commit", "-c", help="Deploy commit SHA")] = "",
     env: Annotated[str, typer.Option("--env", "-e", help="Deploy environment")] = "production",
-    frontend_url: Annotated[
-        str, typer.Option("--frontend-url", help="Deployed frontend URL")
-    ] = "",
-    backend_url: Annotated[
-        str, typer.Option("--backend-url", help="Deployed backend URL")
-    ] = "",
+    frontend_url: Annotated[str, typer.Option("--frontend-url", help="Deployed frontend URL")] = "",
+    backend_url: Annotated[str, typer.Option("--backend-url", help="Deployed backend URL")] = "",
     path: Annotated[Path | None, typer.Option("--path", "-p", help="Project path")] = None,
 ) -> None:
     """Send a deploy-complete notification via the configured backend."""
@@ -570,9 +567,7 @@ def notify(
 
 @app.command()
 def verify(
-    scope: Annotated[
-        bool, typer.Option("--scope", help="Enforce the declared plan scope")
-    ] = False,
+    scope: Annotated[bool, typer.Option("--scope", help="Enforce the declared plan scope")] = False,
     scope_file: Annotated[
         Path | None,
         typer.Option("--scope-file", help="Scope file (default SCOPE.md)"),

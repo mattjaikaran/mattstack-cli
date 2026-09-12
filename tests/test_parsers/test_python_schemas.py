@@ -195,3 +195,63 @@ class TestSchema(BaseModel):
     assert fields["field_a"].input_name == "in_a"
     assert fields["field_b"].input_name == "b"
     assert fields["field_c"].input_name == "field_c"
+
+
+def test_docstring_is_not_parsed_as_fields(tmp_path: Path) -> None:
+    """A class docstring must not become fields.
+
+    Regression: the django-ninja boilerplate documents its base schema with a
+    docstring containing ``alias_generator=to_camel`` and indented
+    ``key: value`` lines. Those parsed as fields, and `mattstack sync types`
+    emitted invalid TypeScript that failed the frontend type-check.
+    """
+    f = tmp_path / "base_schema.py"
+    f.write_text('''\
+from pydantic import ConfigDict
+from ninja import Schema
+from pydantic.alias_generators import to_camel
+
+
+class CamelCaseSchema(Schema):
+    """Base schema with automatic camelCase aliases.
+
+    Features:
+        - ``alias_generator=to_camel``: field ``first_name`` -> key ``firstName``
+        - ``populate_by_name=True``: input accepts both casings
+
+    Usage::
+
+        class UserSchema(CamelCaseSchema):
+            first_name: str
+    """
+
+    model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
+''')
+    schemas = parse_pydantic_file(f)
+    assert len(schemas) == 1
+    assert schemas[0].name == "CamelCaseSchema"
+    # The docstring is documentation, so the base class carries no fields.
+    assert schemas[0].fields == []
+    # The real config line still supplies the alias generator.
+    assert schemas[0].alias_generator == "to_camel"
+
+
+def test_fields_are_parsed_around_a_docstring(tmp_path: Path) -> None:
+    """A docstring must not hide the real fields that follow it."""
+    f = tmp_path / "schemas.py"
+    f.write_text('''\
+from pydantic import BaseModel
+
+
+class ItemSchema(BaseModel):
+    """An item.
+
+    Attributes:
+        name: the label
+    """
+
+    name: str
+    count: int
+''')
+    schemas = parse_pydantic_file(f)
+    assert {field.name for field in schemas[0].fields} == {"name", "count"}

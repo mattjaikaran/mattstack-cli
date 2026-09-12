@@ -9,8 +9,8 @@ from mattstack.config import ProjectConfig
 
 
 def generate_ecs_task_definition(config: ProjectConfig) -> str:
+    pkg = config.wsgi_app
     """Generate ECS task definition JSON."""
-    pkg = config.python_package_name
     task_def: dict[str, Any] = {
         "family": f"{config.name}-task",
         "networkMode": "awsvpc",
@@ -69,8 +69,8 @@ def generate_ecs_task_definition(config: ProjectConfig) -> str:
 
 
 def generate_copilot_manifest(config: ProjectConfig) -> str:
+    pkg = config.wsgi_app
     """Generate AWS Copilot service manifest YAML."""
-    pkg = config.python_package_name
     lines: list[str] = [
         f"name: {config.name}-api",
         "type: Load Balanced Web Service",

@@ -63,11 +63,11 @@ server {
 def _django_backend(config: ProjectConfig) -> str:
     port = config.backend_api_port
     return f"""\
-FROM python:3.12-slim AS base
+FROM python:3.13-slim AS base
 ENV PYTHONDONTWRITEBYTECODE=1 \\
     PYTHONUNBUFFERED=1 \\
-    VIRTUAL_ENV=/opt/venv \\
-    PATH="/opt/venv/bin:$$PATH"
+    UV_PROJECT_ENVIRONMENT=/opt/venv \\
+    PATH="/opt/venv/bin:$PATH"
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends libpq5 curl \\
     && rm -rf /var/lib/apt/lists/*
@@ -76,9 +76,15 @@ FROM base AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential libpq-dev \\
     && curl -LsSf https://astral.sh/uv/install.sh | sh \\
     && rm -rf /var/lib/apt/lists/*
-ENV PATH="/root/.local/bin:$$PATH"
+ENV PATH="/root/.local/bin:$PATH"
+# Pin the interpreter to the image's Python. The backend allows >=3.13, so
+# without this uv provisions the newest release and some wheels, such as
+# pydantic-core, have no build for it.
+ENV UV_PYTHON=3.13
 COPY backend/ .
-RUN uv venv /opt/venv && uv sync --no-dev
+# UV_PROJECT_ENVIRONMENT puts the environment at /opt/venv. Without it, uv
+# creates /app/.venv and the runtime stages below copy an empty directory.
+RUN uv sync --no-dev
 
 FROM base AS development
 COPY --from=builder /opt/venv /opt/venv
@@ -92,18 +98,19 @@ COPY --from=builder /opt/venv /opt/venv
 COPY backend/ .
 RUN python manage.py collectstatic --noinput 2>/dev/null || true
 EXPOSE {port}
-CMD ["gunicorn", "api.wsgi:application", "--bind", "0.0.0.0:{port}", "--workers", "3"]
+CMD ["gunicorn", "{config.wsgi_app}.wsgi:application", \\
+     "--bind", "0.0.0.0:{port}", "--workers", "3"]
 """
 
 
 def _fastapi_backend(config: ProjectConfig) -> str:
     port = config.backend_api_port
     return f"""\
-FROM python:3.12-slim AS base
+FROM python:3.13-slim AS base
 ENV PYTHONDONTWRITEBYTECODE=1 \\
     PYTHONUNBUFFERED=1 \\
-    VIRTUAL_ENV=/opt/venv \\
-    PATH="/opt/venv/bin:$$PATH"
+    UV_PROJECT_ENVIRONMENT=/opt/venv \\
+    PATH="/opt/venv/bin:$PATH"
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends libpq5 curl \\
     && rm -rf /var/lib/apt/lists/*
@@ -112,9 +119,14 @@ FROM base AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential libpq-dev \\
     && curl -LsSf https://astral.sh/uv/install.sh | sh \\
     && rm -rf /var/lib/apt/lists/*
-ENV PATH="/root/.local/bin:$$PATH"
+ENV PATH="/root/.local/bin:$PATH"
+# Pin the interpreter to the image's Python. A permissive requires-python
+# makes uv provision the newest release, which may have no wheel.
+ENV UV_PYTHON=3.13
 COPY backend/ .
-RUN uv venv /opt/venv && uv sync --no-dev
+# UV_PROJECT_ENVIRONMENT puts the environment at /opt/venv. Without it, uv
+# creates /app/.venv and the runtime stages below copy an empty directory.
+RUN uv sync --no-dev
 
 FROM base AS development
 COPY --from=builder /opt/venv /opt/venv

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from mattstack.config import ProjectConfig
+from mattstack.templates.frontend_commands import frontend_commands
 
 
 def generate_makefile(config: ProjectConfig) -> str:
@@ -33,7 +34,14 @@ def generate_makefile(config: ProjectConfig) -> str:
 def _header() -> str:
     return """\
 .DEFAULT_GOAL := help
-SHELL := /bin/bash"""
+SHELL := /bin/bash
+
+# Host commands need the same settings the containers get. Do not use
+# `include .env`: make treats # as a comment and $ as a variable, and a
+# generated secret key can contain both, so a secret would silently
+# truncate on the host while the container kept the full value. Source the
+# file in the recipe shell instead.
+LOAD_ENV := set -a && . ./.env && set +a &&"""
 
 
 def _help_target() -> str:
@@ -119,8 +127,8 @@ def _django_backend_targets() -> str:
 backend-setup: ## Install backend deps
 \tcd backend && uv sync
 
-backend-dev: ## Run backend dev server
-\tcd backend && uv run python manage.py runserver
+backend-dev: ## Run Django dev server
+\t$(LOAD_ENV) cd backend && uv run python manage.py runserver
 
 backend-test: ## Run backend tests
 \tcd backend && uv run pytest -v
@@ -129,16 +137,16 @@ backend-lint: ## Lint backend
 \tcd backend && uv run ruff check .
 
 backend-migrate: ## Run Django migrations
-\tcd backend && uv run python manage.py migrate
+\t$(LOAD_ENV) cd backend && uv run python manage.py migrate
 
 backend-makemigrations: ## Create Django migrations
-\tcd backend && uv run python manage.py makemigrations
+\t$(LOAD_ENV) cd backend && uv run python manage.py makemigrations
 
 backend-shell: ## Django shell
-\tcd backend && uv run python manage.py shell
+\t$(LOAD_ENV) cd backend && uv run python manage.py shell
 
 backend-superuser: ## Create Django superuser
-\tcd backend && uv run python manage.py createsuperuser"""
+\t$(LOAD_ENV) cd backend && uv run python manage.py createsuperuser"""
 
 
 def _fastapi_backend_targets(config: ProjectConfig) -> str:
@@ -149,7 +157,7 @@ backend-setup: ## Install backend deps
 \tcd backend && uv sync --extra dev
 
 backend-dev: ## Run FastAPI dev server (port 8000)
-\tcd backend && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+\t$(LOAD_ENV) cd backend && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 backend-test: ## Run backend tests (pytest)
 \tcd backend && uv run pytest -v
@@ -158,19 +166,19 @@ backend-lint: ## Lint backend (ruff)
 \tcd backend && uv run ruff check .
 
 backend-migrate: ## Run Alembic migrations
-\tcd backend && uv run alembic upgrade head
+\t$(LOAD_ENV) cd backend && uv run alembic upgrade head
 
 backend-makemigrations: ## Create a new Alembic migration
-\tcd backend && uv run alembic revision --autogenerate -m "$(MSG)"
+\t$(LOAD_ENV) cd backend && uv run alembic revision --autogenerate -m "$(MSG)"
 
 backend-shell: ## Open Python shell
 \tcd backend && uv run python
 
 backend-worker: ## Run Celery worker
-\tcd backend && uv run celery -A app.workers.celery_app worker --loglevel=info
+\t$(LOAD_ENV) cd backend && uv run celery -A app.workers.celery_app worker --loglevel=info
 
 backend-beat: ## Run Celery beat scheduler
-\tcd backend && uv run celery -A app.workers.celery_app beat --loglevel=info"""
+\t$(LOAD_ENV) cd backend && uv run celery -A app.workers.celery_app beat --loglevel=info"""
 
 
 def _nestjs_backend_targets(config: ProjectConfig) -> str:
@@ -207,8 +215,21 @@ backend-studio: ## Open Drizzle Studio
 
 
 def _frontend_targets(config: ProjectConfig) -> str:
+    cmds = frontend_commands(config)
+    test_comment = "Run frontend tests" if cmds.test else "Frontend has no test script"
+    test_recipe = (
+        f"\tcd frontend && {cmds.test}"
+        if cmds.test
+        else "\t@echo 'This frontend has no test script; see frontend/package.json'"
+    )
+    typecheck_comment = "Type-check frontend" if cmds.typecheck else "No type-check script"
+    typecheck_recipe = (
+        f"\tcd frontend && {cmds.typecheck}"
+        if cmds.typecheck
+        else "\t@echo 'This frontend has no type-check script'"
+    )
     return f"""
-.PHONY: frontend-setup frontend-dev frontend-build frontend-test frontend-lint
+.PHONY: frontend-setup frontend-dev frontend-build frontend-test frontend-lint frontend-typecheck
 frontend-setup: ## Install frontend deps
 \tcd frontend && bun install
 
@@ -218,11 +239,14 @@ frontend-dev: ## Run frontend dev server
 frontend-build: ## Build frontend
 \tcd frontend && bun run build
 
-frontend-test: ## Run frontend {"typecheck" if not config.is_nextjs else "lint"}
-\tcd frontend && bun run {"typecheck" if not config.is_nextjs else "lint"}
+frontend-test: ## {test_comment}
+{test_recipe}
+
+frontend-typecheck: ## {typecheck_comment}
+{typecheck_recipe}
 
 frontend-lint: ## Lint frontend
-\tcd frontend && bun run lint"""
+\tcd frontend && {cmds.lint}"""
 
 
 def _ios_targets(config: ProjectConfig) -> str:
@@ -243,25 +267,34 @@ def _combined_targets(config: ProjectConfig) -> str:
 
 
 def _combined_targets_django(config: ProjectConfig) -> str:
-    return """
-.PHONY: test lint format sync-types clean
-test: ## Run all tests
+    cmds = frontend_commands(config)
+    frontend_format = cmds.format or "echo 'No frontend format script'"
+    frontend_check = cmds.typecheck or "echo 'No frontend type-check script'"
+    frontend_test = cmds.test or "echo 'No frontend test script'"
+    return f"""
+.PHONY: test lint typecheck format sync-types gauntlet clean
+test: ## Run backend tests and the frontend test suite
 \t@echo 'Running backend tests...'
 \tcd backend && uv run pytest -v
-\t@echo 'Running frontend type check...'
-\tcd frontend && bun run typecheck
+\t@echo 'Running frontend tests...'
+\tcd frontend && {frontend_test}
 
 lint: ## Lint all code
 \tcd backend && uv run ruff check . && uv run ruff format --check .
-\tcd frontend && bun run lint
+\tcd frontend && {cmds.lint}
+
+typecheck: ## Type-check the frontend
+\tcd frontend && {frontend_check}
 
 format: ## Format all code
 \tcd backend && uv run ruff format .
-\tcd frontend && bun run format
+\tcd frontend && {frontend_format}
 
 sync-types: ## Sync backend types to frontend TypeScript
-\tcd backend && uv run python manage.py sync_types \
-\t\t--target typescript --output ../frontend/src/types
+\tmattstack sync types
+
+gauntlet: ## Run the verification gate
+\tmattstack audit
 
 clean: ## Clean all build artifacts
 \tdocker compose down -v
@@ -270,21 +303,25 @@ clean: ## Clean all build artifacts
 
 
 def _combined_targets_nestjs(config: ProjectConfig) -> str:
-    return """
-.PHONY: test lint format clean
+    cmds = frontend_commands(config)
+    return f"""
+.PHONY: test lint format gauntlet clean
 test: ## Run all tests
 \t@echo 'Running backend tests...'
 \tcd backend && bun run test
-\t@echo 'Running frontend type check...'
-\tcd frontend && bun run typecheck
+\t@echo 'Running frontend tests...'
+\tcd frontend && {cmds.test or "echo 'No frontend test script'"}
 
 lint: ## Lint all code
 \tcd backend && bun run lint
-\tcd frontend && bun run lint
+\tcd frontend && {cmds.lint}
 
 format: ## Format all code
 \tcd backend && bun run format
-\tcd frontend && bun run format
+\tcd frontend && {cmds.format or "echo 'No frontend format script'"}
+
+gauntlet: ## Run the verification gate
+\tmattstack audit
 
 clean: ## Clean all build artifacts
 \tdocker compose down -v

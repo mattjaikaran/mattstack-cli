@@ -25,7 +25,7 @@ def generate_docker_compose_override(config: ProjectConfig) -> str:
                 '  #     - "8001:8000"  # Use different host port',
                 "  #   environment:",
                 "  #     DEBUG: true",
-                '  #     DJANGO_SECRET_KEY: "my-local-secret"',
+                '  #     SECRET_KEY: "my-local-secret"',
                 "  #   volumes:",
                 "  #     - ./backend:/app",
                 "",

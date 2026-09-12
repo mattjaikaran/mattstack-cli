@@ -6,8 +6,8 @@ from mattstack.config import ProjectConfig
 
 
 def generate_hetzner_compose(config: ProjectConfig) -> str:
+    pkg = config.wsgi_app
     """Generate docker-compose.prod.yml for Hetzner with Caddy."""
-    pkg = config.python_package_name
     lines: list[str] = [
         "version: '3.8'",
         "",

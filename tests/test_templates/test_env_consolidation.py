@@ -13,7 +13,7 @@ def test_env_production_example_has_production_values(
     content = generate_env_production_example(starter_fullstack_config)
     assert "DEBUG=false" in content
     assert "@db:5432" in content
-    assert "DJANGO_SECRET_KEY=" in content
+    assert "SECRET_KEY=" in content
     assert "ALLOWED_HOSTS=" in content
 
 

@@ -7,7 +7,6 @@ from mattstack.config import ProjectConfig
 
 def generate_do_app_spec(config: ProjectConfig) -> str:
     """Generate .do/app.yaml App Platform spec."""
-    pkg = config.python_package_name
     lines: list[str] = [
         f"name: {config.name}",
         "region: nyc",
@@ -37,11 +36,11 @@ def generate_do_app_spec(config: ProjectConfig) -> str:
             "      initial_delay_seconds: 15",
             "      period_seconds: 30",
             "    envs:",
-            "      - key: DJANGO_SECRET_KEY",
+            "      - key: SECRET_KEY",
             "        type: SECRET",
-            "        value: ${DJANGO_SECRET_KEY}",
+            "        value: ${SECRET_KEY}",
             "      - key: DJANGO_SETTINGS_MODULE",
-            f"        value: {pkg}.settings",
+            f"        value: {config.wsgi_app}.settings",
             "      - key: DATABASE_URL",
             f"        value: ${{db-{config.name}.DATABASE_URL}}",
             "      - key: ALLOWED_HOSTS",

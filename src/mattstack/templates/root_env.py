@@ -41,10 +41,18 @@ def generate_env_example(config: ProjectConfig) -> str:
                 [
                     "# === Backend (Django) ===",
                     "DEBUG=true",
-                    f"DJANGO_SECRET_KEY=change-me-{config.name}-secret",
+                    f"SECRET_KEY=change-me-{config.name}-secret",
+                    # POSTGRES_* configures the postgres image.
                     f"POSTGRES_DB={config.python_package_name}",
                     "POSTGRES_USER=postgres",
                     "POSTGRES_PASSWORD=postgres",
+                    # DB_* is what the Django settings read. Without these,
+                    # settings.DATABASES has an empty NAME.
+                    f"DB_NAME={config.python_package_name}",
+                    "DB_USER=postgres",
+                    "DB_PASSWORD=postgres",
+                    "DB_HOST=localhost",
+                    "DB_PORT=5432",
                     f"DATABASE_URL=postgres://postgres:postgres@localhost:5432/{config.python_package_name}",
                     "ALLOWED_HOSTS=localhost,127.0.0.1",
                     "CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173",
@@ -142,10 +150,17 @@ def generate_env_production_example(config: ProjectConfig) -> str:
                 [
                     "# === Backend (Django) ===",
                     "DEBUG=false",
-                    "DJANGO_SECRET_KEY=change-me-strong-secret-key",
+                    "SECRET_KEY=change-me-strong-secret-key",
                     f"POSTGRES_DB={config.python_package_name}",
                     "POSTGRES_USER=postgres",
                     "POSTGRES_PASSWORD=change-me-strong-password",
+                    # DB_* is what the Django settings read in every
+                    # environment. DATABASE_URL alone leaves DATABASES empty.
+                    f"DB_NAME={config.python_package_name}",
+                    "DB_USER=postgres",
+                    "DB_PASSWORD=change-me-strong-password",
+                    "DB_HOST=db",
+                    "DB_PORT=5432",
                     f"DATABASE_URL=postgres://postgres:change-me-strong-password@db:5432/{config.python_package_name}",
                     f"ALLOWED_HOSTS={origin.removeprefix('https://')}",
                     f"CORS_ALLOWED_ORIGINS={origin}",

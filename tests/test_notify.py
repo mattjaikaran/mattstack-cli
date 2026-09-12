@@ -39,9 +39,7 @@ def test_build_notifier_none() -> None:
 
 def test_build_notifier_webhook(monkeypatch) -> None:
     monkeypatch.setenv("MY_HOOK", "https://example.com/hook")
-    config = MattstackConfig(
-        notify=NotifyConfig(backend="webhook", webhook_url_env="MY_HOOK")
-    )
+    config = MattstackConfig(notify=NotifyConfig(backend="webhook", webhook_url_env="MY_HOOK"))
 
     notifier = build_notifier(config)
 
@@ -51,9 +49,7 @@ def test_build_notifier_webhook(monkeypatch) -> None:
 
 def test_build_notifier_webhook_missing_url(monkeypatch) -> None:
     monkeypatch.delenv("MISSING_HOOK", raising=False)
-    config = MattstackConfig(
-        notify=NotifyConfig(backend="webhook", webhook_url_env="MISSING_HOOK")
-    )
+    config = MattstackConfig(notify=NotifyConfig(backend="webhook", webhook_url_env="MISSING_HOOK"))
 
     with pytest.raises(ValueError, match="MISSING_HOOK"):
         build_notifier(config)
