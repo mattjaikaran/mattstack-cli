@@ -294,7 +294,7 @@ sync-types: ## Sync backend types to frontend TypeScript
 \tmattstack sync types
 
 gauntlet: ## Run the verification gate
-\tmattstack audit
+\tmattstack audit --fail-if-absent
 
 clean: ## Clean all build artifacts
 \tdocker compose down -v
@@ -321,7 +321,7 @@ format: ## Format all code
 \tcd frontend && {cmds.format or "echo 'No frontend format script'"}
 
 gauntlet: ## Run the verification gate
-\tmattstack audit
+\tmattstack audit --fail-if-absent
 
 clean: ## Clean all build artifacts
 \tdocker compose down -v

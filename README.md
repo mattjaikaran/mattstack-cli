@@ -284,20 +284,36 @@ make frontend-dev  # http://localhost:5173
 
 ## Audit
 
-Six audit domains in one pass:
+MattStack delegates every check to [Gauntlet](https://github.com/mattjaikaran/gauntlet),
+the verification engine. MattStack scaffolds and manages the project; Gauntlet verifies it.
+MattStack runs `gauntlet check --tier=full --json` and formats the findings. It implements
+no checks of its own.
 
 ```bash
-mattstack audit                         # All domains
-mattstack audit --domain types          # Pydantic ↔ TypeScript drift
-mattstack audit --domain quality        # TODOs, stubs, hardcoded creds
-mattstack audit --domain endpoints      # Missing/unimplemented endpoints
-mattstack audit --domain tests          # Coverage gaps
-mattstack audit --domain dependencies   # Outdated packages
-mattstack audit --domain vulnerabilities # CVE scan
-mattstack audit --html                  # HTML dashboard
+mattstack audit                          # Run the full tier
+mattstack audit --tier standard          # Deterministic checks + plan conformance
+mattstack audit --type sentinel          # Limit to the deterministic engine
+mattstack audit --type review            # Limit to the AI review board
+mattstack audit -s error                 # Show errors only
+mattstack audit --json                   # Machine-readable output
+mattstack audit --html                   # HTML dashboard
+mattstack gauntlet check --tier fast     # Call Gauntlet through mattstack
+mattstack gauntlet run vault show        # Any Gauntlet subcommand
 ```
 
-Results are printed as a Rich table and appended to `tasks/todo.md`.
+| Engine | What it checks |
+|--------|----------------|
+| `sentinel` | Format, lint, type check, tests, coverage, complexity, secrets, suppression, git integrity |
+| `conformance` | The diff against the plan and the linked ticket |
+| `review` | AI review board: architect, senior engineer, security, performance, readability |
+| `quality` | Mutation score and performance regression (release tier) |
+
+Results are printed as a Rich table and written to `tasks/todo.md`. The audit reads
+`[integrations]` from the project's `gauntlet.toml` for the binary path, and skips with one
+line when Gauntlet is not installed and the project opted in.
+
+`mattstack init` writes a `gauntlet.toml` for the detected stack. Install Gauntlet
+separately; see [the Gauntlet guide](docs/gauntlet.md).
 
 ---
 
@@ -319,7 +335,7 @@ uv run mattstack --help
 
 ```bash
 uv sync --extra dev     # Install with dev deps
-uv run pytest -x -q    # 863 tests
+uv run pytest -x -q    # 783 tests
 uv run ruff check src/ tests/
 uv run ruff format src/ tests/
 ```
@@ -365,9 +381,9 @@ presets:
     backend_framework: nestjs
 ```
 
-### Custom audit plugins
+### Custom audit checks
 
-See [docs/plugin-guide.md](docs/plugin-guide.md).
+Add the check to Gauntlet, not to MattStack. See [docs/gauntlet.md](docs/gauntlet.md).
 
 ---
 
@@ -377,7 +393,7 @@ See [docs/plugin-guide.md](docs/plugin-guide.md).
 - [Architecture](docs/architecture.md)
 - [Ecosystem & customization](docs/ecosystem.md)
 - [Deployment guide](docs/deployment-guide.md)
-- [Audit plugin guide](docs/plugin-guide.md)
+- [Gauntlet integration](docs/gauntlet.md)
 
 ---
 

@@ -4,7 +4,7 @@
 
 ```
 src/mattstack/
-├── cli.py              # Typer app — 26 commands, 6 subgroups
+├── cli.py              # Typer app — 26 commands, 7 subgroups
 ├── config.py           # ProjectType, Variant, BackendFramework (3), FrontendFramework (5),
 │                       # DeploymentTarget enums; ProjectConfig dataclass; REPO_URLS (10 repos)
 ├── presets.py          # 19 presets (starter/b2b × fullstack/api/frontend, rsbuild, kibo,
@@ -21,7 +21,8 @@ src/mattstack/
 │   ├── health.py       # Docker, DB, Redis, backend, frontend port/HTTP checks
 │   ├── hooks.py        # Subgroup: install, status, run (pre-commit)
 │   ├── workflow.py     # GitHub Actions / GitLab CI generation
-│   ├── audit.py        # 6 auditor classes + plugin loader
+│   ├── audit.py        # Runs Gauntlet, formats findings (no checks)
+│   ├── gauntlet.py     # Subgroup: check, run (pass-through to the Gauntlet binary)
 │   ├── dev.py          # Start services with port conflict detection
 │   ├── test.py         # Unified pytest + vitest, --parallel, timing
 │   ├── lint.py         # Unified ruff + eslint, --parallel, timing
@@ -35,8 +36,8 @@ src/mattstack/
 │   └── completions.py  # Shell completions
 │
 ├── generators/         # BaseGenerator ABC → Fullstack/BackendOnly/FrontendOnly + iOS
-├── auditors/           # BaseAuditor ABC → types, quality, endpoints, tests, dependencies, vulnerabilities
-├── parsers/            # Pure regex parsers: pydantic, typescript, zod, django_routes, nextjs, tests, deps
+├── gauntlet/           # Gauntlet integration: wire models, client, config generator, formatter
+├── parsers/            # Pure regex parsers: pydantic, typescript, zod, django_routes, django_models
 ├── post_processors/    # customizer (Django + NestJS rename), frontend_config (dynamic port proxy), b2b
 ├── templates/          # f-string template functions (makefile, docker_compose, env, readme, etc.)
 └── utils/              # console, git, docker, process, yaml_config, package_manager
@@ -92,7 +93,9 @@ To avoid dev-server conflicts in fullstack projects:
 4. **BackendFramework** enum: `django-ninja`, `django-matt`, `fastapi`, `nestjs`
 5. **FrontendFramework** enum: `react-vite`, `react-vite-starter`, `react-rsbuild`, `react-rsbuild-kibo`, `nextjs`
 6. **Parsers are pure functions** — regex-based, no AST, no deps. Return dataclasses
-7. **Auditors inherit BaseAuditor**. `run() → list[AuditFinding]`
+7. **Verification is external**. `mattstack audit` shells out to `gauntlet check --json`.
+   `gauntlet/` holds the wire models, the subprocess client, the `gauntlet.toml`
+   generator, and the formatter. No check logic lives in this repo.
 8. **Subgroups** use Typer pattern: `new_app = typer.Typer()`, registered in `_register_subgroups()`
 9. **Lazy imports** in cli.py — each command imports its module only when invoked
 
@@ -122,11 +125,14 @@ To avoid dev-server conflicts in fullstack projects:
 8. Update CLI help in `cli.py`
 9. Update test in `tests/test_presets.py`
 
-### Add a new audit domain
-1. Create `parsers/new_parser.py`
-2. Create `auditors/new_auditor.py` inheriting `BaseAuditor`
-3. Add to `AUDITOR_CLASSES` in `commands/audit.py`
-4. Add to `AuditType` enum in `auditors/base.py`
+### Add a verification check
+1. Add the check to Gauntlet (`.gauntlet/checks/` or the Gauntlet catalog)
+2. Do not add it to MattStack. MattStack only formats Gauntlet findings
+
+### Add a field to the audit output
+1. Extend the model in `gauntlet/models.py` and its `to_dict`
+2. Add the presentation in `gauntlet/report.py`
+3. Update `tests/test_gauntlet/test_models.py`
 
 ### Add a new command subgroup
 1. Create `commands/new_cmd.py` with `new_app = typer.Typer(...)` + subcommands

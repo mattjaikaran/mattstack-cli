@@ -1,15 +1,15 @@
 # mattstack
 
-CLI to scaffold fullstack monorepos, generate components, sync types, and audit for quality.
+CLI to scaffold fullstack monorepos, generate components, sync types, and run the Gauntlet gate.
 
 ## Stack
 - Python 3.12+, uv (never pip), ruff, hatchling, Apache-2.0
-- 26 commands, 6 subgroups, 12 presets, 7 source repos
+- 26 commands, 7 subgroups, 12 presets, 7 source repos
 
 ## Dev
 ```bash
 uv sync --extra dev            # Install
-uv run pytest -x -q            # 596 tests
+uv run pytest -x -q            # 783 tests
 uv run ruff check src/ tests/  # Lint
 ```
 
@@ -25,7 +25,9 @@ mattstack dev                                # Start all services
 mattstack test --parallel                    # Run tests
 mattstack lint --parallel --fix              # Lint + fix
 mattstack fmt                                # Format all
-mattstack audit --html                       # Static analysis
+mattstack audit --tier full      # Run Gauntlet, format findings
+mattstack audit --json           # Machine-readable findings
+mattstack gauntlet check --tier fast   # Call Gauntlet directly
 mattstack deps check | update | audit        # Dependencies
 mattstack health --live                      # Service health
 mattstack hooks install                      # Git hooks
@@ -42,13 +44,28 @@ starter-fullstack, b2b-fullstack, starter-api, b2b-api, starter-frontend, simple
 ## Rules
 - `uv` only (never pip/poetry), `bun` for JS (never npm/yarn)
 - Type hints on every function, no new dependencies
-- Parsers use regex (not AST), auditors produce `AuditFinding` objects
+- Verification is Gauntlet's job: `audit` shells out to `gauntlet check --json` and only
+  formats the result. Never add a check to this repo; add it to Gauntlet
+- Parsers use regex (not AST); `parsers/` stays, `auditors/` is deleted
 - Tests in `tests/` mirroring `src/` structure
 
 ## Architecture
 See [docs/architecture.md](docs/architecture.md) for file map, patterns, and extension workflows.
 
-## Gauntlet Gates
+
+## Two things named gauntlet
+
+| Name | What it is | Where |
+|------|------------|-------|
+| **Gauntlet** (the engine) | The Rust verification CLI that `mattstack audit` calls | `~/dev/gauntlet`, github.com/mattjaikaran/gauntlet |
+| **`make gauntlet`** | This repo's local 10-gate quality script | `scripts/gauntlet.py` |
+
+They are different tools. `mattstack audit` runs the engine. `make gauntlet` runs this
+repo's own gates. See [docs/gauntlet.md](docs/gauntlet.md) for the integration and
+`gauntlet.toml` options.
+
+## Local gates (make gauntlet)
+
 
 | # | Gate | Tool | Quick | Command |
 |---|------|------|-------|---------|

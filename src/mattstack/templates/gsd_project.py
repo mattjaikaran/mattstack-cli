@@ -80,7 +80,7 @@ def _gsd_commands(config: ProjectConfig) -> str:
         lines.append("make setup")
     lines.append("mattstack dev    # Start everything")
     lines.append("mattstack test   # Run all tests")
-    lines.append("mattstack audit  # Static analysis")
+    lines.append("mattstack audit  # Run the Gauntlet gate")
     lines.append("```")
     return "\n".join(lines)
 
@@ -179,7 +179,7 @@ def _gsd_commands_from_detected(project: DetectedProject) -> str:
         [
             "mattstack dev    # Start everything",
             "mattstack test   # Run all tests",
-            "mattstack audit  # Static analysis",
+            "mattstack audit  # Run the Gauntlet gate",
             "```",
         ]
     )
