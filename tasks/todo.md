@@ -627,3 +627,44 @@ First-class support for [django-matt](https://github.com/mattjaikaran/django-mat
 - Update `mattstack rules` — CLAUDE.md template for matt-fullstack projects
 - Documentation: README section, preset table update, example workflow
 
+
+---
+
+## Open work (2026-09-12)
+
+State: `main` has the scaffold fixes and the frontend diagnosis. PR #1
+(`feat/gauntlet-audit-delegation`) is a draft, blocked until the Gauntlet binary ships.
+
+### Blocked on Gauntlet
+
+- [ ] PR #1: audit delegates to `gauntlet check --json`. Verified against a fake binary
+      only. Mark ready once the real binary exists and `mattstack audit` runs on a
+      generated project.
+
+### Ready now, no dependency
+
+- [ ] **Frontend runtime.** See `tasks/prompt-frontend-runtime.md`. Work is not started.
+      Not mergeable until a route resolves, not just the dev server responding.
+- [ ] **Split `commands/sync.py`.** It is 763 lines against the 400-line FILELENGTH gate,
+      so gate 6 fails on it. Extract the pure mapping layer (`PYTHON_TO_TS`,
+      `PYTHON_TO_ZOD`, `CONSTRAINT_TO_ZOD`, `_resolve_ts_type`, `_resolve_zod_type`,
+      `_split_top_level_union`) into its own module. This debt lives on `main`, not on the
+      Gauntlet branch.
+- [ ] **`make gauntlet` writes `tasks/todo.md`.** The generated targets run
+      `mattstack audit --fail-if-absent` without `--no-todo`, so a gate mutates the working
+      tree. Needs `--no-todo`, which lands with PR #1's flag work.
+
+### Pre-existing gate failures on main
+
+Not introduced by recent work; listed so the inventory is honest.
+
+| Gate | Status |
+|---|---|
+| FORMAT | pass (183 files formatted) |
+| LINT | pass |
+| TYPECHECK | pass (mypy strict, 107 files) |
+| ARCHITECTURE | pass |
+| TEST | pass (921) |
+| FILELENGTH | **fail** — cli.py 590, context.py 575, generate.py 1870, rules.py 621, sync.py 763 |
+| SECURITY | warnings — bandit findings, mostly low severity |
+| CI | failing since 2026-08-12 on FILELENGTH and bandit |
