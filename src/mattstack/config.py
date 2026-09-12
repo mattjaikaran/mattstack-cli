@@ -136,7 +136,7 @@ class ProjectConfig:
 
     @property
     def django_package(self) -> str:
-        """Return the Django import package inside `backend/`.
+        """Return the import package inside `backend/`.
 
         The django-ninja boilerplate keeps `api` as its settings, WSGI, and
         Celery module. `mattstack init` renames the distribution and the
@@ -148,7 +148,23 @@ class ProjectConfig:
         boilerplate that uses a different module still works. Detection
         reads the filesystem, so it does not depend on the order of the
         generator steps.
+
+        The FastAPI boilerplate uses `app` and defines its Celery instance
+        in `app/workers/celery_app.py`, so `celery -A app` cannot load it.
         """
+        if self.is_fastapi_backend:
+            return "app.workers.celery_app"
+        backend = self.backend_dir
+        for candidate in ("api", "app"):
+            if (backend / candidate).is_dir():
+                return candidate
+        return "api"
+
+    @property
+    def wsgi_app(self) -> str:
+        """Return the WSGI or settings module root, without the submodule."""
+        if self.is_fastapi_backend:
+            return "app"
         backend = self.backend_dir
         for candidate in ("api", "app"):
             if (backend / candidate).is_dir():
