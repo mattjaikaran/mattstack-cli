@@ -42,7 +42,7 @@ def generate_railway_toml(config: ProjectConfig) -> str:
     if config.has_backend:
         start_cmd = (
             "uv run python manage.py migrate && "
-            f"uv run gunicorn {config.django_package}.wsgi:application --bind 0.0.0.0:$PORT"
+            f"uv run gunicorn {config.wsgi_app}.wsgi:application --bind 0.0.0.0:$PORT"
         )
         backend_section = f"""\
 [build]

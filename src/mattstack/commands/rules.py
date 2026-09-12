@@ -288,7 +288,7 @@ def _claude_ports(project: DetectedProject) -> str:
 def _claude_env_vars(project: DetectedProject) -> str:
     parts = ["## Environment Variables", ""]
     if project.has_backend:
-        parts.append("- Root `.env`: `DATABASE_URL`, `DJANGO_SECRET_KEY`, `REDIS_URL` (if Redis)")
+        parts.append("- Root `.env`: `DATABASE_URL`, `SECRET_KEY`, `REDIS_URL` (if Redis)")
     if project.has_frontend:
         api_var = "NEXT_PUBLIC_API_BASE_URL" if project.is_nextjs else "VITE_API_BASE_URL"
         parts.append(f"- Frontend: `{api_var}` for API base URL")

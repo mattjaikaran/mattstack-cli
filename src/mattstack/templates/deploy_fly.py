@@ -18,7 +18,7 @@ def generate_fly_toml(config: ProjectConfig) -> str:
                 '  dockerfile = "backend/Dockerfile"',
                 "",
                 "[env]",
-                f'  DJANGO_SETTINGS_MODULE = "{config.django_package}.settings"',
+                f'  DJANGO_SETTINGS_MODULE = "{config.wsgi_app}.settings"',
                 '  PYTHONUNBUFFERED = "1"',
                 "",
                 "[http_service]",

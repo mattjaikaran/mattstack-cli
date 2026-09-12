@@ -6,7 +6,7 @@ from mattstack.config import ProjectConfig
 
 
 def generate_self_hosted_compose(config: ProjectConfig) -> str:
-    pkg = config.django_package
+    pkg = config.wsgi_app
     """Generate docker-compose.prod.yml for self-hosted with nginx."""
     lines: list[str] = [
         "version: '3.8'",

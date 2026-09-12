@@ -56,7 +56,7 @@ def test_docker_compose_no_celery(starter_fullstack_config: ProjectConfig):
 
 def test_env_example(starter_fullstack_config: ProjectConfig):
     content = generate_env_example(starter_fullstack_config)
-    assert "DJANGO_SECRET_KEY" in content
+    assert "SECRET_KEY" in content
     assert "VITE_API_BASE_URL" in content
     assert "POSTGRES_DB=test_project" in content
 

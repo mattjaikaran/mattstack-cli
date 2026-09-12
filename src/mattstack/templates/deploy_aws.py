@@ -9,7 +9,7 @@ from mattstack.config import ProjectConfig
 
 
 def generate_ecs_task_definition(config: ProjectConfig) -> str:
-    pkg = config.django_package
+    pkg = config.wsgi_app
     """Generate ECS task definition JSON."""
     task_def: dict[str, Any] = {
         "family": f"{config.name}-task",
@@ -69,7 +69,7 @@ def generate_ecs_task_definition(config: ProjectConfig) -> str:
 
 
 def generate_copilot_manifest(config: ProjectConfig) -> str:
-    pkg = config.django_package
+    pkg = config.wsgi_app
     """Generate AWS Copilot service manifest YAML."""
     lines: list[str] = [
         f"name: {config.name}-api",

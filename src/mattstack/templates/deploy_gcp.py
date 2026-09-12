@@ -25,7 +25,7 @@ def generate_cloud_run_yaml(config: ProjectConfig) -> str:
         "            - containerPort: 8000",
         "          env:",
         "            - name: DJANGO_SETTINGS_MODULE",
-        f'              value: "{config.django_package}.settings"',
+        f'              value: "{config.wsgi_app}.settings"',
         "            - name: PYTHONUNBUFFERED",
         '              value: "1"',
         "          resources:",
@@ -46,10 +46,10 @@ def generate_app_engine_yaml(config: ProjectConfig) -> str:
     """Generate App Engine app.yaml."""
     lines: list[str] = [
         "runtime: python312",
-        f"entrypoint: gunicorn {config.django_package}.wsgi:application --bind :$PORT",
+        f"entrypoint: gunicorn {config.wsgi_app}.wsgi:application --bind :$PORT",
         "",
         "env_variables:",
-        f"  DJANGO_SETTINGS_MODULE: '{config.django_package}.settings'",
+        f"  DJANGO_SETTINGS_MODULE: '{config.wsgi_app}.settings'",
         "  PYTHONUNBUFFERED: '1'",
         "",
         "automatic_scaling:",

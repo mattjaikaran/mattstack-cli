@@ -95,7 +95,15 @@ def _api_dev_service(config: ProjectConfig) -> str:
     env_lines = [
         '      DEBUG: "true"',
         f"      DATABASE_URL: postgres://postgres:postgres@db:5432/{config.python_package_name}",
-        "      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-change-me-in-production}",
+        # The boilerplate's settings read discrete DB_* variables, not
+        # DATABASE_URL. Without these, settings.DATABASES has an empty NAME
+        # and every management command fails on connect.
+        f"      DB_NAME: {config.python_package_name}",
+        "      DB_USER: postgres",
+        "      DB_PASSWORD: postgres",
+        "      DB_HOST: db",
+        "      DB_PORT: 5432",
+        "      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}",
     ]
     if config.use_redis:
         env_lines.append("      REDIS_URL: redis://redis:6379/0")
@@ -189,6 +197,12 @@ def _celery_worker_service(config: ProjectConfig) -> str:
       - ./backend:/app
     environment:
       DATABASE_URL: postgres://postgres:postgres@db:5432/{config.python_package_name}
+      DB_NAME: {config.python_package_name}
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_HOST: db
+      DB_PORT: 5432
+      SECRET_KEY: ${{SECRET_KEY:-change-me-in-production}}
       REDIS_URL: redis://redis:6379/0
     depends_on:
       db:
@@ -211,6 +225,12 @@ def _celery_beat_service(config: ProjectConfig) -> str:
       - ./backend:/app
     environment:
       DATABASE_URL: postgres://postgres:postgres@db:5432/{config.python_package_name}
+      DB_NAME: {config.python_package_name}
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      DB_HOST: db
+      DB_PORT: 5432
+      SECRET_KEY: ${{SECRET_KEY:-change-me-in-production}}
       REDIS_URL: redis://redis:6379/0
     depends_on:
       db:

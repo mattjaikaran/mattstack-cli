@@ -19,17 +19,17 @@ def generate_render_yaml(config: ProjectConfig) -> str:
     region: oregon
     plan: starter
     buildCommand: pip install uv && uv sync
-    startCommand: uv run gunicorn {config.django_package}.wsgi:application --bind 0.0.0.0:$PORT
+    startCommand: uv run gunicorn {config.wsgi_app}.wsgi:application --bind 0.0.0.0:$PORT
     healthCheckPath: /api/health/
     envVars:
       - key: DATABASE_URL
         fromDatabase:
           name: {config.name}-db
           property: connectionString
-      - key: DJANGO_SECRET_KEY
+      - key: SECRET_KEY
         generateValue: true
       - key: DJANGO_SETTINGS_MODULE
-        value: {config.django_package}.settings
+        value: {config.wsgi_app}.settings
       - key: ALLOWED_HOSTS
         value: .onrender.com"""
 
