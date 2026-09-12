@@ -16,12 +16,14 @@ from mattstack.config import (
     ProjectType,
     Variant,
 )
+from mattstack.gauntlet.init import CONFIG_FILENAME
+from mattstack.gauntlet.init import write_config as write_gauntlet_config
 from mattstack.generators.backend_only import BackendOnlyGenerator
 from mattstack.generators.frontend_only import FrontendOnlyGenerator
 from mattstack.generators.fullstack import FullstackGenerator
 from mattstack.presets import get_all_presets, get_preset
 from mattstack.templates.mattstack_yml import generate_mattstack_yml
-from mattstack.utils.console import console, print_error, print_success
+from mattstack.utils.console import console, print_error, print_info, print_success
 from mattstack.utils.git import get_git_user
 from mattstack.utils.yaml_config import load_config_file
 
@@ -318,9 +320,25 @@ def _generate(config: ProjectConfig) -> bool:
 
     if success:
         generator.write_file("mattstack.yml", generate_mattstack_yml())
+        _write_gauntlet_config(config)
         _print_next_steps(config)
 
     return success
+
+
+def _write_gauntlet_config(config: ProjectConfig) -> None:
+    """Write gauntlet.toml so the project has a verification gate."""
+    if config.dry_run:
+        print_info(f"[dry-run] Would create {CONFIG_FILENAME}")
+        return
+    written = write_gauntlet_config(
+        config.path,
+        has_python=config.has_backend,
+        has_typescript=config.has_frontend,
+        has_rust=False,
+    )
+    if written is not None:
+        print_success(f"Wrote {written.name} (Gauntlet configuration)")
 
 
 def _print_next_steps(config: ProjectConfig) -> None:
@@ -330,6 +348,7 @@ def _print_next_steps(config: ProjectConfig) -> None:
     console.print("[bold]Next steps:[/bold]")
     console.print(f"  [cyan]cd {config.name}[/cyan]")
     console.print("  [cyan]make setup[/cyan]")
+    console.print("  [cyan]mattstack audit[/cyan]        # Run the Gauntlet gate")
     if config.has_backend:
         console.print("  [cyan]make up[/cyan]          # Start Docker services")
         if config.is_nestjs_backend:

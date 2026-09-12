@@ -210,7 +210,7 @@ def _commands(config: ProjectConfig) -> str:
     lines.append("mattstack lint         # Lint all code")
     lines.append("mattstack lint --fix   # Auto-fix lint issues")
     lines.append("mattstack env check    # Verify .env files are in sync")
-    lines.append("mattstack audit        # Run static analysis")
+    lines.append("mattstack audit        # Run the Gauntlet gate")
     lines.append("```")
     return "\n".join(lines)
 
@@ -358,7 +358,7 @@ def _mattstack_integration(config: ProjectConfig) -> str:
         "- `mattstack lint` — Lint all code",
         "- `mattstack fmt` — Format all code",
         "- `mattstack env check` — Compare .env files",
-        "- `mattstack audit` — Static analysis (quality, types, endpoints, tests, dependencies)",
+        "- `mattstack audit` — Run the Gauntlet gate (format, lint, types, tests, secrets, review)",
         "- `mattstack health` — Check service health (Docker, DB, Redis, servers)",
         "- `mattstack deps check` — Show outdated packages",
     ]
