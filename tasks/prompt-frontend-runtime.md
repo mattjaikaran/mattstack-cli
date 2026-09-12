@@ -43,10 +43,12 @@ are unrelated projects that happen to share a word.
 TanStack Router line. Align `react-vite-boilerplate` to it rather than pulling
 `@latest`, which drifts.
 
-`react-vite-starter` is the one preset that is not TanStack Router — it uses
-React Router (`BrowserRouter` in `src/main.tsx`). Decide explicitly whether that
-stays (it is a deliberate alternative) or migrates to TanStack Router for
-consistency. Do not silently rewrite it.
+`react-vite-starter` uses React Router (`react-router-dom`, `BrowserRouter` in
+`src/main.tsx`). **That is intentional by design.** It is the boilerplate for
+when you want React Router instead of TanStack Router, so it is a deliberate
+alternative, not a defect. Leave it as it is: do not migrate it to TanStack
+Router, and do not apply this document's TanStack Router fix to it.
+
 
 ## Root cause, measured
 
@@ -141,15 +143,32 @@ Two constraints:
    `bun install --frozen-lockfile`, which fails when `package.json` and the lock
    disagree. A `package.json` edit alone breaks the container build.
 2. **Cover every frontend preset.** The rsbuild and kibo boilers already look
-   correct — verify them rather than assuming, and leave `react-vite-starter`
-   alone unless you decide to migrate it.
+   correct — verify them rather than assuming. Leave `react-vite-starter` on
+   React Router: that is its purpose.
 
 ## Also fix while you are in here
 
-- **The dev proxy is dead code.** `frontend_config.py` writes
-  `vite.config.monorepo.ts`, but `bun run dev` runs upstream's `vite.config.ts`,
-  so the proxy to `:8000` never loads. "Reaches the API" cannot pass until this
-  is resolved — merge the proxy into the config that `dev` actually uses.
+- **The dev proxy is dead code, and the naive fix breaks the app.**
+  `frontend_config.py` writes `vite.config.monorepo.ts`, but `bun run dev` runs
+  upstream's `vite.config.ts`, so the proxy to `:8000` never loads.
+
+  Do **not** point `dev` at `vite.config.monorepo.ts`. That file is a stale
+  pre-TanStack config and is not a superset of upstream's. Measured on a real
+  scaffold:
+
+  | | upstream `vite.config.ts` | `vite.config.monorepo.ts` |
+  |---|---|---|
+  | plugins | `tanstackRouter(...)` + `react()` | `react()` only |
+  | `@/...` aliases | 9 | 1 (`@` only) |
+  | dirname | `import.meta.dirname` | `__dirname` |
+
+  Swapping configs disables file-based routing and breaks every
+  `@/components/...` import. The server would still start, so it reproduces the
+  exact "server starts, app broken" trap this document warns about.
+
+  Scope the fix: add **only** the `server.proxy` block to upstream's
+  `vite.config.ts`. Then regenerate `vite.config.monorepo.ts` from upstream's
+  file plus the proxy, so the two cannot drift.
 - **`make gauntlet` mutates the working tree.** The generated Makefile `gauntlet`
   targets run `mattstack audit --fail-if-absent` without `--no-todo`, so a gate
   writes `tasks/todo.md`. Add `--no-todo` to match the CI job.
