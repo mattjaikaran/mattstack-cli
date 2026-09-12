@@ -725,3 +725,21 @@ https://github.com/mattjaikaran/gauntlet.
 - Re-add per-check tuning to the generated config once Gauntlet settles the key form.
   Coverage, CRAP, and TDD currently rely on Gauntlet's defaults, which match what
   `gauntlet init` writes
+
+---
+
+## Cross-branch follow-up (after both branches land)
+
+The scaffold branch (`fix/scaffold-correctness`) adds a `gauntlet` target to the generated
+Makefile that runs `mattstack audit` with no flags, and `mattstack init` writes
+`skip_if_absent = true`. That combination is a gate which exits 0 without checking anything.
+
+Once this branch lands, change that target to `mattstack audit --fail-if-absent`, so a
+missing binary fails the local gate the way it fails CI, and add a `gauntlet-quick` target
+that runs `--tier fast`. Neither flag exists on `main`, which is why the scaffold branch
+could not use them.
+
+Also: `src/mattstack/commands/sync.py` grew past 700 lines while fixing the type mappings,
+so it is further over the 400-line FILELENGTH gate than the 621 the table above records.
+Extract the pure mapping layer (`PYTHON_TO_TS`, `PYTHON_TO_ZOD`, `CONSTRAINT_TO_ZOD`,
+`_resolve_ts_type`, `_resolve_zod_type`, `_split_top_level_union`) into its own module.
