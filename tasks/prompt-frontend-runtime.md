@@ -28,13 +28,16 @@ it changes the version of TanStack Router.
 
 ### What each boilerplate ships
 
-| Boilerplate | Router | Versions | State |
+| Boilerplate | Router | Packages (versions) | State |
 |---|---|---|---|
-| `react-vite-boilerplate` | TanStack Router | `react-router` 1.58.3, `router-plugin` 1.58.4 | **broken** |
-| `react-vite-starter` | **React Router** (`react-router-dom` 7.1.0) | — | different router; see below |
-| `react-rsbuild-boilerplate` | TanStack Router | `react-router` 1.169.2, `router-plugin` 1.167.34 | coherent |
-| `react-rsbuild-kibo-boilerplate` | TanStack Router | `react-router` 1.169.2, `router-plugin` 1.167.34 | coherent |
+| `react-vite-boilerplate` | TanStack Router | `@tanstack/react-router` 1.58.3, `@tanstack/router-plugin` 1.58.4 | **broken** |
+| `react-vite-starter` | **React Router** | `react-router-dom` 7.1.0 | different router; see below |
+| `react-rsbuild-boilerplate` | TanStack Router | `@tanstack/react-router` 1.169.2, `@tanstack/router-plugin` 1.167.34 | coherent |
+| `react-rsbuild-kibo-boilerplate` | TanStack Router | `@tanstack/react-router` 1.169.2, `@tanstack/router-plugin` 1.167.34 | coherent |
 | `nextjs-starter` | none | — | Next.js has its own file router; no dependency needed |
+
+Read those package names fully. `@tanstack/react-router` and `react-router-dom`
+are unrelated projects that happen to share a word.
 
 **The rsbuild pair is the known-good reference.** It already ships a coherent
 TanStack Router line. Align `react-vite-boilerplate` to it rather than pulling
