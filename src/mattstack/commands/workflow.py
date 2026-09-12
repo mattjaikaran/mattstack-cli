@@ -1,4 +1,9 @@
-"""Workflow command: CI/CD workflow generation for fullstack monorepos."""
+"""Workflow command: CI/CD workflow generation for fullstack monorepos.
+
+Job names are part of the contract. `mattstack protect` requires the
+`gauntlet` status check by default, so this generator emits a job with that
+exact name for every project type.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +12,13 @@ from pathlib import Path
 
 import typer
 
+from mattstack.config import (
+    BackendFramework,
+    FrontendFramework,
+    ProjectConfig,
+    ProjectType,
+)
+from mattstack.templates.frontend_commands import frontend_commands
 from mattstack.utils.console import (
     console,
     print_error,
@@ -29,20 +41,107 @@ def _detect_project_type(path: Path) -> str:
     return "unknown"
 
 
-def _generate_github_actions(path: Path, project_type: str) -> str:
+def _detect_frontend_framework(path: Path) -> FrontendFramework:
+    """Resolve the frontend framework from the generated package.json.
+
+    The scaffolding process renames the package, so the manifest does not
+    name the framework. Two markers are reliable, in order:
+
+    1. The dev script: `next` or `rsbuild` identify those boilerplates.
+    2. The type-check script name. `react-vite-boilerplate` and
+       `react-vite-starter` both run `vite` for dev, so the dev script
+       cannot tell them apart, but only the boilerplate defines
+       `type-check`; the starter defines `typecheck`.
+
+    Getting this wrong emits a CI job that fails on its first run, so this
+    must agree with `mattstack.templates.frontend_commands`.
+    """
+    import json
+
+    package_json = path / "frontend" / "package.json"
+    try:
+        pkg = json.loads(package_json.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return FrontendFramework.REACT_VITE
+
+    scripts = pkg.get("scripts", {})
+    if not isinstance(scripts, dict):
+        return FrontendFramework.REACT_VITE
+    dev = str(scripts.get("dev", ""))
+    if "next" in dev:
+        return FrontendFramework.NEXTJS
+    if "rsbuild" in dev:
+        return FrontendFramework.REACT_RSBUILD
+    if "type-check" in scripts:
+        return FrontendFramework.REACT_VITE
+    return FrontendFramework.REACT_VITE_STARTER
+
+
+def _config_for_ci(path: Path, project_type: str) -> ProjectConfig:
+    """Build the minimal config needed to resolve frontend commands."""
+    has_backend = (path / "backend" / "pyproject.toml").exists()
+    if project_type == "frontend-only":
+        ptype = ProjectType.FRONTEND_ONLY
+    elif project_type == "backend-only":
+        ptype = ProjectType.BACKEND_ONLY
+    else:
+        ptype = ProjectType.FULLSTACK
+    return ProjectConfig(
+        name=path.name or "project",
+        path=path,
+        project_type=ptype,
+        frontend_framework=_detect_frontend_framework(path),
+        backend_framework=BackendFramework.DJANGO_NINJA,
+        use_celery=False,
+        use_redis=has_backend,
+        init_git=False,
+    )
+
+
+def _gauntlet_job() -> str:
+    """Build the Gauntlet verification job.
+
+    The job name is the status check that `mattstack protect` requires, so
+    do not rename it. It calls mattstack rather than the gauntlet binary,
+    because `mattstack gauntlet` exits 1 when the binary is missing.
+
+    mattstack is not on PyPI yet, so install it from git. The job runs
+    `mattstack audit`, which delegates to the Gauntlet binary when it is
+    installed and falls back to the built-in auditors otherwise, so the
+    job is useful on any machine.
+    """
+    return """  gauntlet:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Install mattstack
+        run: uv tool install git+https://github.com/mattjaikaran/mattstack-cli
+      - name: Run the Gauntlet gate
+        run: mattstack audit --no-todo"""
+
+
+def _generate_github_actions(path: Path, project_type: str, *, with_gauntlet: bool) -> str:
     """Generate GitHub Actions CI workflow YAML."""
     jobs: list[str] = []
+
+    if with_gauntlet:
+        jobs.append(_gauntlet_job())
 
     if project_type in ("fullstack", "backend-only"):
         jobs.append(_backend_lint_job())
         jobs.append(_backend_test_job())
 
     if project_type in ("fullstack", "frontend-only"):
-        jobs.append(_frontend_lint_job())
-        jobs.append(_frontend_test_job())
-        jobs.append(_frontend_typecheck_job())
+        config = _config_for_ci(path, project_type)
+        cmds = frontend_commands(config)
+        jobs.append(_bun_job("frontend-lint", cmds.lint))
+        if cmds.test:
+            jobs.append(_bun_job("frontend-test", cmds.test))
+        if cmds.typecheck:
+            jobs.append(_bun_job("frontend-typecheck", cmds.typecheck))
 
-    jobs_block = "\n".join(jobs)
+    jobs_block = "\n\n".join(jobs)
 
     return f"""name: CI
 
@@ -130,8 +229,9 @@ def _backend_test_job() -> str:
       - run: uv run pytest -x -q"""
 
 
-def _frontend_lint_job() -> str:
-    return """  frontend-lint:
+def _bun_job(name: str, command: str) -> str:
+    """Build one CI job that runs a bun command in frontend/."""
+    return f"""  {name}:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -142,43 +242,24 @@ def _frontend_lint_job() -> str:
         with:
           bun-version: latest
       - run: bun install --frozen-lockfile
-      - run: bun run lint"""
+      - run: {command}"""
 
 
-def _frontend_test_job() -> str:
-    return """  frontend-test:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - run: bun install --frozen-lockfile
-      - run: bun run test"""
-
-
-def _frontend_typecheck_job() -> str:
-    return """  frontend-typecheck:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: frontend
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - run: bun install --frozen-lockfile
-      - run: bunx tsc --noEmit"""
-
-
-def _generate_gitlab_ci(path: Path, project_type: str) -> str:
+def _generate_gitlab_ci(path: Path, project_type: str, *, with_gauntlet: bool) -> str:
     """Generate GitLab CI configuration."""
     stages: list[str] = []
     jobs: list[str] = []
+
+    if with_gauntlet:
+        stages.append("verify")
+        jobs.append("""
+gauntlet:
+  stage: verify
+  image: python:3.13-slim
+  before_script:
+    - pip install uv && uv tool install git+https://github.com/mattjaikaran/mattstack-cli
+  script:
+    - mattstack audit --no-todo""")
 
     if project_type in ("fullstack", "backend-only"):
         stages.extend(["lint", "test"])
@@ -213,37 +294,18 @@ backend-test:
     - uv run pytest -x -q""")
 
     if project_type in ("fullstack", "frontend-only"):
+        config = _config_for_ci(path, project_type)
+        cmds = frontend_commands(config)
         if "lint" not in stages:
             stages.append("lint")
         if "test" not in stages:
             stages.append("test")
 
-        jobs.append("""
-frontend-lint:
-  stage: lint
-  image: oven/bun:latest
-  before_script:
-    - cd frontend && bun install --frozen-lockfile
-  script:
-    - bun run lint""")
-
-        jobs.append("""
-frontend-test:
-  stage: test
-  image: oven/bun:latest
-  before_script:
-    - cd frontend && bun install --frozen-lockfile
-  script:
-    - bun run test""")
-
-        jobs.append("""
-frontend-typecheck:
-  stage: test
-  image: oven/bun:latest
-  before_script:
-    - cd frontend && bun install --frozen-lockfile
-  script:
-    - bunx tsc --noEmit""")
+        jobs.append(_gitlab_frontend_job("frontend-lint", "lint", cmds.lint))
+        if cmds.test:
+            jobs.append(_gitlab_frontend_job("frontend-test", "test", cmds.test))
+        if cmds.typecheck:
+            jobs.append(_gitlab_frontend_job("frontend-typecheck", "test", cmds.typecheck))
 
     stages_str = "\n".join(f"  - {s}" for s in stages)
     jobs_str = "\n".join(jobs)
@@ -252,6 +314,18 @@ frontend-typecheck:
 {stages_str}
 {jobs_str}
 """
+
+
+def _gitlab_frontend_job(name: str, stage: str, command: str) -> str:
+    """Build one GitLab job that runs a bun command in frontend/."""
+    return f"""
+{name}:
+  stage: {stage}
+  image: oven/bun:latest
+  before_script:
+    - cd frontend && bun install --frozen-lockfile
+  script:
+    - {command}"""
 
 
 def run_generate_workflow(
@@ -280,10 +354,10 @@ def run_generate_workflow(
     print_info(f"Platform: {platform}")
 
     if platform == "github-actions":
-        content = _generate_github_actions(path, project_type)
+        content = _generate_github_actions(path, project_type, with_gauntlet=True)
         output_path = path / ".github" / "workflows" / "ci.yml"
     elif platform == "gitlab-ci":
-        content = _generate_gitlab_ci(path, project_type)
+        content = _generate_gitlab_ci(path, project_type, with_gauntlet=True)
         output_path = path / ".gitlab-ci.yml"
     else:
         print_error(f"Unknown platform: {platform}. Use: github-actions, gitlab-ci")

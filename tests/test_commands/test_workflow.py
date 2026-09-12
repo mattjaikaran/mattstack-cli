@@ -53,7 +53,7 @@ class TestDetectProjectType:
 
 class TestGenerateGithubActions:
     def test_fullstack_includes_all_jobs(self, tmp_path: Path) -> None:
-        content = _generate_github_actions(tmp_path, "fullstack")
+        content = _generate_github_actions(tmp_path, "fullstack", with_gauntlet=False)
         assert "backend-lint:" in content
         assert "backend-test:" in content
         assert "frontend-lint:" in content
@@ -61,14 +61,14 @@ class TestGenerateGithubActions:
         assert "frontend-typecheck:" in content
 
     def test_backend_only_excludes_frontend_jobs(self, tmp_path: Path) -> None:
-        content = _generate_github_actions(tmp_path, "backend-only")
+        content = _generate_github_actions(tmp_path, "backend-only", with_gauntlet=False)
         assert "backend-lint:" in content
         assert "backend-test:" in content
         assert "frontend-lint:" not in content
         assert "frontend-test:" not in content
 
     def test_frontend_only_excludes_backend_jobs(self, tmp_path: Path) -> None:
-        content = _generate_github_actions(tmp_path, "frontend-only")
+        content = _generate_github_actions(tmp_path, "frontend-only", with_gauntlet=False)
         assert "frontend-lint:" in content
         assert "frontend-test:" in content
         assert "frontend-typecheck:" in content
@@ -76,35 +76,35 @@ class TestGenerateGithubActions:
         assert "backend-test:" not in content
 
     def test_output_is_valid_yaml_structure(self, tmp_path: Path) -> None:
-        content = _generate_github_actions(tmp_path, "fullstack")
+        content = _generate_github_actions(tmp_path, "fullstack", with_gauntlet=False)
         assert content.startswith("name: CI")
         assert "on:" in content
         assert "push:" in content
         assert "jobs:" in content
 
     def test_github_actions_uses_uv_for_python(self, tmp_path: Path) -> None:
-        content = _generate_github_actions(tmp_path, "backend-only")
+        content = _generate_github_actions(tmp_path, "backend-only", with_gauntlet=False)
         assert "astral-sh/setup-uv" in content
         assert "uv run pytest" in content
         assert "uv run ruff" in content
 
     def test_github_actions_uses_bun_for_frontend(self, tmp_path: Path) -> None:
-        content = _generate_github_actions(tmp_path, "frontend-only")
+        content = _generate_github_actions(tmp_path, "frontend-only", with_gauntlet=False)
         assert "oven-sh/setup-bun" in content
         assert "bun install" in content
 
     def test_backend_test_job_includes_postgres_service(self, tmp_path: Path) -> None:
-        content = _generate_github_actions(tmp_path, "backend-only")
+        content = _generate_github_actions(tmp_path, "backend-only", with_gauntlet=False)
         assert "postgres:" in content
         assert "POSTGRES_DB:" in content
 
     def test_backend_test_job_includes_redis_service(self, tmp_path: Path) -> None:
-        content = _generate_github_actions(tmp_path, "backend-only")
+        content = _generate_github_actions(tmp_path, "backend-only", with_gauntlet=False)
         assert "redis:" in content
         assert "REDIS_URL:" in content
 
     def test_concurrency_cancel_in_progress(self, tmp_path: Path) -> None:
-        content = _generate_github_actions(tmp_path, "fullstack")
+        content = _generate_github_actions(tmp_path, "fullstack", with_gauntlet=False)
         assert "concurrency:" in content
         assert "cancel-in-progress: true" in content
 
@@ -116,7 +116,7 @@ class TestGenerateGithubActions:
 
 class TestGenerateGitlabCi:
     def test_fullstack_has_all_stages(self, tmp_path: Path) -> None:
-        content = _generate_gitlab_ci(tmp_path, "fullstack")
+        content = _generate_gitlab_ci(tmp_path, "fullstack", with_gauntlet=False)
         assert "backend-lint:" in content
         assert "backend-test:" in content
         assert "frontend-lint:" in content
@@ -124,13 +124,13 @@ class TestGenerateGitlabCi:
         assert "frontend-typecheck:" in content
 
     def test_backend_only_has_backend_jobs(self, tmp_path: Path) -> None:
-        content = _generate_gitlab_ci(tmp_path, "backend-only")
+        content = _generate_gitlab_ci(tmp_path, "backend-only", with_gauntlet=False)
         assert "backend-lint:" in content
         assert "backend-test:" in content
         assert "frontend-lint:" not in content
 
     def test_frontend_only_has_frontend_jobs(self, tmp_path: Path) -> None:
-        content = _generate_gitlab_ci(tmp_path, "frontend-only")
+        content = _generate_gitlab_ci(tmp_path, "frontend-only", with_gauntlet=False)
         assert "frontend-lint:" in content
         assert (
             True  # SIM222: template generates test job
@@ -138,11 +138,11 @@ class TestGenerateGitlabCi:
         assert "backend-lint:" not in content
 
     def test_output_starts_with_stages(self, tmp_path: Path) -> None:
-        content = _generate_gitlab_ci(tmp_path, "fullstack")
+        content = _generate_gitlab_ci(tmp_path, "fullstack", with_gauntlet=False)
         assert content.startswith("stages:")
 
     def test_gitlab_ci_uses_postgres_service(self, tmp_path: Path) -> None:
-        content = _generate_gitlab_ci(tmp_path, "backend-only")
+        content = _generate_gitlab_ci(tmp_path, "backend-only", with_gauntlet=False)
         assert "postgres:" in content
         assert "POSTGRES_DB:" in content
 
