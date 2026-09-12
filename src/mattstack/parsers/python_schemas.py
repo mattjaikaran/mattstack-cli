@@ -108,9 +108,23 @@ def parse_pydantic_file(path: Path) -> list[PydanticSchema]:
     return schemas
 
 
+
+
+def _strip_docstrings(body: str) -> str:
+    """Remove triple-quoted blocks from a class body.
+
+    A docstring is not a field. Without this, a docstring line such as
+    ``- ``alias_generator=to_camel``: field ``first_name`` -> key`` parses as
+    a field named ``alias_generator``, and the generated TypeScript is
+    invalid.
+    """
+    return re.sub(r'"""(?:.|\n)*?"""', "", body)
+
+
 def _parse_fields(body: str) -> list[PydanticField]:
     """Extract fields from a class body."""
     fields: list[PydanticField] = []
+    body = _strip_docstrings(body)
 
     for match in FIELD_RE.finditer(body):
         name = match.group(1)

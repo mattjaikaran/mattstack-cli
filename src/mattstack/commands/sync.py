@@ -192,7 +192,10 @@ def _collect_schemas(project_path: Path) -> list[PydanticSchema]:
 
     schemas: list[PydanticSchema] = []
     for f in schema_files:
-        schemas.extend(parse_pydantic_file(f))
+        # A base class with no fields of its own, such as a shared
+        # CamelCaseSchema, produces an empty interface that duplicates its
+        # own subclasses. The backend already emits many of these.
+        schemas.extend(s for s in parse_pydantic_file(f) if s.fields)
     return schemas
 
 
