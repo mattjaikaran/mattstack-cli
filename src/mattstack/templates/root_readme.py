@@ -16,6 +16,7 @@ def generate_readme(config: ProjectConfig) -> str:
     elif config.has_frontend:
         sections.append(_project_structure_frontend(config))
 
+    sections.append(_prerequisites())
     sections.append(_commands(config))
 
     if config.has_backend:
@@ -25,6 +26,25 @@ def generate_readme(config: ProjectConfig) -> str:
         sections.append(_b2b_features())
 
     return "\n\n".join(sections) + "\n"
+
+
+def _prerequisites() -> str:
+    """Return the tools the generated Makefile calls."""
+    return """\
+## Prerequisites
+
+Install these before you run `make setup`:
+
+| Tool | Used by |
+|---|---|
+| [uv](https://docs.astral.sh/uv/) | Backend dependencies and Django commands |
+| [bun](https://bun.sh/) | Frontend dependencies and scripts |
+| [Docker](https://docs.docker.com/get-docker/) | `make up` and the database |
+| [mattstack](https://github.com/mattjaikaran/mattstack-cli) | `make sync-types`, `make gauntlet` |
+
+```bash
+uv tool install git+https://github.com/mattjaikaran/mattstack-cli
+```"""
 
 
 def _header(config: ProjectConfig) -> str:

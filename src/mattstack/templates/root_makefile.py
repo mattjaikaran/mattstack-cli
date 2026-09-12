@@ -34,7 +34,15 @@ def generate_makefile(config: ProjectConfig) -> str:
 def _header() -> str:
     return """\
 .DEFAULT_GOAL := help
-SHELL := /bin/bash"""
+SHELL := /bin/bash
+
+# Load the root .env so host commands such as `make backend-migrate` see the
+# same settings the containers get. Django reads DB_* and it looks for .env
+# next to manage.py, which does not exist in a monorepo.
+ifneq (,$(wildcard ./.env))
+include .env
+export
+endif"""
 
 
 def _help_target() -> str:
@@ -261,6 +269,7 @@ def _combined_targets(config: ProjectConfig) -> str:
 
 def _combined_targets_django(config: ProjectConfig) -> str:
     cmds = frontend_commands(config)
+    frontend_format = cmds.format or "echo 'No frontend format script'"
     frontend_check = cmds.typecheck or "echo 'No frontend type-check script'"
     frontend_test = cmds.test or "echo 'No frontend test script'"
     return f"""
@@ -280,7 +289,7 @@ typecheck: ## Type-check the frontend
 
 format: ## Format all code
 \tcd backend && uv run ruff format .
-\tcd frontend && bun run format
+\tcd frontend && {frontend_format}
 
 sync-types: ## Sync backend types to frontend TypeScript
 \tmattstack sync types
@@ -310,7 +319,7 @@ lint: ## Lint all code
 
 format: ## Format all code
 \tcd backend && bun run format
-\tcd frontend && bun run format
+\tcd frontend && {cmds.format or "echo 'No frontend format script'"}
 
 gauntlet: ## Run the verification gate
 \tmattstack audit
