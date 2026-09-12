@@ -63,9 +63,7 @@ class HermesNotifier(WebhookNotifier):
 class TelegramNotifier:
     """Sends a formatted message directly to Telegram."""
 
-    def __init__(
-        self, token: str, chat_id: str, client: httpx.Client | None = None
-    ) -> None:
+    def __init__(self, token: str, chat_id: str, client: httpx.Client | None = None) -> None:
         self.token = token
         self.chat_id = chat_id
         self._client = client or httpx.Client(timeout=30.0)

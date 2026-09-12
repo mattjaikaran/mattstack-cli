@@ -600,9 +600,7 @@ def _rules_callback(
     dry_run: Annotated[
         bool, typer.Option("--dry-run", help="Preview what would be generated")
     ] = False,
-    force: Annotated[
-        bool, typer.Option("--force", help="Overwrite existing files")
-    ] = False,
+    force: Annotated[bool, typer.Option("--force", help="Overwrite existing files")] = False,
 ) -> None:
     """Generate AI agent config files when invoked without a subcommand."""
     if ctx.invoked_subcommand is None:

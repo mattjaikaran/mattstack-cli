@@ -90,9 +90,7 @@ class AxisBackend(BoardBackend):
             ),
         )
 
-    def link_pr(
-        self, task_id: str, pr_url: str, pr_number: int | None = None
-    ) -> dict[str, Any]:
+    def link_pr(self, task_id: str, pr_url: str, pr_number: int | None = None) -> dict[str, Any]:
         payload: dict[str, Any] = {"pr_url": pr_url}
         if pr_number is not None:
             payload["pr_number"] = pr_number

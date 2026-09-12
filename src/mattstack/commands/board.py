@@ -110,9 +110,7 @@ def link_pr(
 
 @board_app.command("sync")
 def sync(
-    project: Annotated[
-        str | None, typer.Option("--project", "-p", help="Board project")
-    ] = None,
+    project: Annotated[str | None, typer.Option("--project", "-p", help="Board project")] = None,
     path: Annotated[Path | None, typer.Option("--path", help="Project path")] = None,
 ) -> None:
     """Push open tasks from tasks/todo.md into the configured board."""

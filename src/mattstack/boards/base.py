@@ -23,9 +23,7 @@ class BoardBackend(Protocol):
 
     def claim_task(self, task_id: str, agent_name: str) -> dict[str, Any]: ...
 
-    def get_next_task(
-        self, agent_name: str, project: str | None = None
-    ) -> dict[str, Any]: ...
+    def get_next_task(self, agent_name: str, project: str | None = None) -> dict[str, Any]: ...
 
     def link_pr(
         self, task_id: str, pr_url: str, pr_number: int | None = None
@@ -41,9 +39,7 @@ class StubBoardBackend:
 
     backend_name = "stub"
 
-    def create_task(
-        self, title: str, project: str | None = None, **fields: Any
-    ) -> dict[str, Any]:
+    def create_task(self, title: str, project: str | None = None, **fields: Any) -> dict[str, Any]:
         raise self._error()
 
     def list_tasks(self, **filters: Any) -> list[dict[str, Any]]:
@@ -68,6 +64,5 @@ class StubBoardBackend:
 
     def _error(self) -> NotImplementedError:
         return NotImplementedError(
-            f"{type(self).__name__} is not implemented yet. "
-            "Use board.backend: 'axis' or 'none'."
+            f"{type(self).__name__} is not implemented yet. Use board.backend: 'axis' or 'none'."
         )

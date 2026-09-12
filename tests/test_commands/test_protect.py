@@ -14,8 +14,7 @@ from mattstack.commands.protect import (
 
 def _write_config(tmp_path: Path, *, protect_main: bool, required_reviews: int = 2) -> None:
     (tmp_path / "mattstack.yml").write_text(
-        f"protect_main: {str(protect_main).lower()}\n"
-        f"required_reviews: {required_reviews}\n",
+        f"protect_main: {str(protect_main).lower()}\nrequired_reviews: {required_reviews}\n",
         encoding="utf-8",
     )
 

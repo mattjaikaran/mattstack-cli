@@ -101,9 +101,7 @@ def move_item(
         if not match or needle not in match.group(2):
             continue
         if match.group(1).lower() != "x":
-            raise ValueError(
-                f"Todo item {match.group(2)!r} is not checked; check it before moving"
-            )
+            raise ValueError(f"Todo item {match.group(2)!r} is not checked; check it before moving")
         target_index = index
         item_text = match.group(2)
         break
@@ -117,9 +115,7 @@ def move_item(
     todo_path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
 
     entry = f"- {item_text} ({today.isoformat()} · {sha})"
-    existing = (
-        completed_path.read_text(encoding="utf-8") if completed_path.exists() else ""
-    )
+    existing = completed_path.read_text(encoding="utf-8") if completed_path.exists() else ""
     completed_path.parent.mkdir(parents=True, exist_ok=True)
     if existing.strip():
         completed_path.write_text(existing.rstrip("\n") + "\n" + entry + "\n", encoding="utf-8")
