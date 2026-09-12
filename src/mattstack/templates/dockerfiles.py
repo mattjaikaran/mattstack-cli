@@ -120,6 +120,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
     && curl -LsSf https://astral.sh/uv/install.sh | sh \\
     && rm -rf /var/lib/apt/lists/*
 ENV PATH="/root/.local/bin:$PATH"
+# Pin the interpreter to the image's Python. A permissive requires-python
+# makes uv provision the newest release, which may have no wheel.
+ENV UV_PYTHON=3.13
 COPY backend/ .
 # UV_PROJECT_ENVIRONMENT puts the environment at /opt/venv. Without it, uv
 # creates /app/.venv and the runtime stages below copy an empty directory.

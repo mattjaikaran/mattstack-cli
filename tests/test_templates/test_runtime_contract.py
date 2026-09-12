@@ -96,13 +96,22 @@ def test_production_env_defines_the_settings_read(tmp_path: Path) -> None:
         assert f"{key}=" in content, f".env.production.example is missing {key}"
 
 
-def test_makefile_loads_the_root_env(tmp_path: Path) -> None:
-    """Host commands need DB_* too, and nothing else loads .env for them."""
+def test_makefile_sources_the_root_env(tmp_path: Path) -> None:
+    """Host commands need DB_* too, and nothing else loads .env for them.
+
+    The Makefile sources the file in the recipe shell rather than using
+    `include`: make treats `#` as a comment and expands `$`, and a generated
+    secret key can contain both, so an include would truncate the secret on
+    the host while the container kept the full value.
+    """
     from mattstack.templates.root_makefile import generate_makefile
 
     makefile = generate_makefile(_fullstack(tmp_path))
-    assert "include .env" in makefile
-    assert "export" in makefile
+    assert "LOAD_ENV := set -a && . ./.env && set +a" in makefile
+    assert "$(LOAD_ENV) cd backend" in makefile
+    assert not any(line.strip() == "include .env" for line in makefile.splitlines()), (
+        "make include mangles secrets; source the file in the recipe shell"
+    )
 
 
 def test_makefile_compose_and_env_agree_on_db_host(tmp_path: Path) -> None:
@@ -115,7 +124,7 @@ def test_makefile_compose_and_env_agree_on_db_host(tmp_path: Path) -> None:
 
     assert _service_env(compose, "api-dev")["DB_HOST"] == "db"
     assert "DB_HOST=localhost" in env_example
-    assert "include .env" in makefile
+    assert "$(LOAD_ENV)" in makefile
 
 
 def test_dockerfile_pins_the_interpreter_and_venv(tmp_path: Path) -> None:

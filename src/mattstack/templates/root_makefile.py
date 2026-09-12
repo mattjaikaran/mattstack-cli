@@ -36,13 +36,12 @@ def _header() -> str:
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
-# Load the root .env so host commands such as `make backend-migrate` see the
-# same settings the containers get. Django reads DB_* and it looks for .env
-# next to manage.py, which does not exist in a monorepo.
-ifneq (,$(wildcard ./.env))
-include .env
-export
-endif"""
+# Host commands need the same settings the containers get. Do not use
+# `include .env`: make treats # as a comment and $ as a variable, and a
+# generated secret key can contain both, so a secret would silently
+# truncate on the host while the container kept the full value. Source the
+# file in the recipe shell instead.
+LOAD_ENV := set -a && . ./.env && set +a &&"""
 
 
 def _help_target() -> str:
@@ -128,8 +127,8 @@ def _django_backend_targets() -> str:
 backend-setup: ## Install backend deps
 \tcd backend && uv sync
 
-backend-dev: ## Run backend dev server
-\tcd backend && uv run python manage.py runserver
+backend-dev: ## Run Django dev server
+\t$(LOAD_ENV) cd backend && uv run python manage.py runserver
 
 backend-test: ## Run backend tests
 \tcd backend && uv run pytest -v
@@ -138,16 +137,16 @@ backend-lint: ## Lint backend
 \tcd backend && uv run ruff check .
 
 backend-migrate: ## Run Django migrations
-\tcd backend && uv run python manage.py migrate
+\t$(LOAD_ENV) cd backend && uv run python manage.py migrate
 
 backend-makemigrations: ## Create Django migrations
-\tcd backend && uv run python manage.py makemigrations
+\t$(LOAD_ENV) cd backend && uv run python manage.py makemigrations
 
 backend-shell: ## Django shell
-\tcd backend && uv run python manage.py shell
+\t$(LOAD_ENV) cd backend && uv run python manage.py shell
 
 backend-superuser: ## Create Django superuser
-\tcd backend && uv run python manage.py createsuperuser"""
+\t$(LOAD_ENV) cd backend && uv run python manage.py createsuperuser"""
 
 
 def _fastapi_backend_targets(config: ProjectConfig) -> str:
@@ -158,7 +157,7 @@ backend-setup: ## Install backend deps
 \tcd backend && uv sync --extra dev
 
 backend-dev: ## Run FastAPI dev server (port 8000)
-\tcd backend && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+\t$(LOAD_ENV) cd backend && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 backend-test: ## Run backend tests (pytest)
 \tcd backend && uv run pytest -v
@@ -167,19 +166,19 @@ backend-lint: ## Lint backend (ruff)
 \tcd backend && uv run ruff check .
 
 backend-migrate: ## Run Alembic migrations
-\tcd backend && uv run alembic upgrade head
+\t$(LOAD_ENV) cd backend && uv run alembic upgrade head
 
 backend-makemigrations: ## Create a new Alembic migration
-\tcd backend && uv run alembic revision --autogenerate -m "$(MSG)"
+\t$(LOAD_ENV) cd backend && uv run alembic revision --autogenerate -m "$(MSG)"
 
 backend-shell: ## Open Python shell
 \tcd backend && uv run python
 
 backend-worker: ## Run Celery worker
-\tcd backend && uv run celery -A app.workers.celery_app worker --loglevel=info
+\t$(LOAD_ENV) cd backend && uv run celery -A app.workers.celery_app worker --loglevel=info
 
 backend-beat: ## Run Celery beat scheduler
-\tcd backend && uv run celery -A app.workers.celery_app beat --loglevel=info"""
+\t$(LOAD_ENV) cd backend && uv run celery -A app.workers.celery_app beat --loglevel=info"""
 
 
 def _nestjs_backend_targets(config: ProjectConfig) -> str:
