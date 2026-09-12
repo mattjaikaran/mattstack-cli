@@ -184,7 +184,7 @@ def _celery_worker_service(config: ProjectConfig) -> str:
       context: .
       dockerfile: docker/backend/Dockerfile
       target: development
-    command: uv run celery -A {config.python_package_name} worker -l info
+    command: uv run celery -A {config.django_package} worker -l info
     volumes:
       - ./backend:/app
     environment:
@@ -206,7 +206,7 @@ def _celery_beat_service(config: ProjectConfig) -> str:
       context: .
       dockerfile: docker/backend/Dockerfile
       target: development
-    command: uv run celery -A {config.python_package_name} beat -l info
+    command: uv run celery -A {config.django_package} beat -l info
     volumes:
       - ./backend:/app
     environment:

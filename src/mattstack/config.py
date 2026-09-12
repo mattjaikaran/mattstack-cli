@@ -135,6 +135,27 @@ class ProjectConfig:
         return to_python_package(self.name)
 
     @property
+    def django_package(self) -> str:
+        """Return the Django import package inside `backend/`.
+
+        The django-ninja boilerplate keeps `api` as its settings, WSGI, and
+        Celery module. `mattstack init` renames the distribution and the
+        PostgreSQL database to the project name, so `python_package_name`
+        differs from the importable package. Celery, gunicorn, and
+        DJANGO_SETTINGS_MODULE must all use this value.
+
+        Detect it from the cloned backend rather than assume, so a
+        boilerplate that uses a different module still works. Detection
+        reads the filesystem, so it does not depend on the order of the
+        generator steps.
+        """
+        backend = self.backend_dir
+        for candidate in ("api", "app"):
+            if (backend / candidate).is_dir():
+                return candidate
+        return "api"
+
+    @property
     def display_name(self) -> str:
         return self.name.replace("-", " ").title()
 

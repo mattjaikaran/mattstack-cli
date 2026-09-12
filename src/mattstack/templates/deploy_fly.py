@@ -8,7 +8,6 @@ from mattstack.config import ProjectConfig
 def generate_fly_toml(config: ProjectConfig) -> str:
     """Generate fly.toml for Fly.io deployment."""
     app_name = config.name
-    pkg = config.python_package_name
 
     sections: list[str] = [f'app = "{app_name}"', 'primary_region = "iad"', ""]
 
@@ -19,7 +18,7 @@ def generate_fly_toml(config: ProjectConfig) -> str:
                 '  dockerfile = "backend/Dockerfile"',
                 "",
                 "[env]",
-                f'  DJANGO_SETTINGS_MODULE = "{pkg}.settings"',
+                f'  DJANGO_SETTINGS_MODULE = "{config.django_package}.settings"',
                 '  PYTHONUNBUFFERED = "1"',
                 "",
                 "[http_service]",

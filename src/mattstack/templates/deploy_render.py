@@ -19,7 +19,7 @@ def generate_render_yaml(config: ProjectConfig) -> str:
     region: oregon
     plan: starter
     buildCommand: pip install uv && uv sync
-    startCommand: uv run gunicorn {config.python_package_name}.wsgi:application --bind 0.0.0.0:$PORT
+    startCommand: uv run gunicorn {config.django_package}.wsgi:application --bind 0.0.0.0:$PORT
     healthCheckPath: /api/health/
     envVars:
       - key: DATABASE_URL
@@ -29,7 +29,7 @@ def generate_render_yaml(config: ProjectConfig) -> str:
       - key: DJANGO_SECRET_KEY
         generateValue: true
       - key: DJANGO_SETTINGS_MODULE
-        value: {config.python_package_name}.settings
+        value: {config.django_package}.settings
       - key: ALLOWED_HOSTS
         value: .onrender.com"""
 
@@ -72,7 +72,7 @@ def generate_render_yaml(config: ProjectConfig) -> str:
     name: {config.name}-celery-worker
     runtime: python
     buildCommand: pip install uv && uv sync
-    startCommand: uv run celery -A {config.python_package_name} worker -l info
+    startCommand: uv run celery -A {config.django_package} worker -l info
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -91,7 +91,7 @@ def generate_render_yaml(config: ProjectConfig) -> str:
     name: {config.name}-celery-beat
     runtime: python
     buildCommand: pip install uv && uv sync
-    startCommand: uv run celery -A {config.python_package_name} beat -l info
+    startCommand: uv run celery -A {config.django_package} beat -l info
     envVars:
       - key: DATABASE_URL
         fromDatabase:

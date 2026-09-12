@@ -109,7 +109,7 @@ def _celery_worker_service(config: ProjectConfig) -> str:
       context: .
       dockerfile: docker/backend/Dockerfile
       target: production
-    command: celery -A {config.python_package_name} worker -l warning --concurrency=4
+    command: celery -A {config.django_package} worker -l warning --concurrency=4
     environment:
       DATABASE_URL: postgres://${{POSTGRES_USER:-postgres}}:${{POSTGRES_PASSWORD}}@db:5432/{config.python_package_name}
       REDIS_URL: redis://redis:6379/0
@@ -128,7 +128,7 @@ def _celery_beat_service(config: ProjectConfig) -> str:
       context: .
       dockerfile: docker/backend/Dockerfile
       target: production
-    command: celery -A {config.python_package_name} beat -l warning
+    command: celery -A {config.django_package} beat -l warning
     environment:
       DATABASE_URL: postgres://${{POSTGRES_USER:-postgres}}:${{POSTGRES_PASSWORD}}@db:5432/{config.python_package_name}
       REDIS_URL: redis://redis:6379/0
