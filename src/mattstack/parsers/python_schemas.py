@@ -45,10 +45,77 @@ class PydanticSchema:
     alias_generator: str | None = None  # e.g. "to_camel", "to_pascal"
 
 
-# Pattern: class Name(Schema): or class Name(BaseModel):
-CLASS_RE = re.compile(
-    r"^class\s+(\w+)\s*\(\s*(Schema|BaseModel|ModelSchema)\s*\)\s*:", re.MULTILINE
+# Pattern: class Name(SomeBase):
+# The base is any identifier; `_is_schema_parent` decides whether the class is
+# a schema. The boilerplate's schemas inherit a local base such as
+# CamelCaseSchema, so matching only `Schema`/`BaseModel` finds nothing.
+CLASS_RE = re.compile(r"^class\s+(\w+)\s*\(\s*([\w.]+)\s*\)\s*:", re.MULTILINE)
+
+# Base classes that mark a class as a schema.
+SCHEMA_BASES = frozenset({"Schema", "BaseModel", "ModelSchema"})
+
+
+def _is_schema_parent(parent: str) -> bool:
+    """Return True when a base class marks the class as a Pydantic schema."""
+    name = parent.rsplit(".", 1)[-1]
+    # A local base such as CamelCaseSchema or UserSchema is also a schema.
+    return name in SCHEMA_BASES or name.endswith("Schema")
+
+
+# Pattern: class Name(str, Enum): or class Name(StrEnum):
+ENUM_RE = re.compile(
+    r"^class\s+(\w+)\s*\(\s*(?:[\w.]+,\s*)*"
+    r"(?:str\s*,\s*)?(?:IntEnum|StrEnum|Enum)\s*\)\s*:",
+    re.MULTILINE,
 )
+
+# Pattern: MEMBER = "value"
+ENUM_MEMBER_RE = re.compile(r"^\s{4}(\w+)\s*=\s*(.+?)\s*$", re.MULTILINE)
+
+
+@dataclass
+class PythonEnum:
+    """A Python enum, emitted as a TypeScript union type."""
+
+    name: str
+    values: list[str] = field(default_factory=list)
+
+
+def parse_enums_file(path: Path) -> list[PythonEnum]:
+    """Parse every enum class from a Python file.
+
+    A schema field can reference an enum, and TypeScript cannot resolve a
+    name that was never emitted, so the type-check fails.
+    """
+    text = path.read_text(encoding="utf-8", errors="replace")
+    lines = text.split("\n")
+    enums: list[PythonEnum] = []
+
+    for match in ENUM_RE.finditer(text):
+        name = match.group(1)
+        start = text[: match.start()].count("\n") + 1
+        body: list[str] = []
+        for line in lines[start:]:
+            if line.strip() == "" or line.startswith("    ") or line.strip().startswith("#"):
+                body.append(line)
+            elif body:
+                break
+
+        values: list[str] = []
+        for member in ENUM_MEMBER_RE.finditer(_strip_docstrings("\n".join(body))):
+            if member.group(1).startswith("_"):
+                continue
+            raw = member.group(2).strip().rstrip(",")
+            # Drop a trailing comment: `BOOLEAN = "boolean"  # on/off toggle`
+            # would otherwise emit `"boolean"  # on/off toggle` as the value.
+            if "#" in raw:
+                raw = raw[: raw.index("#")].strip()
+            if raw.startswith(('"', "'")):
+                values.append(raw.strip("\"'"))
+        enums.append(PythonEnum(name=name, values=values))
+
+    return enums
+
 
 # Pattern: field_name: type = default or Field(...)
 FIELD_RE = re.compile(r"^\s{2,8}(\w+)\s*:\s*(.+?)(?:\s*=\s*(.+))?\s*$", re.MULTILINE)
@@ -80,6 +147,8 @@ def parse_pydantic_file(path: Path) -> list[PydanticSchema]:
     for match in CLASS_RE.finditer(text):
         class_name = match.group(1)
         parent = match.group(2)
+        if not _is_schema_parent(parent):
+            continue
         class_start = text[: match.start()].count("\n") + 1
 
         # Find the class body (indented lines after class declaration)
@@ -106,8 +175,6 @@ def parse_pydantic_file(path: Path) -> list[PydanticSchema]:
         )
 
     return schemas
-
-
 
 
 def _strip_docstrings(body: str) -> str:
