@@ -148,17 +148,16 @@ def test_fullstack_b2b(mock_clone, tmp_path: Path) -> None:
     assert result is True
 
 
-@patch("mattstack.generators.fullstack.setup_frontend_monorepo")
-@patch("mattstack.generators.fullstack.customize_frontend")
-@patch("mattstack.generators.fullstack.customize_backend")
 @patch("mattstack.generators.base.clone_repo", side_effect=_mock_clone)
-def test_fullstack_dry_run(mock_clone, mock_be, mock_fe, mock_setup, tmp_path: Path) -> None:
+def test_fullstack_dry_run_skips_customization(mock_clone, tmp_path: Path) -> None:
+    """Dry-run must not invoke post-processors that require generated files."""
     config = _make_config(tmp_path, dry_run=True)
     gen = FullstackGenerator(config)
     result = gen.run()
     assert result is True
-    # In dry-run, clone_repo should NOT be called
+    # In dry-run, clone_repo should NOT be called and no files are created.
     mock_clone.assert_not_called()
+    assert not config.path.exists()
 
 
 def test_fullstack_existing_dir_fails(tmp_path: Path) -> None:

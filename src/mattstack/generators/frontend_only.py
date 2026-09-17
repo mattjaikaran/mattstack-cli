@@ -12,7 +12,7 @@ from mattstack.templates.pre_commit_config import generate_pre_commit_config
 from mattstack.templates.root_gitignore import generate_gitignore
 from mattstack.templates.root_makefile import generate_makefile
 from mattstack.templates.root_readme import generate_readme
-from mattstack.utils.console import print_error
+from mattstack.utils.console import print_error, print_info
 
 
 class FrontendOnlyGenerator(BaseGenerator):
@@ -65,6 +65,9 @@ class FrontendOnlyGenerator(BaseGenerator):
             return False
 
     def _step_customize_frontend(self) -> bool:
+        if self.config.dry_run:
+            print_info("[dry-run] Would customize frontend")
+            return True
         try:
             customize_frontend(self.config)
             return True
