@@ -6,7 +6,9 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from rich.markup import escape
 
+from mattstack.project import resolve_project
 from mattstack.utils.console import console, print_error, print_info, print_success
 from mattstack.utils.package_manager import (
     PackageManager,
@@ -15,7 +17,7 @@ from mattstack.utils.package_manager import (
     build_install_cmd,
     build_remove_cmd,
     build_run_cmd,
-    resolve_package_manager,
+    resolve_package_manager_source,
     run_pm_command,
 )
 
@@ -27,19 +29,36 @@ client_app = typer.Typer(
 )
 
 
+def _package_dir(path: Path) -> Path | None:
+    """Return the frontend package directory for ``path``, if one exists.
+
+    The resolved project frontend wins, so a nested working directory still
+    finds `frontend/`. Any other directory with a package.json also works.
+    """
+    root = path.resolve()
+    for candidate in (resolve_project(root).frontend_dir, root / "frontend", root):
+        if (candidate / "package.json").exists():
+            return candidate
+    return None
+
+
+def _frontend_dir(path: Path) -> Path:
+    """Return the frontend package directory for ``path``, or exit when none exists."""
+    work_dir = _package_dir(path)
+    if work_dir is None:
+        print_error(f"No package.json found in {path.resolve()} or its frontend/")
+        raise typer.Exit(code=1)
+    return work_dir
+
+
 def _resolve(path: Path, pm_override: str | None) -> tuple[Path, PackageManager]:
     """Resolve working directory and package manager."""
-    work_dir = path.resolve()
-
-    frontend_dir = work_dir / "frontend"
-    if frontend_dir.is_dir() and (frontend_dir / "package.json").exists():
-        work_dir = frontend_dir
-
-    if not (work_dir / "package.json").exists():
-        print_error(f"No package.json found in {work_dir}")
-        raise typer.Exit(code=1)
-
-    pm = resolve_package_manager(work_dir, override=pm_override)
+    work_dir = _frontend_dir(path)
+    try:
+        pm = resolve_package_manager_source(work_dir, pm_override).manager
+    except ValueError as exc:
+        print_error(str(exc))
+        raise typer.Exit(code=2) from None
     return work_dir, pm
 
 
@@ -47,6 +66,10 @@ def _resolve(path: Path, pm_override: str | None) -> tuple[Path, PackageManager]
 def add(
     packages: Annotated[list[str], typer.Argument(help="Packages to install")],
     dev: Annotated[bool, typer.Option("--dev", "-D", help="Install as dev dependency")] = False,
+    exact: Annotated[
+        bool,
+        typer.Option("--exact", "-E", help="Pin the exact resolved version (no ^ or ~ range)"),
+    ] = False,
     path: Annotated[Path | None, typer.Option("--path", "-p", help="Project path")] = None,
     pm: Annotated[
         str | None, typer.Option("--pm", help="Package manager: bun, npm, yarn, pnpm")
@@ -54,7 +77,7 @@ def add(
 ) -> None:
     """Add packages to the frontend project."""
     work_dir, resolved_pm = _resolve(path or Path.cwd(), pm)
-    cmd = build_add_cmd(resolved_pm, packages, dev=dev)
+    cmd = build_add_cmd(resolved_pm, packages, dev=dev, exact=exact)
     print_info(f"[{resolved_pm.value}] {cmd}")
     result = run_pm_command(cmd, cwd=work_dir)
     if result.returncode == 0:
@@ -157,13 +180,21 @@ def build(
 @client_app.command("exec")
 def exec_bin(
     binary: Annotated[str, typer.Argument(help="Binary to execute (bunx/npx/pnpm dlx)")],
-    extra: Annotated[list[str] | None, typer.Argument(help="Extra arguments")] = None,
+    extra: Annotated[
+        list[str] | None,
+        typer.Argument(help="Arguments for the binary. Put them after -- when they start with -"),
+    ] = None,
     path: Annotated[Path | None, typer.Option("--path", "-p", help="Project path")] = None,
     pm: Annotated[
         str | None, typer.Option("--pm", help="Package manager: bun, npm, yarn, pnpm")
     ] = None,
 ) -> None:
-    """Execute a package binary (like bunx/npx)."""
+    """Execute a package binary (like bunx/npx).
+
+    Pass options for the binary after a `--` separator, for example
+    `mattstack client exec tsc -- --noEmit`. mattstack does not parse
+    anything after `--`.
+    """
     work_dir, resolved_pm = _resolve(path or Path.cwd(), pm)
     cmd = build_exec_cmd(resolved_pm, binary, extra)
     print_info(f"[{resolved_pm.value}] {cmd}")
@@ -176,15 +207,10 @@ def which_pm(
     path: Annotated[Path | None, typer.Option("--path", "-p", help="Project path")] = None,
 ) -> None:
     """Show which package manager would be used and why."""
-    work_dir = (path or Path.cwd()).resolve()
-    pm = resolve_package_manager(work_dir)
+    root = (path or Path.cwd()).resolve()
+    frontend_dir = resolve_project(root).frontend_dir
+    work_dir = frontend_dir if (frontend_dir / "package.json").exists() else root
+    resolution = resolve_package_manager_source(work_dir)
 
-    console.print(f"[bold cyan]Package manager:[/bold cyan] {pm.value}")
-
-    for lockfile in ["bun.lockb", "bun.lock", "package-lock.json", "yarn.lock", "pnpm-lock.yaml"]:
-        for d in [work_dir, work_dir / "frontend"]:
-            if (d / lockfile).exists():
-                console.print(f"[dim]Detected from:[/dim] {d / lockfile}")
-                return
-
-    console.print("[dim]Source: default (bun)[/dim]")
+    console.print(f"[bold cyan]Package manager:[/bold cyan] {resolution.manager.value}")
+    console.print(f"[dim]Source:[/dim] {escape(resolution.source)}")

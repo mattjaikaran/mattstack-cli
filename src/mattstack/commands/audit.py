@@ -3,19 +3,28 @@
 from __future__ import annotations
 
 import difflib
+import json
 from pathlib import Path
 
 import typer
+from rich.markup import escape
 
 from mattstack.auditors.base import AuditConfig, AuditReport, AuditType, BaseAuditor, Severity
 from mattstack.auditors.dependencies import DependencyAuditor
 from mattstack.auditors.endpoints import EndpointAuditor
 from mattstack.auditors.quality import CodeQualityAuditor
-from mattstack.auditors.report import print_json, print_report, write_todo
+from mattstack.auditors.report import print_report, write_todo
 from mattstack.auditors.tests import CoverageAuditor
 from mattstack.auditors.types import TypeSafetyAuditor
 from mattstack.auditors.vulnerabilities import VulnerabilityAuditor
-from mattstack.utils.console import console, print_error, print_info, print_success, print_warning
+from mattstack.utils.console import (
+    console,
+    print_error,
+    print_info,
+    print_success,
+    print_warning,
+    write_raw,
+)
 
 SEVERITY_ORDER: dict[Severity, int] = {
     Severity.INFO: 0,
@@ -45,7 +54,10 @@ def run_audit(
     min_severity: str | None = None,
     html_output: bool = False,
 ) -> None:
-    """Run audit on a project directory."""
+    """Run audit on a project directory.
+
+    Exits 1 when any error-severity finding exists, regardless of ``min_severity``.
+    """
     project_path = path.resolve()
 
     if not project_path.is_dir():
@@ -56,7 +68,7 @@ def run_audit(
     types: list[AuditType] | None = None
     if audit_types:
         types = []
-        for t in audit_types:
+        for t in (item.strip() for value in audit_types for item in value.split(",")):
             try:
                 types.append(AuditType(t))
             except ValueError:
@@ -94,7 +106,7 @@ def run_audit(
     )
 
     if not json_output:
-        console.print(f"\n[bold cyan]Auditing:[/bold cyan] {project_path}\n")
+        console.print(f"\n[bold cyan]Auditing:[/bold cyan] {escape(str(project_path))}\n")
 
     report = AuditReport()
     auditor_instances: list[BaseAuditor] = []
@@ -128,14 +140,16 @@ def run_audit(
         report.findings.extend(findings)
         report.auditors_run.append(f"plugin:{plugin_cls.__name__}")
 
-    # Filter findings by minimum severity
+    error_count = sum(1 for f in report.findings if f.severity == Severity.ERROR)
+
+    # Filter findings by minimum severity (display only; never hides the exit status)
     if config.min_severity is not None:
         min_order = SEVERITY_ORDER[config.min_severity]
         report.findings = [f for f in report.findings if SEVERITY_ORDER[f.severity] >= min_order]
 
     # Output results
     if json_output:
-        print_json(report)
+        write_raw(json.dumps(report.to_dict(), indent=2))
     else:
         print_report(report)
 
@@ -168,9 +182,12 @@ def run_audit(
             print_success(f"HTML report written to {html_path}")
 
         # Exit summary
-        if report.error_count:
-            print_warning(f"{report.error_count} errors need attention")
+        if error_count:
+            print_warning(f"{error_count} errors need attention")
         elif report.warning_count:
             print_info(f"{report.warning_count} warnings to review")
         else:
             print_success("Project looks clean!")
+
+    if error_count:
+        raise typer.Exit(code=1)

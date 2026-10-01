@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-import subprocess
+import subprocess  # nosec B404 # Required CLI subprocess support.
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -67,7 +67,7 @@ def read_open_tasks(path: Path) -> list[str]:
 def get_commit_sha(path: Path) -> str:
     """Return the short HEAD commit SHA, or ``unknown`` outside a repo."""
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603, B607 # Argv; trust project tools and PATH.
             ["git", "rev-parse", "--short", "HEAD"],
             cwd=path,
             capture_output=True,

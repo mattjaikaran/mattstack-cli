@@ -3,286 +3,124 @@
 from __future__ import annotations
 
 from mattstack.config import ProjectConfig
+from mattstack.templates.compose_env import (
+    backend_env,
+    db_service,
+    depends_block,
+    redis_service,
+    render_anchor,
+    render_mapping,
+    service_environment,
+)
+from mattstack.templates.frontend_runtime import (
+    DEV_API_SERVICE,
+    FRONTEND_PORT,
+    browser_env,
+    proxy_target_env_var,
+    service_origin,
+)
 
 
 def generate_docker_compose(config: ProjectConfig) -> str:
     """Generate docker-compose.yml for development."""
     services: list[str] = []
     volumes: list[str] = []
+    header = ""
 
     if config.has_backend:
-        services.append(_db_service(config))
+        header = render_anchor(backend_env(config, production=False)) + "\n\n"
+        services.append(db_service(config, production=False))
         volumes.append("  postgres_data:")
 
         if config.use_redis:
-            services.append(_redis_service())
+            services.append(redis_service(production=False))
             volumes.append("  redis_data:")
 
-        if config.is_nestjs_backend:
-            services.append(_nestjs_api_dev_service(config))
-        elif config.is_fastapi_backend:
-            services.append(_fastapi_api_dev_service(config))
-            if config.use_celery:
-                services.append(_celery_worker_service(config))
-                services.append(_celery_beat_service(config))
-        else:
-            services.append(_api_dev_service(config))
-            if config.use_celery:
-                services.append(_celery_worker_service(config))
-                services.append(_celery_beat_service(config))
+        services.append(_api_dev_service(config))
+        if config.use_celery:
+            services.append(_celery_service(config, "worker"))
+            services.append(_celery_service(config, "beat"))
 
     if config.has_frontend:
         services.append(_frontend_dev_service(config))
 
-    services_block = "\n\n".join(services)
-    volumes_block = "\n".join(volumes)
-
-    result = f"""services:
-{services_block}"""
-
+    result = header + "services:\n" + "\n\n".join(services)
     if volumes:
-        result += f"""
-
-volumes:
-{volumes_block}"""
-
-    return result
-
-
-def _db_service(config: ProjectConfig) -> str:
-    return f"""\
-  db:
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_DB: ${{POSTGRES_DB:-{config.python_package_name}}}
-      POSTGRES_USER: ${{POSTGRES_USER:-postgres}}
-      POSTGRES_PASSWORD: ${{POSTGRES_PASSWORD:-postgres}}
-    ports:
-      - "${{DB_PORT:-5432}}:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5"""
-
-
-def _redis_service() -> str:
-    return """\
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 5"""
+        result += "\n\nvolumes:\n" + "\n".join(volumes)
+    return result + "\n"
 
 
 def _api_dev_service(config: ProjectConfig) -> str:
-    depends = ["db"]
-    if config.use_redis:
-        depends.append("redis")
-
-    depends_block = "\n".join(
-        f"      {dep}:\n        condition: service_healthy" for dep in depends
-    )
-
-    env_lines = [
-        '      DEBUG: "true"',
-        f"      DATABASE_URL: postgres://postgres:postgres@db:5432/{config.python_package_name}",
-        # The boilerplate's settings read discrete DB_* variables, not
-        # DATABASE_URL. Without these, settings.DATABASES has an empty NAME
-        # and every management command fails on connect.
-        f"      DB_NAME: {config.python_package_name}",
-        "      DB_USER: postgres",
-        "      DB_PASSWORD: postgres",
-        "      DB_HOST: db",
-        "      DB_PORT: 5432",
-        "      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}",
-    ]
-    if config.use_redis:
-        env_lines.append("      REDIS_URL: redis://redis:6379/0")
-    env_lines.append("      CORS_ALLOWED_ORIGINS: http://localhost:3000,http://localhost:5173")
-
-    env_block = "\n".join(env_lines)
-
     port = config.backend_api_port
+    cors = f"http://localhost:${{FRONTEND_PORT:-{FRONTEND_PORT}}}"
+    if config.is_nestjs_backend:
+        command = 'sh -c "bun run db:migrate && bun run start:dev"'
+        extra: dict[str, str] = {}
+        volumes = "      - ./backend:/app\n      - /app/node_modules"
+    elif config.is_fastapi_backend:
+        command = f"uv run uvicorn app.main:app --host 0.0.0.0 --port {port} --reload"
+        extra = {"CORS_ORIGINS": cors}
+        volumes = "      - ./backend:/app"
+    else:
+        command = f"uv run python manage.py runserver 0.0.0.0:{port}"
+        extra = {"CORS_ALLOWED_ORIGINS": cors}
+        volumes = "      - ./backend:/app"
     return f"""\
-  api-dev:
+  {DEV_API_SERVICE}:
     build:
       context: .
       dockerfile: docker/backend/Dockerfile
       target: development
-    command: uv run python manage.py runserver 0.0.0.0:{port}
+    command: {command}
     ports:
-      - "${{API_PORT:-{port}}}:{port}"
+      - "127.0.0.1:${{API_PORT:-{port}}}:{port}"
     volumes:
-      - ./backend:/app
-    environment:
-{env_block}
-    depends_on:
-{depends_block}"""
+{volumes}
+{service_environment(extra)}
+{depends_block(config)}"""
 
 
-def _nestjs_api_dev_service(config: ProjectConfig) -> str:
-    port = config.backend_api_port
-    db_name = config.python_package_name
+def _celery_service(config: ProjectConfig, role: str) -> str:
     return f"""\
-  api-dev:
+  celery-{role}:
     build:
       context: .
       dockerfile: docker/backend/Dockerfile
       target: development
-    command: sh -c "bun run db:migrate && bun run start:dev"
-    ports:
-      - "${{API_PORT:-{port}}}:{port}"
+    command: uv run celery -A {config.django_package} {role} -l info
     volumes:
       - ./backend:/app
-      - /app/node_modules
-    environment:
-      NODE_ENV: development
-      PORT: {port}
-      HOST: 0.0.0.0
-      DATABASE_URL: postgresql://postgres:postgres@db:5432/{db_name}
-      REDIS_URL: redis://redis:6379
-      CORS_ORIGINS: http://localhost:3000,http://localhost:5173
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy"""
-
-
-def _fastapi_api_dev_service(config: ProjectConfig) -> str:
-    port = config.backend_api_port
-    db_name = config.python_package_name
-    return f"""\
-  api-dev:
-    build:
-      context: .
-      dockerfile: docker/backend/Dockerfile
-      target: development
-    command: uv run uvicorn app.main:app --host 0.0.0.0 --port {port} --reload
-    ports:
-      - "${{API_PORT:-{port}}}:{port}"
-    volumes:
-      - ./backend:/app
-    environment:
-      DEBUG: "true"
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/{db_name}
-      REDIS_URL: redis://redis:6379/0
-      SECRET_KEY: ${{SECRET_KEY:-change-me-in-production}}
-      CORS_ORIGINS: http://localhost:3000,http://localhost:5173
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy"""
-
-
-def _celery_worker_service(config: ProjectConfig) -> str:
-    return f"""\
-  celery-worker:
-    build:
-      context: .
-      dockerfile: docker/backend/Dockerfile
-      target: development
-    command: uv run celery -A {config.django_package} worker -l info
-    volumes:
-      - ./backend:/app
-    environment:
-      DATABASE_URL: postgres://postgres:postgres@db:5432/{config.python_package_name}
-      DB_NAME: {config.python_package_name}
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_HOST: db
-      DB_PORT: 5432
-      SECRET_KEY: ${{SECRET_KEY:-change-me-in-production}}
-      REDIS_URL: redis://redis:6379/0
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    profiles:
-      - celery"""
-
-
-def _celery_beat_service(config: ProjectConfig) -> str:
-    return f"""\
-  celery-beat:
-    build:
-      context: .
-      dockerfile: docker/backend/Dockerfile
-      target: development
-    command: uv run celery -A {config.django_package} beat -l info
-    volumes:
-      - ./backend:/app
-    environment:
-      DATABASE_URL: postgres://postgres:postgres@db:5432/{config.python_package_name}
-      DB_NAME: {config.python_package_name}
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_HOST: db
-      DB_PORT: 5432
-      SECRET_KEY: ${{SECRET_KEY:-change-me-in-production}}
-      REDIS_URL: redis://redis:6379/0
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+{service_environment({})}
+{depends_block(config)}
     profiles:
       - celery"""
 
 
 def _frontend_dev_service(config: ProjectConfig) -> str:
-    depends = ""
-    if config.has_backend:
-        depends = """
-    depends_on:
-      - api-dev"""
-
-    api_url = f"http://localhost:{config.backend_api_port}/api/v1" if config.has_backend else ""
-
+    """Render ``frontend-dev``; the dev server listens on 3000 in every framework."""
+    volumes = ["./frontend:/app", "/app/node_modules"]
     if config.is_nextjs:
-        env_block = ""
-        if config.has_backend:
-            env_block = f"""
-    environment:
-      NEXT_PUBLIC_API_BASE_URL: {api_url}"""
-        return f"""\
-  frontend-dev:
-    build:
-      context: .
-      dockerfile: docker/frontend/Dockerfile.dev
-    command: bun run dev
-    ports:
-      - "${{FRONTEND_PORT:-3000}}:3000"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.next{env_block}{depends}"""
+        volumes.append("/app/.next")
+        command = "bun run dev -H 0.0.0.0"
+    else:
+        command = "bun run dev --host 0.0.0.0"
 
-    vite_env = f"VITE_API_BASE_URL: {api_url}"
-    if config.is_django_backend:
-        vite_env += "\n      VITE_MODE: django-spa"
-
-    return f"""\
-  frontend-dev:
-    build:
-      context: .
-      dockerfile: docker/frontend/Dockerfile.dev
-    command: bun run dev --host
-    ports:
-      - "${{FRONTEND_PORT:-3000}}:3000"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    environment:
-      {vite_env}{depends}"""
+    lines = [
+        "  frontend-dev:",
+        "    build:",
+        "      context: .",
+        "      dockerfile: docker/frontend/Dockerfile.dev",
+        f"    command: {command}",
+        "    ports:",
+        f'      - "127.0.0.1:${{FRONTEND_PORT:-{FRONTEND_PORT}}}:{FRONTEND_PORT}"',
+        "    volumes:",
+        *(f"      - {volume}" for volume in volumes),
+    ]
+    if config.has_backend:
+        # The browser calls the relative API prefix; the dev server forwards it
+        # to the api-dev service, never to the container's own localhost.
+        env = browser_env(config)
+        env[proxy_target_env_var(config)] = service_origin(config, DEV_API_SERVICE)
+        lines.extend(["    environment:", render_mapping(env, indent=6)])
+        lines.extend(["    depends_on:", f"      - {DEV_API_SERVICE}"])
+    return "\n".join(lines)

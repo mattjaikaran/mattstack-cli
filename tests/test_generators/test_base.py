@@ -108,13 +108,24 @@ def test_update_file_regex(tmp_path: Path) -> None:
     assert f.read_text() == "version = 2.0.0"
 
 
-def test_cleanup(tmp_path: Path) -> None:
+def test_cleanup_removes_owned_directory(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
-    config.path.mkdir(parents=True)
-    (config.path / "some_file.txt").write_text("data")
     gen = _ConcreteGenerator(config)
+    assert gen.create_root_directory()
+    (config.path / "some_file.txt").write_text("data")
     gen.cleanup()
     assert not config.path.exists()
+
+
+def test_cleanup_preserves_existing_directory(tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    config.path.mkdir()
+    owned = config.path / "some_file.txt"
+    owned.write_text("Keep user data.")
+    gen = _ConcreteGenerator(config)
+    assert not gen.create_root_directory()
+    gen.cleanup()
+    assert owned.read_text() == "Keep user data."
 
 
 def test_cleanup_nonexistent(tmp_path: Path) -> None:

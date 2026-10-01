@@ -2,31 +2,34 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 import typer
+import yaml
 
-from mattstack.commands.add import (
-    VALID_COMPONENTS,
-    _build_config,
-    _detect_project,
-    run_add,
-)
-from mattstack.config import FrontendFramework, ProjectType
+from mattstack.commands.add import run_add
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
+NINJA_PYPROJECT = '[project]\nname = "test-backend"\ndependencies = ["django-ninja"]\n'
+VITE_PACKAGE = {
+    "name": "test-frontend",
+    "scripts": {"dev": "vite", "type-check": "tsc --noEmit"},
+    "devDependencies": {"vite": "^6.0.0"},
+}
 
-def _make_backend_project(path: Path) -> Path:
+
+def _make_backend_project(path: Path, pyproject: str = NINJA_PYPROJECT) -> Path:
     """Create a minimal backend-only project structure."""
     path.mkdir(parents=True, exist_ok=True)
     backend = path / "backend"
     backend.mkdir()
-    (backend / "pyproject.toml").write_text('[project]\nname = "test-backend"\n')
+    (backend / "pyproject.toml").write_text(pyproject)
     (backend / "manage.py").write_text("#!/usr/bin/env python\n")
     (path / "Makefile").write_text(".DEFAULT_GOAL := help\n")
     return path
@@ -37,7 +40,7 @@ def _make_frontend_project(path: Path) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     frontend = path / "frontend"
     frontend.mkdir()
-    (frontend / "package.json").write_text('{"name": "test-frontend"}\n')
+    (frontend / "package.json").write_text(json.dumps(VITE_PACKAGE))
     (frontend / "src").mkdir()
     (path / "Makefile").write_text(".DEFAULT_GOAL := help\n")
     return path
@@ -45,24 +48,20 @@ def _make_frontend_project(path: Path) -> Path:
 
 def _make_fullstack_project(path: Path) -> Path:
     """Create a minimal fullstack project structure."""
-    path.mkdir(parents=True, exist_ok=True)
-    backend = path / "backend"
-    backend.mkdir()
-    (backend / "pyproject.toml").write_text('[project]\nname = "test-backend"\n')
+    _make_backend_project(path)
     frontend = path / "frontend"
     frontend.mkdir()
-    (frontend / "package.json").write_text('{"name": "test-frontend"}\n')
-    (path / "Makefile").write_text(".DEFAULT_GOAL := help\n")
+    (frontend / "package.json").write_text(json.dumps(VITE_PACKAGE))
     return path
 
 
-def _mock_clone(url: str, dest: Path, branch: str = "main", depth: int = 1) -> bool:
+def _mock_clone(url: str, dest: Path, *args: object, **kwargs: object) -> bool:
     """Simulate a git clone by creating the directory with expected files."""
     dest.mkdir(parents=True, exist_ok=True)
-    if "django" in url:
+    if "django" in url or "fastapi" in url:
         (dest / "pyproject.toml").write_text('[project]\nname = "test"\n')
         (dest / "manage.py").write_text("#!/usr/bin/env python\n")
-    elif "react" in url:
+    elif "react" in url or "nextjs" in url:
         (dest / "package.json").write_text('{"name": "test"}\n')
         (dest / "src").mkdir(exist_ok=True)
     elif "swift" in url:
@@ -70,84 +69,9 @@ def _mock_clone(url: str, dest: Path, branch: str = "main", depth: int = 1) -> b
     return True
 
 
-# ---------------------------------------------------------------------------
-# Tests: _detect_project
-# ---------------------------------------------------------------------------
-
-
-class TestDetectProject:
-    def test_detect_backend_only(self, tmp_path: Path) -> None:
-        proj = _make_backend_project(tmp_path / "my-api")
-        detected = _detect_project(proj)
-        assert detected["has_backend"] is True
-        assert detected["has_frontend"] is False
-        assert detected["has_ios"] is False
-        assert detected["name"] == "my-api"
-
-    def test_detect_frontend_only(self, tmp_path: Path) -> None:
-        proj = _make_frontend_project(tmp_path / "my-spa")
-        detected = _detect_project(proj)
-        assert detected["has_backend"] is False
-        assert detected["has_frontend"] is True
-        assert detected["has_ios"] is False
-        assert detected["name"] == "my-spa"
-
-    def test_detect_fullstack(self, tmp_path: Path) -> None:
-        proj = _make_fullstack_project(tmp_path / "my-app")
-        detected = _detect_project(proj)
-        assert detected["has_backend"] is True
-        assert detected["has_frontend"] is True
-        assert detected["has_ios"] is False
-
-    def test_detect_with_ios(self, tmp_path: Path) -> None:
-        proj = _make_fullstack_project(tmp_path / "my-app")
-        (proj / "ios").mkdir()
-        detected = _detect_project(proj)
-        assert detected["has_ios"] is True
-
-    def test_detect_empty_project(self, tmp_path: Path) -> None:
-        proj = tmp_path / "empty"
-        proj.mkdir()
-        detected = _detect_project(proj)
-        assert detected["has_backend"] is False
-        assert detected["has_frontend"] is False
-        assert detected["has_ios"] is False
-
-
-# ---------------------------------------------------------------------------
-# Tests: _build_config
-# ---------------------------------------------------------------------------
-
-
-class TestBuildConfig:
-    def test_adding_frontend_to_backend_produces_fullstack(self, tmp_path: Path) -> None:
-        detected = {"has_backend": True, "has_frontend": False, "has_ios": False, "name": "proj"}
-        config = _build_config(tmp_path, detected, "frontend", None)
-        assert config.project_type == ProjectType.FULLSTACK
-        assert config.has_backend is True
-        assert config.has_frontend is True
-        assert config.init_git is False
-
-    def test_adding_backend_to_frontend_produces_fullstack(self, tmp_path: Path) -> None:
-        detected = {"has_backend": False, "has_frontend": True, "has_ios": False, "name": "proj"}
-        config = _build_config(tmp_path, detected, "backend", None)
-        assert config.project_type == ProjectType.FULLSTACK
-
-    def test_adding_ios_keeps_project_type(self, tmp_path: Path) -> None:
-        detected = {"has_backend": True, "has_frontend": True, "has_ios": False, "name": "proj"}
-        config = _build_config(tmp_path, detected, "ios", None)
-        assert config.project_type == ProjectType.FULLSTACK
-        assert config.include_ios is True
-
-    def test_adding_backend_only(self, tmp_path: Path) -> None:
-        detected = {"has_backend": False, "has_frontend": False, "has_ios": False, "name": "proj"}
-        config = _build_config(tmp_path, detected, "backend", None)
-        assert config.project_type == ProjectType.BACKEND_ONLY
-
-    def test_custom_framework(self, tmp_path: Path) -> None:
-        detected = {"has_backend": True, "has_frontend": False, "has_ios": False, "name": "proj"}
-        config = _build_config(tmp_path, detected, "frontend", "react-vite-starter")
-        assert config.frontend_framework == FrontendFramework.REACT_VITE_STARTER
+def _stack_metadata(proj: Path) -> dict[str, object]:
+    data = yaml.safe_load((proj / "mattstack.yml").read_text())
+    return data["project"]
 
 
 # ---------------------------------------------------------------------------
@@ -155,38 +79,120 @@ class TestBuildConfig:
 # ---------------------------------------------------------------------------
 
 
+@patch("mattstack.commands.add.remove_git_history")
+@patch("mattstack.commands.add.clone_repo", side_effect=_mock_clone)
 class TestRunAdd:
-    @patch("mattstack.commands.add.remove_git_history")
-    @patch("mattstack.commands.add.clone_repo", side_effect=_mock_clone)
     def test_add_frontend_to_backend(self, mock_clone, mock_rm_git, tmp_path: Path) -> None:
         proj = _make_backend_project(tmp_path / "my-app")
         run_add("frontend", proj)
-        # Frontend directory should now exist (created by mock clone)
         assert (proj / "frontend" / "package.json").exists()
-        # Root files should be regenerated
-        makefile = (proj / "Makefile").read_text()
-        assert "frontend" in makefile.lower()
         mock_clone.assert_called_once()
         mock_rm_git.assert_called_once()
+        # The regenerated Makefile is staged next to the user's file.
+        assert "frontend" in (proj / "Makefile.mattstack-new").read_text().lower()
 
-    @patch("mattstack.commands.add.remove_git_history")
-    @patch("mattstack.commands.add.clone_repo", side_effect=_mock_clone)
     def test_add_backend_to_frontend(self, mock_clone, mock_rm_git, tmp_path: Path) -> None:
         proj = _make_frontend_project(tmp_path / "my-app")
         run_add("backend", proj)
         assert (proj / "backend" / "pyproject.toml").exists()
-        makefile = (proj / "Makefile").read_text()
-        assert "backend" in makefile.lower()
+        assert "backend" in (proj / "Makefile.mattstack-new").read_text().lower()
 
-    @patch("mattstack.commands.add.remove_git_history")
-    @patch("mattstack.commands.add.clone_repo", side_effect=_mock_clone)
     def test_add_ios_to_fullstack(self, mock_clone, mock_rm_git, tmp_path: Path) -> None:
         proj = _make_fullstack_project(tmp_path / "my-app")
         run_add("ios", proj)
         assert (proj / "ios" / "Package.swift").exists()
-        makefile = (proj / "Makefile").read_text()
-        assert "ios" in makefile.lower()
+        assert "ios" in (proj / "Makefile.mattstack-new").read_text().lower()
 
+    def test_existing_root_files_stay_byte_identical(
+        self, mock_clone, mock_rm_git, tmp_path: Path
+    ) -> None:
+        proj = _make_frontend_project(tmp_path / "my-app")
+        (proj / "Makefile").write_bytes(b"custom:\n\techo hi\n")
+        (proj / "README.md").write_bytes(b"mine\n")
+        run_add("backend", proj)
+        assert (proj / "Makefile").read_bytes() == b"custom:\n\techo hi\n"
+        assert (proj / "README.md").read_bytes() == b"mine\n"
+        # Missing root files are still created.
+        assert (proj / "docker-compose.yml").exists()
+
+    def test_force_replaces_existing_root_files(
+        self, mock_clone, mock_rm_git, tmp_path: Path
+    ) -> None:
+        proj = _make_frontend_project(tmp_path / "my-app")
+        (proj / "README.md").write_text("mine\n")
+        run_add("backend", proj, force=True)
+        assert (proj / "README.md").read_text() != "mine\n"
+        assert not (proj / "README.md.mattstack-new").exists()
+
+    def test_dry_run_does_not_clone_or_write(self, mock_clone, mock_rm_git, tmp_path: Path) -> None:
+        proj = _make_backend_project(tmp_path / "my-app")
+        before = sorted(p.name for p in proj.iterdir())
+        run_add("frontend", proj, dry_run=True)
+        mock_clone.assert_not_called()
+        mock_rm_git.assert_not_called()
+        assert sorted(p.name for p in proj.iterdir()) == before
+
+    def test_add_frontend_with_custom_framework(
+        self, mock_clone, mock_rm_git, tmp_path: Path
+    ) -> None:
+        proj = _make_backend_project(tmp_path / "my-app")
+        run_add("frontend", proj, framework="react-vite-starter")
+        url = mock_clone.call_args[0][0]
+        assert "react-vite-starter" in url
+
+    def test_add_backend_with_backend_framework(
+        self, mock_clone, mock_rm_git, tmp_path: Path
+    ) -> None:
+        proj = _make_frontend_project(tmp_path / "my-app")
+        run_add("backend", proj, framework="fastapi")
+        assert "fastapi-boilerplate" in mock_clone.call_args[0][0]
+        assert _stack_metadata(proj)["backend"]["framework"] == "fastapi"
+
+    def test_existing_fastapi_backend_is_kept_in_templates(
+        self, mock_clone, mock_rm_git, tmp_path: Path
+    ) -> None:
+        pyproject = '[project]\nname = "api"\ndependencies = ["fastapi"]\n'
+        proj = _make_backend_project(tmp_path / "my-app", pyproject)
+        run_add("frontend", proj)
+        makefile = (proj / "Makefile.mattstack-new").read_text()
+        assert "alembic" in makefile
+        assert "manage.py" not in makefile
+        assert _stack_metadata(proj)["backend"]["framework"] == "fastapi"
+
+    def test_persisted_metadata_wins_over_detection(
+        self, mock_clone, mock_rm_git, tmp_path: Path
+    ) -> None:
+        proj = _make_backend_project(tmp_path / "my-app", '[project]\nname = "api"\n')
+        (proj / "mattstack.yml").write_text(
+            "scope:\n  enforce: false\nproject:\n  variant: b2b\n"
+            "  backend:\n    framework: django-matt\n    celery: false\n"
+        )
+        run_add("frontend", proj)
+        meta = _stack_metadata(proj)
+        assert meta["variant"] == "b2b"
+        assert meta["backend"]["framework"] == "django-matt"
+        assert meta["backend"]["celery"] is False
+        assert yaml.safe_load((proj / "mattstack.yml").read_text())["scope"] == {"enforce": False}
+
+    def test_unknown_backend_refuses_without_writing(
+        self, mock_clone, mock_rm_git, tmp_path: Path
+    ) -> None:
+        proj = _make_backend_project(tmp_path / "my-app", '[project]\nname = "api"\n')
+        before = sorted(p.name for p in proj.iterdir())
+        with pytest.raises(typer.Exit) as exc:
+            run_add("frontend", proj)
+        assert exc.value.exit_code == 1
+        mock_clone.assert_not_called()
+        assert sorted(p.name for p in proj.iterdir()) == before
+
+    def test_framework_must_match_component(self, mock_clone, mock_rm_git, tmp_path: Path) -> None:
+        proj = _make_backend_project(tmp_path / "my-app")
+        with pytest.raises(typer.Exit):
+            run_add("frontend", proj, framework="fastapi")
+        mock_clone.assert_not_called()
+
+
+class TestRunAddRejections:
     def test_reject_add_existing_frontend(self, tmp_path: Path) -> None:
         proj = _make_fullstack_project(tmp_path / "my-app")
         with pytest.raises(typer.Exit):
@@ -213,56 +219,9 @@ class TestRunAdd:
             run_add("frontend", tmp_path / "does-not-exist")
 
     @patch("mattstack.commands.add.remove_git_history")
-    @patch("mattstack.commands.add.clone_repo", side_effect=_mock_clone)
-    def test_dry_run_does_not_clone(self, mock_clone, mock_rm_git, tmp_path: Path) -> None:
-        proj = _make_backend_project(tmp_path / "my-app")
-        original_makefile = (proj / "Makefile").read_text()
-        run_add("frontend", proj, dry_run=True)
-        # Clone should not be called in dry-run mode
-        mock_clone.assert_not_called()
-        mock_rm_git.assert_not_called()
-        # Makefile should not be changed
-        assert (proj / "Makefile").read_text() == original_makefile
-
-    @patch("mattstack.commands.add.remove_git_history")
     @patch("mattstack.commands.add.clone_repo", return_value=False)
     def test_clone_failure_raises_exit(self, mock_clone, mock_rm_git, tmp_path: Path) -> None:
         proj = _make_backend_project(tmp_path / "my-app")
         with pytest.raises(typer.Exit):
             run_add("frontend", proj)
-
-    @patch("mattstack.commands.add.remove_git_history")
-    @patch("mattstack.commands.add.clone_repo", side_effect=_mock_clone)
-    def test_add_frontend_with_custom_framework(
-        self, mock_clone, mock_rm_git, tmp_path: Path
-    ) -> None:
-        proj = _make_backend_project(tmp_path / "my-app")
-        run_add("frontend", proj, framework="react-vite-starter")
-        mock_clone.assert_called_once()
-        url = mock_clone.call_args[0][0]
-        assert "react-vite-starter" in url
-
-    @patch("mattstack.commands.add.remove_git_history")
-    @patch("mattstack.commands.add.clone_repo", side_effect=_mock_clone)
-    def test_add_backend_generates_docker_compose(
-        self, mock_clone, mock_rm_git, tmp_path: Path
-    ) -> None:
-        proj = _make_frontend_project(tmp_path / "my-app")
-        run_add("backend", proj)
-        assert (proj / "docker-compose.yml").exists()
-        dc_content = (proj / "docker-compose.yml").read_text()
-        assert "postgres" in dc_content.lower()
-
-    @patch("mattstack.commands.add.remove_git_history")
-    @patch("mattstack.commands.add.clone_repo", side_effect=_mock_clone)
-    def test_add_generates_env_example(self, mock_clone, mock_rm_git, tmp_path: Path) -> None:
-        proj = _make_backend_project(tmp_path / "my-app")
-        run_add("frontend", proj)
-        assert (proj / ".env.example").exists()
-        env_content = (proj / ".env.example").read_text()
-        assert "VITE_" in env_content  # Frontend env vars present
-
-    def test_valid_components_constant(self) -> None:
-        assert "frontend" in VALID_COMPONENTS
-        assert "backend" in VALID_COMPONENTS
-        assert "ios" in VALID_COMPONENTS
+        assert not (proj / "mattstack.yml").exists()

@@ -20,7 +20,7 @@ from mattstack.templates.root_env import generate_env_example, generate_env_prod
 from mattstack.templates.root_gitignore import generate_gitignore
 from mattstack.templates.root_makefile import generate_makefile
 from mattstack.templates.root_readme import generate_readme
-from mattstack.utils.console import print_error
+from mattstack.utils.console import print_error, print_info
 
 
 class BackendOnlyGenerator(BaseGenerator):
@@ -35,6 +35,7 @@ class BackendOnlyGenerator(BaseGenerator):
             ("Creating root files", self._step_create_root_files),
             ("Writing pre-commit config", self._write_pre_commit_config),
             ("Customizing backend", self._step_customize_backend),
+            ("Writing project configuration", self.write_project_configuration),
             ("Initializing git", self._step_init_git),
             ("Finishing up", self._step_finish),
         ]
@@ -154,6 +155,9 @@ class BackendOnlyGenerator(BaseGenerator):
             return False
 
     def _step_customize_backend(self) -> bool:
+        if self.config.dry_run:
+            print_info("[dry-run] Would customize backend")
+            return True
         try:
             customize_backend(self.config)
             return True

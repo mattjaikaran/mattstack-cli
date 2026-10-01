@@ -211,31 +211,60 @@ class TestNextjsFrontendConfig:
         )
         config.frontend_dir.mkdir(parents=True)
         setup_frontend_monorepo(config)
-        assert (config.frontend_dir / ".env").exists()
-        assert (config.frontend_dir / "vite.config.monorepo.ts").exists()
         env = (config.frontend_dir / ".env").read_text()
         assert "VITE_MODE" in env
 
-    def test_nextjs_monorepo_setup(self, tmp_path: Path) -> None:
+    def test_nextjs_env_routes_the_browser_through_the_rewrite(self, tmp_path: Path) -> None:
         from mattstack.post_processors.frontend_config import setup_frontend_monorepo
 
         config = _nextjs_config(tmp_path)
         config.frontend_dir.mkdir(parents=True)
         setup_frontend_monorepo(config)
-        assert (config.frontend_dir / ".env.local").exists()
-        assert (config.frontend_dir / "next.config.monorepo.ts").exists()
         env = (config.frontend_dir / ".env.local").read_text()
-        assert "NEXT_PUBLIC_API_BASE_URL" in env
+        assert f"NEXT_PUBLIC_API_BASE_URL={config.api_prefix}\n" in env
+        assert f"INTERNAL_API_URL=http://localhost:{config.backend_api_port}\n" in env
 
-    def test_nextjs_monorepo_config_content(self, tmp_path: Path) -> None:
+    def test_nextjs_rewrite_follows_the_backend_api_prefix(self, tmp_path: Path) -> None:
+        """nextjs-starter rewrites /api/v1; a backend mounted at /api needs /api."""
         from mattstack.post_processors.frontend_config import setup_frontend_monorepo
 
         config = _nextjs_config(tmp_path)
         config.frontend_dir.mkdir(parents=True)
+        (config.frontend_dir / "next.config.ts").write_text(
+            "const backendUrl = process.env.INTERNAL_API_URL;\n"
+            'export default { rewrites: () => [{ source: "/api/v1/:path*",'
+            " destination: `${backendUrl}/api/v1/:path*` }] };\n"
+        )
         setup_frontend_monorepo(config)
-        content = (config.frontend_dir / "next.config.monorepo.ts").read_text()
-        assert "rewrites" in content
-        assert "localhost:8000" in content
+        content = (config.frontend_dir / "next.config.ts").read_text()
+        assert f'source: "{config.api_prefix}/:path*"' in content
+        assert f"`${{backendUrl}}{config.api_prefix}/:path*`" in content
+        assert not list(config.frontend_dir.glob("*.monorepo.*"))
+
+    def test_next_public_env_reads_are_literal(self, tmp_path: Path) -> None:
+        """Next inlines only `process.env.NEXT_PUBLIC_X`, never `process.env[key]`."""
+        from mattstack.post_processors.frontend_config import setup_frontend_monorepo
+
+        config = _nextjs_frontend_config(tmp_path)
+        upstream = (
+            "const getEnvVar = (key: string, defaultValue: string = ''): string => {\n"
+            "  return process.env[key] || defaultValue;\n"
+            "};\n"
+            "export const config = {\n"
+            "  baseUrl: getEnvVar('NEXT_PUBLIC_API_BASE_URL', 'http://localhost:8000/api/v1'),\n"
+            "  mode: getEnvVar('NEXT_PUBLIC_MODE'),\n"
+            "};\n"
+        )
+        (config.frontend_dir / "config").mkdir(parents=True)
+        (config.frontend_dir / "config" / "index.ts").write_text(upstream)
+        setup_frontend_monorepo(config)
+
+        content = (config.frontend_dir / "config" / "index.ts").read_text()
+        assert "process.env[key]" not in content
+        assert "NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL," in content
+        assert "NEXT_PUBLIC_MODE: process.env.NEXT_PUBLIC_MODE," in content
+        assert content.index("const publicEnv") < content.index("const getEnvVar")
+        assert "return publicEnv[key] || defaultValue;" in content
 
     def test_no_monorepo_for_frontend_only(self, tmp_path: Path) -> None:
         from mattstack.post_processors.frontend_config import setup_frontend_monorepo

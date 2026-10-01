@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import json
 import subprocess
-import threading
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 import typer
 
-from mattstack.commands.lint import _has_backend, _has_frontend, _stream_process, run_lint
+from mattstack.commands.lint import _has_backend, _has_frontend, run_lint
 
 
 class TestHasBackend:
@@ -155,30 +154,47 @@ class TestRunLint:
         assert exc_info.value.exit_code == 1
 
 
-class TestStreamProcess:
-    def test_streams_lines_with_label(self) -> None:
-        proc = MagicMock()
-        proc.stdout = iter(["line one\n", "line two\n"])
-        proc.returncode = 0
-        proc.wait.return_value = None
+def _fake_tool(bin_dir: Path, name: str, body: str) -> None:
+    script = bin_dir / name
+    script.write_text(f"#!/bin/sh\n{body}\n")
+    script.chmod(0o755)
 
-        lock = threading.Lock()
-        printed: list[str] = []
-        with patch("mattstack.commands.lint.console") as mock_console:
-            mock_console.print.side_effect = lambda *a, **kw: printed.append(str(a[0]))
-            result = _stream_process(proc, "[backend]", lock)
 
-        assert result == 0
-        assert any("[backend]" in line for line in printed)
+class TestParallelFlags:
+    def test_parallel_format_check_fails_on_unformatted_code(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        backend = tmp_path / "backend"
+        backend.mkdir()
+        (backend / "pyproject.toml").write_text('[project]\nname = "test"\n')
+        frontend = tmp_path / "frontend"
+        frontend.mkdir()
+        (frontend / "package.json").write_text(
+            json.dumps({"scripts": {"lint": "eslint ."}, "packageManager": "bun@1.0.0"})
+        )
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        # ruff check passes; ruff format --check reports unformatted code
+        _fake_tool(bin_dir, "uv", 'case "$*" in *format*) echo "Would reformat"; exit 1;; esac')
+        _fake_tool(bin_dir, "bun", "exit 0")
+        monkeypatch.setenv("PATH", str(bin_dir))
 
-    def test_returns_returncode_on_failure(self) -> None:
-        proc = MagicMock()
-        proc.stdout = iter([])
-        proc.returncode = 1
-        proc.wait.return_value = None
+        run_lint(tmp_path, parallel=True)  # without --format-check: passes
+        with pytest.raises(typer.Exit) as exc_info:
+            run_lint(tmp_path, parallel=True, format_check=True)
+        assert exc_info.value.exit_code == 1
 
-        lock = threading.Lock()
-        with patch("mattstack.commands.lint.console"):
-            result = _stream_process(proc, "[backend]", lock)
+    def test_missing_executable_is_nonzero_with_hint(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        backend = tmp_path / "backend"
+        backend.mkdir()
+        (backend / "pyproject.toml").write_text('[project]\nname = "test"\n')
+        empty = tmp_path / "empty-bin"
+        empty.mkdir()
+        monkeypatch.setenv("PATH", str(empty))
 
-        assert result == 1
+        with pytest.raises(typer.Exit) as exc_info:
+            run_lint(tmp_path)
+        assert exc_info.value.exit_code == 1
+        assert "Command not found: uv" in capsys.readouterr().err

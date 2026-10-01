@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import json
-import subprocess
-import threading
+import subprocess  # nosec B404 # Required CLI subprocess support.
 import time
-from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import typer
 
 from mattstack.utils.console import console, create_table, print_error, print_info, print_success
+from mattstack.utils.jobs import (
+    COMMAND_NOT_FOUND,
+    LabeledJob,
+    missing_command_message,
+    run_labeled_jobs,
+)
 from mattstack.utils.package_manager import (
     build_run_cmd,
     resolve_package_manager,
@@ -38,44 +42,32 @@ def _has_frontend(path: Path) -> bool:
         return False
 
 
-def _run_backend_tests(path: Path, coverage: bool) -> subprocess.CompletedProcess[str]:
-    """Run backend tests with pytest."""
-    backend_dir = path / "backend"
+def _backend_test_cmd(coverage: bool) -> list[str]:
     args = ["uv", "run", "pytest", "-v"]
     if coverage:
         args.extend(["--cov", "--cov-report=term-missing"])
-    return subprocess.run(args, cwd=backend_dir, text=True)
+    return args
 
 
-def _run_frontend_tests(path: Path, coverage: bool) -> subprocess.CompletedProcess[str]:
-    """Run frontend tests via package manager."""
-    frontend_dir = path / "frontend"
+def _frontend_test_cmd(frontend_dir: Path, coverage: bool) -> list[str] | None:
+    """Return the frontend test command, or None when package.json lacks a test script."""
     pm = resolve_package_manager(frontend_dir)
     pkg = json.loads((frontend_dir / "package.json").read_text(encoding="utf-8"))
     scripts = pkg.get("scripts", {})
-
     if coverage and "test:coverage" in scripts:
-        cmd = build_run_cmd(pm, "test:coverage")
-    elif "test" in scripts:
-        cmd = build_run_cmd(pm, "test")
-    else:
-        return subprocess.CompletedProcess(
-            args=[],
-            returncode=1,
-            stdout="",
-            stderr="No 'test' or 'test:coverage' script in package.json",
-        )
-    return subprocess.run(cmd.full, cwd=frontend_dir, text=True)
+        return build_run_cmd(pm, "test:coverage").full
+    if "test" in scripts:
+        return build_run_cmd(pm, "test").full
+    return None
 
 
-def _stream_process(proc: subprocess.Popen[str], label: str, lock: threading.Lock) -> int:
-    """Stream stdout lines from proc to console, prefixing each with label."""
-    assert proc.stdout is not None
-    for line in proc.stdout:
-        with lock:
-            console.print(f"[dim]{label}[/dim] {line}", end="")
-    proc.wait()
-    return proc.returncode if proc.returncode is not None else 1
+def _run_inherited(argv: list[str], cwd: Path) -> int:
+    """Run ``argv`` with the terminal's stdio; report a missing executable."""
+    try:
+        return subprocess.run(argv, cwd=cwd, text=True).returncode  # nosec B603 # Argv; trust project tools and PATH.
+    except FileNotFoundError:
+        print_error(missing_command_message(argv[0]))
+        return COMMAND_NOT_FOUND
 
 
 def run_test(
@@ -107,56 +99,32 @@ def run_test(
 
     start = time.perf_counter()
     results: list[tuple[str, int]] = []
+    backend_cmd = _backend_test_cmd(coverage)
+    frontend_dir = path / "frontend"
+    frontend_cmd = _frontend_test_cmd(frontend_dir, coverage) if run_frontend else None
+    if run_frontend and frontend_cmd is None:
+        print_error("No 'test' or 'test:coverage' script in frontend/package.json")
 
-    if parallel and run_backend and run_frontend:
+    if parallel and run_backend and run_frontend and frontend_cmd is not None:
         print_info("Running backend and frontend tests in parallel...")
-        be_args = ["uv", "run", "pytest", "-v"]
-        if coverage:
-            be_args.extend(["--cov", "--cov-report=term-missing"])
-        be_proc = subprocess.Popen(
-            be_args,
-            cwd=path / "backend",
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
+        be_code, fe_code = run_labeled_jobs(
+            [
+                LabeledJob("[backend]", [backend_cmd], path / "backend"),
+                LabeledJob("[frontend]", [frontend_cmd], frontend_dir),
+            ]
         )
-        fe_pkg = json.loads((path / "frontend" / "package.json").read_text(encoding="utf-8"))
-        fe_scripts = fe_pkg.get("scripts", {})
-        pm = resolve_package_manager(path / "frontend")
-        script = "test:coverage" if (coverage and "test:coverage" in fe_scripts) else "test"
-        fe_cmd = build_run_cmd(pm, script)
-        fe_proc = subprocess.Popen(
-            fe_cmd.full,
-            cwd=path / "frontend",
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-        lock = threading.Lock()
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            be_future = executor.submit(_stream_process, be_proc, "[backend]", lock)
-            fe_future = executor.submit(_stream_process, fe_proc, "[frontend]", lock)
-        be_code = be_future.result()
-        fe_code = fe_future.result()
         results = [("backend", be_code), ("frontend", fe_code)]
     else:
         if run_backend:
             print_info("Running backend tests...")
-            be_result = _run_backend_tests(path, coverage)
-            if be_result.stdout:
-                console.print(be_result.stdout)
-            if be_result.stderr and be_result.stdout != be_result.stderr:
-                console.print(be_result.stderr)
-            results.append(("backend", be_result.returncode))
+            results.append(("backend", _run_inherited(backend_cmd, path / "backend")))
 
         if run_frontend:
-            print_info("Running frontend tests...")
-            fe_result = _run_frontend_tests(path, coverage)
-            if fe_result.stdout:
-                console.print(fe_result.stdout)
-            if fe_result.stderr:
-                console.print(fe_result.stderr)
-            results.append(("frontend", fe_result.returncode))
+            if frontend_cmd is None:
+                results.append(("frontend", 1))
+            else:
+                print_info("Running frontend tests...")
+                results.append(("frontend", _run_inherited(frontend_cmd, frontend_dir)))
 
     # Summary table
     table = create_table("Test Results", ["Component", "Status"])

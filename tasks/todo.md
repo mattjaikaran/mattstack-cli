@@ -668,3 +668,102 @@ Not introduced by recent work; listed so the inventory is honest.
 | FILELENGTH | **fail** — cli.py 590, context.py 575, generate.py 1870, rules.py 621, sync.py 763 |
 | SECURITY | warnings — bandit findings, mostly low severity |
 | CI | failing since 2026-08-12 on FILELENGTH and bandit |
+
+## CLI remediation (2026-09-30)
+
+Fix command and generated-project behavior before adding verification tools.
+Keep the standalone Gauntlet migration in PR #1 separate.
+
+- [x] Incorporate and verify PR #4's dry-run guards, then close the superseded PR.
+- [x] Return nonzero for failed initialization, audit errors, missing environment variables, and failed upgrades.
+- [x] Fail scope verification when Git discovery fails; handle renamed and unusual paths.
+- [x] Emit raw structured output; keep diagnostics on stderr and escape dynamic terminal text.
+- [x] Preserve stack metadata in `mattstack.yml`; resolve the same project from nested directories.
+- [x] Load root environment values for host commands; preserve explicit shell overrides.
+- [x] Authorize database destruction explicitly and validate seed inputs before a flush.
+- [x] Supervise development processes; separate host and container execution modes.
+- [x] Resolve health checks from actual services and configured ports.
+- [x] Align Compose credentials, readiness, API prefixes, and image ports.
+- [x] Preserve database volumes in routine cleanup.
+- [x] Preserve existing project files during add/upgrade unless replacement is explicit.
+- [x] Compile generated CRUD and sync artifacts; align controllers, schemas, routes, aliases, and mutation payloads.
+- [x] Configure the active frontend bundler without removing router plugins or aliases.
+- [x] Honor noninteractive command requirements, parallel formatting checks, and documented field syntax.
+- [x] Evaluate optional React Doctor, API-contract, frontend-analysis, and Django-development tools.
+- [x] Exercise real CLI commands, generated TypeScript, rendered routes, and Docker/Postgres integration.
+- [x] Update command documentation and the changelog with verified behavior.
+
+Verification: the reduced pytest suite passes. Ruff, mypy, architecture, file
+length, and editable installation checks pass. The quick gauntlet still fails
+its Bandit gate; the existing security-gate debt remains above.
+
+Runtime proof: scaffold and install Django Ninja/Kibo, standalone Vite, and
+Django Matt projects. Run Django checks and Postgres migrations. Exercise the
+generated SDK's create/read/update/delete calls, Decimal wire format, integer
+foreign keys, null rejection, and storage-limit errors. Observe rendered
+Rsbuild/Vite routes. Generate and compile a real OpenAPI SDK and check drift.
+React Doctor completes without skipped checks: no errors and nine warnings.
+
+Keep only essential safety and data-contract regressions. Remove redundant
+diagnostic, forwarding, framework-matrix, source-wording, and optional skipped
+tests. Do not add a per-field generated test matrix. Keep PR #1 unchanged;
+PR #4 is closed. Preserve the user's existing README edits.
+
+Public-release review caught and fixed the Django Matt production image's
+missing Git executable, wrong server, and wrong settings package. Select
+production Django settings explicitly; require distinct runtime signing secrets.
+Do not hide static collection errors. Both Django production images build and
+serve their API surfaces; verify Django Ninja uses production settings with
+`DEBUG=False`. Push grouped commits to a feature branch and PR, not directly
+to main, as selected by the user.
+
+## Merge readiness and boilerplate contracts (2026-10-01)
+
+- [x] Scan the local Vite/TanStack, Rsbuild/Kibo, React Router starter/b2b, and
+      Django Ninja source contracts with scoped subagents.
+- [x] Declare mypy as a development tool and use locked, explicit CI interpreters.
+- [x] Implement TanStack route inventory and shared route IDs, React Router
+      page/CRUD registration, and dependency-gated Next.js API discovery.
+- [x] Implement Ninja camelCase schemas, field-name ORM writes, package exports,
+      required cache services, and production environment modes.
+- [x] Preserve optional Django apps during cleanup and accept documented audit filters.
+- [x] Record follow-up issues instead of inferring app authorization or adding
+      unrelated service and deployment capabilities.
+
+Keep the security gate blocking at every severity. The user selects exact,
+documented waivers for reviewed findings; do not lower thresholds or add global
+rule skips. Bind development host ports to loopback. Trust project scripts,
+dependencies, hooks, PATH, and environment before executing them.
+
+Verification: run all eight quick gauntlet gates with the strict security policy.
+Install locked development tools in clean Python 3.12 and 3.13 environments.
+Build and observe generated TanStack/Vite, React Router/Vite, and Kibo pages;
+check signed-out protected-route redirects. Build generated Ninja CRUD and
+exercise camelCase Decimal/FK writes, partial updates, null rejection, package
+imports, Postgres migrations, and Redis cache access. Keep Next.js page generation.
+Build and serve the Ninja production image with `DEBUG=False` and both production
+mode variables. Exclude dotenv secrets and the host virtual environment from its
+Docker context; verify their absence in the image. Serve `/api/docs` successfully.
+CI exposes a machine-dependent doctor test that assumes all tools exist. Replace
+that assumption with an isolated missing-tool regression. Run the actual CLI with
+an empty tool PATH: return failure for required Bun and keep Docker optional for
+a frontend-only project.
+
+### Next work
+
+- [ ] [Resource ownership, service layers, and model lifecycle (#6)](https://github.com/mattjaikaran/mattstack-cli/issues/6):
+      define explicit scope and verify cross-user isolation and soft-delete behavior.
+- [ ] [Task backends (#7)](https://github.com/mattjaikaran/mattstack-cli/issues/7):
+      select a real worker/backend independently from Celery and never drop jobs silently.
+- [ ] [Realtime profile (#8)](https://github.com/mattjaikaran/mattstack-cli/issues/8):
+      make Centrifugo opt-in and verify token issuance and publish/subscribe.
+- [ ] [Deployment contracts (#9)](https://github.com/mattjaikaran/mattstack-cli/issues/9):
+      require production secrets/modes and use actual Dockerfile paths for every provider.
+- [ ] [Advanced routing (#10)](https://github.com/mattjaikaran/mattstack-cli/issues/10):
+      support custom TanStack configuration and React Router data/lazy route modules.
+- [ ] [Frontend source drift (#11)](https://github.com/mattjaikaran/mattstack-cli/issues/11):
+      fix stale generated trees, missing links, ignored route components, and b2b source mapping.
+- [ ] [Backend quality tooling (#12)](https://github.com/mattjaikaran/mattstack-cli/issues/12):
+      reconcile component hooks/rules with root consolidation without merging PR #1.
+- [ ] [OpenAPI and optional S3 setup (#13)](https://github.com/mattjaikaran/mattstack-cli/issues/13):
+      discover documented schema exports and document explicit storage prerequisites.

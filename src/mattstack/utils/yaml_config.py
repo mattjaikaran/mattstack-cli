@@ -4,14 +4,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import yaml  # type: ignore[import-untyped]
+import yaml
 
 from mattstack.config import (
+    BackendFramework,
     DeploymentTarget,
     FrontendFramework,
     ProjectConfig,
     ProjectType,
     Variant,
+    normalize_name,
 )
 from mattstack.utils.console import print_error
 
@@ -24,18 +26,19 @@ def load_config_file(config_path: Path, output_path: Path) -> ProjectConfig | No
 
     try:
         data = yaml.safe_load(config_path.read_text())
-    except yaml.YAMLError as e:
-        print_error(f"Invalid YAML: {e}")
+    except (yaml.YAMLError, OSError, UnicodeDecodeError) as e:
+        print_error(f"Could not read YAML configuration: {e}")
         return None
 
     if not isinstance(data, dict):
         print_error("Config file must be a YAML mapping")
         return None
 
-    name = data.get("name")
-    if not name:
-        print_error("Config file must include 'name'")
+    raw_name = data.get("name")
+    if not isinstance(raw_name, str) or not normalize_name(raw_name):
+        print_error("Config file must include a nonempty string 'name'")
         return None
+    name = normalize_name(raw_name)
 
     try:
         project_type = ProjectType(data.get("type", "fullstack"))
@@ -54,6 +57,22 @@ def load_config_file(config_path: Path, output_path: Path) -> ProjectConfig | No
     backend = data.get("backend", {})
     frontend = data.get("frontend", {})
     author = data.get("author", {})
+    if not all(isinstance(section, dict) for section in (backend, frontend, author)):
+        print_error("backend, frontend, and author must be YAML mappings")
+        return None
+    for key, section, default in (
+        ("ios", data, False),
+        ("celery", backend, True),
+        ("redis", backend, True),
+    ):
+        if not isinstance(section.get(key, default), bool):
+            print_error(f"'{key}' must be true or false")
+            return None
+    try:
+        backend_fw = BackendFramework(backend.get("framework", "django-ninja"))
+    except ValueError:
+        print_error(f"Invalid backend framework: '{backend.get('framework')}'")
+        return None
 
     try:
         frontend_fw = FrontendFramework(frontend.get("framework", "react-vite"))
@@ -75,6 +94,7 @@ def load_config_file(config_path: Path, output_path: Path) -> ProjectConfig | No
         project_type=project_type,
         variant=variant,
         frontend_framework=frontend_fw,
+        backend_framework=backend_fw,
         include_ios=data.get("ios", False),
         use_celery=backend.get("celery", True),
         use_redis=backend.get("redis", True),

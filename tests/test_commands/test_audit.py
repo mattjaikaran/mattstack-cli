@@ -28,13 +28,6 @@ def test_audit_finds_issues(tmp_path: Path) -> None:
     run_audit(proj, no_todo=True)
 
 
-def test_audit_json_output(tmp_path: Path, capsys) -> None:
-    proj = _make_project(tmp_path)
-    run_audit(proj, json_output=True, no_todo=True)
-    # JSON output goes through Rich, so check capsys for structure
-    # (Rich prints to its own console, but we can verify no crash)
-
-
 def test_audit_single_type(tmp_path: Path) -> None:
     proj = _make_project(tmp_path)
     run_audit(proj, audit_types=["quality"], no_todo=True)
@@ -97,4 +90,30 @@ def test_audit_all_types(tmp_path: Path) -> None:
 def test_audit_no_todo_flag(tmp_path: Path) -> None:
     proj = _make_project(tmp_path)
     run_audit(proj, no_todo=True)
+    assert not (proj / "tasks" / "todo.md").exists()
+
+
+def test_audit_error_findings_exit_nonzero_even_when_filtered(tmp_path: Path) -> None:
+    import pytest
+    import typer
+
+    proj = tmp_path / "creds"
+    proj.mkdir()
+    (proj / "settings.py").write_text('PASSWORD = "password123"\n')
+
+    for kwargs in ({}, {"json_output": True}, {"min_severity": "error"}):
+        with pytest.raises(typer.Exit) as exc_info:
+            run_audit(proj, audit_types=["quality"], no_todo=True, **kwargs)  # type: ignore[arg-type]
+        assert exc_info.value.exit_code == 1
+
+
+def test_audit_json_stdout_is_parseable(tmp_path: Path, capsys) -> None:
+    import json
+
+    long_dir = tmp_path / ("p" * 120)
+    long_dir.mkdir()
+    proj = _make_project(long_dir)
+    run_audit(proj, audit_types=["quality"], json_output=True)
+    data = json.loads(capsys.readouterr().out)
+    assert data["findings"]
     assert not (proj / "tasks" / "todo.md").exists()

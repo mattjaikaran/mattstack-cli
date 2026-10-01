@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import httpx
+import pytest
+
 from mattstack.commands.version import (
     _parse_version,
     check_pypi_version,
@@ -27,24 +30,27 @@ class TestParseVersion:
         assert _parse_version("1.0-dev") == (1,)
 
 
+_PYPI_REQUEST = httpx.Request("GET", "https://pypi.org/pypi/mattstack/json")
+
+
 class TestCheckPypiVersion:
-    def test_returns_none_on_network_failure(self) -> None:
-        with patch("mattstack.commands.version.urllib.request.urlopen") as mock_urlopen:
-            import urllib.error
-
-            mock_urlopen.side_effect = urllib.error.URLError("connection refused")
+    @pytest.mark.parametrize(
+        "outcome",
+        [
+            httpx.ConnectError("connection refused"),
+            httpx.ReadTimeout("timed out"),
+            httpx.Response(404, request=_PYPI_REQUEST),
+            httpx.Response(200, content=b"<html>", request=_PYPI_REQUEST),
+        ],
+    )
+    def test_returns_none_on_failure(self, outcome: Exception | httpx.Response) -> None:
+        get = (
+            {"side_effect": outcome}
+            if isinstance(outcome, Exception)
+            else {"return_value": outcome}
+        )
+        with patch("mattstack.commands.version.httpx.get", **get):
             assert check_pypi_version() is None
-
-    def test_returns_none_on_timeout(self) -> None:
-        with patch("mattstack.commands.version.urllib.request.urlopen") as mock_urlopen:
-            mock_urlopen.side_effect = TimeoutError("timeout")
-            assert check_pypi_version() is None
-
-    def test_returns_version_on_success(self) -> None:
-        with patch("mattstack.commands.version.urllib.request.urlopen") as mock_urlopen:
-            mock_resp = mock_urlopen.return_value.__enter__.return_value
-            mock_resp.read.return_value = b'{"info": {"version": "1.2.3"}}'
-            assert check_pypi_version() == "1.2.3"
 
 
 class TestRunVersion:

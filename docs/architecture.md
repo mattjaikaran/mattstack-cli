@@ -1,22 +1,28 @@
-# mattstack Architecture
+# mattstack architecture
 
 ## File Map
 
 ```
 src/mattstack/
-├── cli.py              # Typer app — 26 commands, 6 subgroups
-├── config.py           # ProjectType, Variant, BackendFramework (3), FrontendFramework (5),
-│                       # DeploymentTarget enums; ProjectConfig dataclass; REPO_URLS (10 repos)
-├── presets.py          # 19 presets (starter/b2b × fullstack/api/frontend, rsbuild, kibo,
-│                       #             nextjs, django-matt, nestjs)
+├── cli.py              # Root Typer app and subgroup registration
+├── cli_scaffold.py     # Scaffold command registration
+├── cli_project.py      # Project command registration
+├── config.py           # Framework enums, ProjectConfig, upstream repo URLs
+├── project.py          # Root, environment, ports, API mount, resolved configuration
+├── config_file.py      # Persist nonsecret metadata and preserve control-plane settings
+├── stack.py            # Shared command-facing stack resolution
+├── stack_detection.py  # Framework and component detection
+├── presets.py          # Named stack configurations
 │
 ├── commands/
 │   ├── init.py         # 3 modes: config-file → preset → interactive wizard
 │   ├── add.py          # Add frontend/backend/ios, validates --framework
 │   ├── upgrade.py      # Diff-based updates, detects nextjs/rsbuild/kibo/vite
 │   ├── generate.py     # Subgroup: model, endpoint, component, page, hook, schema
+│   ├── codegen/        # Backend schemas/exports, UI routing, TS clients/hooks/Zod
 │   ├── db.py           # Subgroup: migrate, makemigrations, status, seed, reset, shell, dump, load
-│   ├── sync.py         # Subgroup: types, zod, api-client, all (uses existing parsers)
+│   ├── sync.py         # types, zod, api-client, all
+│   ├── openapi.py      # Local OpenAPI SDK generation, ownership, drift checks
 │   ├── deps.py         # Subgroup: check, update, audit
 │   ├── health.py       # Docker, DB, Redis, backend, frontend port/HTTP checks
 │   ├── hooks.py        # Subgroup: install, status, run (pre-commit)
@@ -28,6 +34,8 @@ src/mattstack/
 │   ├── env.py          # check/sync/show .env files
 │   ├── rules.py        # Generate CLAUDE.md, .cursorrules, GSD files
 │   ├── context.py      # Dump project context as markdown/JSON
+│   ├── context_builders.py # Collect context without terminal formatting
+│   ├── context_format.py   # Markdown, Claude, and raw JSON output
 │   ├── client.py       # Subgroup: add/remove/install/run/dev/build/exec/which
 │   ├── doctor.py       # Environment checks
 │   ├── info.py         # Presets, repos, examples tables
@@ -36,10 +44,10 @@ src/mattstack/
 │
 ├── generators/         # BaseGenerator ABC → Fullstack/BackendOnly/FrontendOnly + iOS
 ├── auditors/           # BaseAuditor ABC → types, quality, endpoints, tests, dependencies, vulnerabilities
-├── parsers/            # Pure regex parsers: pydantic, typescript, zod, django_routes, nextjs, tests, deps
-├── post_processors/    # customizer (Django + NestJS rename), frontend_config (dynamic port proxy), b2b
-├── templates/          # f-string template functions (makefile, docker_compose, env, readme, etc.)
-└── utils/              # console, git, docker, process, yaml_config, package_manager
+├── parsers/            # Regex schema, route, enum, dependency, and frontend-layout parsers
+├── post_processors/    # Customization, active bundler config, TanStack version alignment
+├── templates/          # Root Makefile, Compose, runtime env, agent rules, Dockerfiles
+└── utils/              # Console, Git, Docker, process supervision, jobs, package managers
 ```
 
 ## Backend Frameworks
@@ -55,13 +63,43 @@ NestJS uses Bull (Redis-based) for queues — `use_celery` is always `False` for
 
 ## Frontend Frameworks
 
-| Key | Enum | Bundler | Dev Port |
-|-----|------|---------|----------|
-| `react-vite` | `REACT_VITE` | Vite | 5173 |
-| `react-vite-starter` | `REACT_VITE_STARTER` | Vite | 5173 |
-| `react-rsbuild` | `REACT_RSBUILD` | Rsbuild | 3000 |
-| `react-rsbuild-kibo` | `REACT_RSBUILD_KIBO` | Rsbuild | 3000 |
-| `nextjs` | `NEXTJS` | Next.js | 3000 |
+| Key | Enum | Bundler | Router | Dev port |
+|-----|------|---------|--------|----------|
+| `react-vite` | `REACT_VITE` | Vite | TanStack Router | 3000 |
+| `react-vite-starter` | `REACT_VITE_STARTER` | Vite | React Router | 3000 |
+| `react-rsbuild` | `REACT_RSBUILD` | Rsbuild | TanStack Router | 3000 |
+| `react-rsbuild-kibo` | `REACT_RSBUILD_KIBO` | Rsbuild | TanStack Router | 3000 |
+| `nextjs` | `NEXTJS` | Next.js | App Router | 3000 |
+
+Use `FrontendLayout` for dependency, bundler, router, alias, and transport
+detection. Keep UI route inventory in `parsers/frontend_routes.py`; use
+`tanstack_route_id()` for generation and source alignment. Do not treat SPA
+pages or client guards as backend endpoints or authorization. Next.js API
+discovery requires a package that declares `next`.
+
+Keep React Router registration inside `FilePlan` so validation finishes before
+any write. Support the scanned JSX structure and refuse ambiguous mutations.
+Preserve existing package exports through the backend export planner.
+
+## Development tools and security gate
+
+Run `uv sync --locked --extra dev` to install the existing development tools,
+including mypy, Bandit, and PyYAML stubs. CI selects each matrix interpreter
+explicitly and uses the committed lockfile.
+
+Keep the Bandit gate blocking at every severity. Do not add global rule skips,
+a blanket baseline, or a lower severity threshold. Use an exact rule-ID
+annotation with a reason only after you review its trust boundary.
+
+Existing scoped waivers cover trusted project/tool execution, XML serialization
+without parsing, public token-storage names, explicit environment examples,
+an internal process-pipe invariant, and container-internal listeners. Execute
+project scripts, dependencies, hooks, and tools only when you trust the project,
+your `PATH`, and your environment. An argv list does not make an untrusted
+project safe. Re-review a waiver when you change its command or data flow.
+
+Publish development services on loopback. Replace production placeholders
+with real secrets; the examples do not prove secret strength.
 
 ## Monorepo Port Assignment
 
@@ -69,17 +107,20 @@ To avoid dev-server conflicts in fullstack projects:
 
 | Backend | Frontend | API Port | Frontend Port |
 |---------|----------|----------|---------------|
-| Django | Vite | 8000 | 5173 |
+| Django | Vite | 8000 | 3000 |
 | Django | Rsbuild | 8000 | 3000 |
 | Django | Next.js | 8000 | 3000 |
-| FastAPI | Vite | 8000 | 5173 |
+| FastAPI | Vite | 8000 | 3000 |
 | FastAPI | Rsbuild | 8000 | 3000 |
 | FastAPI | Next.js | 8000 | 3000 |
-| NestJS | Vite | 4000 | 5173 |
+| NestJS | Vite | 4000 | 3000 |
 | NestJS | Rsbuild | 4000 | 3000 |
 | NestJS | Next.js | 4000 | 3000 |
 
-`config.backend_api_port` encodes this: `4000` for NestJS, `8000` for Django and FastAPI.
+These are defaults. `resolve_project()` applies root environment values and
+persisted port metadata. Use the resolved project in commands rather than a
+second detection path. Host mode runs applications locally; container mode
+supervises Compose applications.
 
 ## Key Patterns
 
@@ -93,8 +134,8 @@ To avoid dev-server conflicts in fullstack projects:
 5. **FrontendFramework** enum: `react-vite`, `react-vite-starter`, `react-rsbuild`, `react-rsbuild-kibo`, `nextjs`
 6. **Parsers are pure functions** — regex-based, no AST, no deps. Return dataclasses
 7. **Auditors inherit BaseAuditor**. `run() → list[AuditFinding]`
-8. **Subgroups** use Typer pattern: `new_app = typer.Typer()`, registered in `_register_subgroups()`
-9. **Lazy imports** in cli.py — each command imports its module only when invoked
+8. **Subgroups** use Typer apps registered by `cli.py`.
+9. **Command registration** is split across `cli_scaffold.py` and `cli_project.py`.
 
 ## Common Workflows
 
@@ -130,4 +171,4 @@ To avoid dev-server conflicts in fullstack projects:
 
 ### Add a new command subgroup
 1. Create `commands/new_cmd.py` with `new_app = typer.Typer(...)` + subcommands
-2. Register in `cli.py` `_register_subgroups()`
+2. Register the subgroup in `cli.py`.

@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from mattstack.utils.package_manager import (
     DEFAULT_PM,
     PackageManager,
@@ -13,8 +15,12 @@ from mattstack.utils.package_manager import (
     build_install_cmd,
     build_remove_cmd,
     build_run_cmd,
+    build_update_cmd,
     detect_package_manager,
+    parse_audit,
+    parse_outdated,
     resolve_package_manager,
+    resolve_package_manager_source,
 )
 
 
@@ -68,14 +74,36 @@ class TestResolvePackageManager:
     def test_explicit_override(self, tmp_path: Path) -> None:
         assert resolve_package_manager(tmp_path, override="npm") == PackageManager.NPM
 
-    def test_invalid_override_falls_through(self, tmp_path: Path) -> None:
-        result = resolve_package_manager(tmp_path, override="invalid")
-        assert result == DEFAULT_PM
+    def test_invalid_override_is_rejected(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="invalid"):
+            resolve_package_manager(tmp_path, override="invalid")
 
     @patch("mattstack.user_config.load_user_config")
-    def test_user_config_override(self, mock_config, tmp_path: Path) -> None:
+    def test_user_default_applies_without_lockfile(self, mock_config, tmp_path: Path) -> None:
         mock_config.return_value = {"defaults": {"package_manager": "yarn"}}
-        assert resolve_package_manager(tmp_path) == PackageManager.YARN
+        resolution = resolve_package_manager_source(tmp_path)
+        assert resolution.manager == PackageManager.YARN
+        assert "user default" in resolution.source
+
+    @patch("mattstack.user_config.load_user_config")
+    def test_project_lockfile_beats_user_default(self, mock_config, tmp_path: Path) -> None:
+        mock_config.return_value = {"defaults": {"package_manager": "yarn"}}
+        (tmp_path / "pnpm-lock.yaml").write_text("")
+        resolution = resolve_package_manager_source(tmp_path)
+        assert resolution.manager == PackageManager.PNPM
+        assert str(tmp_path / "pnpm-lock.yaml") in resolution.source
+
+    @patch("mattstack.user_config.load_user_config")
+    def test_explicit_override_beats_lockfile(self, mock_config, tmp_path: Path) -> None:
+        mock_config.return_value = {}
+        (tmp_path / "pnpm-lock.yaml").write_text("")
+        assert resolve_package_manager(tmp_path, override="npm") == PackageManager.NPM
+
+    def test_component_dir_uses_workspace_root_lockfile(self, tmp_path: Path) -> None:
+        frontend = tmp_path / "frontend"
+        frontend.mkdir()
+        (tmp_path / "pnpm-lock.yaml").write_text("")
+        assert resolve_package_manager(frontend) == PackageManager.PNPM
 
     def test_lockfile_detection_over_default(self, tmp_path: Path) -> None:
         (tmp_path / "pnpm-lock.yaml").write_text("")
@@ -176,3 +204,65 @@ class TestPMCommandStr:
     def test_str_representation(self) -> None:
         cmd = build_add_cmd(PackageManager.BUN, ["react"])
         assert str(cmd) == "bun add react"
+
+
+@pytest.mark.parametrize(
+    ("pm", "flag"),
+    [
+        (PackageManager.BUN, "--exact"),
+        (PackageManager.NPM, "--save-exact"),
+        (PackageManager.YARN, "--exact"),
+        (PackageManager.PNPM, "--save-exact"),
+    ],
+)
+def test_exact_add_pins_for_every_manager(pm: PackageManager, flag: str) -> None:
+    cmd = build_add_cmd(pm, ["oxlint@1.2.3"], dev=True, exact=True)
+    assert flag in cmd.full
+    assert "oxlint@1.2.3" in cmd.full
+    assert flag not in build_add_cmd(pm, ["oxlint"]).full
+
+
+def test_npm_cannot_update_across_majors() -> None:
+    assert build_update_cmd(PackageManager.NPM, latest=True) is None
+    assert build_update_cmd(PackageManager.BUN, latest=True).full == ["bun", "update", "--latest"]
+
+
+class TestParseOutdated:
+    def test_npm_json(self) -> None:
+        out = '{"react": {"current": "18.2.0", "wanted": "18.3.1", "latest": "19.0.0"}}'
+        assert parse_outdated(PackageManager.NPM, out) == [("react", "18.2.0", "19.0.0")]
+
+    def test_bun_box_table(self) -> None:
+        out = (
+            "bun outdated v1.2.0 (abc)\n"
+            "| Package | Current | Update | Latest |\n"
+            "|---------|---------|--------|--------|\n"
+            "| react   | 18.2.0  | 18.3.1 | 19.0.0 |\n"
+        )
+        assert parse_outdated(PackageManager.BUN, out) == [("react", "18.2.0", "19.0.0")]
+
+    def test_yarn_ndjson_table(self) -> None:
+        out = (
+            '{"type":"info","data":"Color legend"}\n'
+            '{"type":"table","data":{"head":["Package","Current","Wanted","Latest"],'
+            '"body":[["react","18.2.0","18.3.1","19.0.0","dependencies",""]]}}\n'
+        )
+        assert parse_outdated(PackageManager.YARN, out) == [("react", "18.2.0", "19.0.0")]
+
+
+class TestParseAudit:
+    def test_npm_vulnerabilities(self) -> None:
+        out = '{"vulnerabilities": {"lodash": {"severity": "high", "via": [{"title": "Proto"}]}}}'
+        assert parse_audit(PackageManager.NPM, out) == [("lodash", "high", "Proto")]
+
+    def test_pnpm_advisories(self) -> None:
+        out = '{"advisories": {"1": {"module_name": "lodash", "severity": "high", "title": "P"}}}'
+        assert parse_audit(PackageManager.PNPM, out) == [("lodash", "high", "P")]
+
+    def test_yarn_ndjson(self) -> None:
+        out = (
+            '{"type":"auditAdvisory","data":{"advisory":'
+            '{"module_name":"lodash","severity":"low","title":"P"}}}\n'
+            '{"type":"auditSummary","data":{}}\n'
+        )
+        assert parse_audit(PackageManager.YARN, out) == [("lodash", "low", "P")]

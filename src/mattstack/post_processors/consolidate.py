@@ -42,6 +42,9 @@ _FRONTEND_GLOBS: list[str] = [
     ".env*",
     "env.example",
     "env.monorepo.example",
+    # Parallel bundler configs drift from the real one, which the generator
+    # patches in place; `bun run dev` never loads these.
+    "*.config.monorepo.*",
     "CLAUDE.md",
     ".gitignore",
     ".dockerignore",
@@ -98,7 +101,15 @@ def _consolidate(root: Path, globs: list[str], dirs: list[str]) -> None:
         for path in root.glob(pattern):
             _remove(path)
     for name in dirs:
-        _remove(root / name)
+        path = root / name
+        # A name such as `files` can be a real, optional Django app.
+        if _is_django_app(path):
+            continue
+        _remove(path)
+
+
+def _is_django_app(path: Path) -> bool:
+    return path.is_dir() and not path.is_symlink() and (path / "apps.py").is_file()
 
 
 def _remove(path: Path) -> None:

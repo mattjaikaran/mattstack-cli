@@ -1,184 +1,130 @@
-"""Docker Compose production template for generated projects."""
+"""Docker Compose production template for generated projects.
+
+Run it with ``--env-file .env.production``. Secrets have no default: Compose
+refuses to start when one is missing instead of shipping a placeholder.
+"""
 
 from __future__ import annotations
 
 from mattstack.config import ProjectConfig
+from mattstack.templates.compose_env import (
+    backend_env,
+    db_service,
+    depends_block,
+    redis_service,
+    render_anchor,
+    render_mapping,
+    required,
+    service_environment,
+)
+from mattstack.templates.frontend_runtime import (
+    FRONTEND_PORT,
+    PROD_API_SERVICE,
+    api_prefix,
+    browser_env,
+    service_origin,
+)
+
+_ENV_FILE = ".env.production"
 
 
 def generate_docker_compose_prod(config: ProjectConfig) -> str:
     """Generate docker-compose.prod.yml."""
     services: list[str] = []
     volumes: list[str] = []
+    header = ""
 
     if config.has_backend:
-        services.append(_db_service(config))
+        header = render_anchor(backend_env(config, production=True)) + "\n\n"
+        services.append(db_service(config, production=True))
         volumes.append("  postgres_data:")
 
         if config.use_redis:
-            services.append(_redis_service())
+            services.append(redis_service(production=True))
             volumes.append("  redis_data:")
 
         services.append(_api_service(config))
 
         if config.use_celery:
-            services.append(_celery_worker_service(config))
-            services.append(_celery_beat_service(config))
+            services.append(_celery_service(config, "worker", "--concurrency=4"))
+            services.append(_celery_service(config, "beat", ""))
 
     if config.has_frontend:
         services.append(_frontend_service(config))
 
-    services_block = "\n\n".join(services)
-    volumes_block = "\n".join(volumes)
-
-    result = f"""services:
-{services_block}"""
-
+    result = header + "services:\n" + "\n\n".join(services)
     if volumes:
-        result += f"""
-
-volumes:
-{volumes_block}"""
-
-    return result
-
-
-def _db_service(config: ProjectConfig) -> str:
-    return f"""\
-  db:
-    image: postgres:17-alpine
-    environment:
-      POSTGRES_DB: ${{POSTGRES_DB:-{config.python_package_name}}}
-      POSTGRES_USER: ${{POSTGRES_USER:-postgres}}
-      POSTGRES_PASSWORD: ${{POSTGRES_PASSWORD}}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped"""
-
-
-def _redis_service() -> str:
-    return """\
-  redis:
-    image: redis:7-alpine
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped"""
+        result += "\n\nvolumes:\n" + "\n".join(volumes)
+    return result + "\n"
 
 
 def _api_service(config: ProjectConfig) -> str:
-    depends = ["db"]
-    if config.use_redis:
-        depends.append("redis")
-
-    depends_block = "\n".join(
-        f"      {dep}:\n        condition: service_healthy" for dep in depends
-    )
-
+    port = config.backend_api_port
+    origin = f"http://localhost:${{FRONTEND_PORT:-{FRONTEND_PORT}}}"
+    extra: dict[str, str] = {}
+    if config.is_django_backend:
+        extra = {
+            "ALLOWED_HOSTS": required("ALLOWED_HOSTS", _ENV_FILE),
+            # prod.py reads these with an empty default, and only keys listed
+            # under `environment:` reach the container.
+            "CORS_ALLOWED_ORIGINS": f"${{CORS_ALLOWED_ORIGINS:-{origin}}}",
+            "CSRF_TRUSTED_ORIGINS": f"${{CSRF_TRUSTED_ORIGINS:-{origin}}}",
+        }
+    elif config.is_fastapi_backend:
+        extra = {"CORS_ORIGINS": f"${{CORS_ORIGINS:-{origin}}}"}
     return f"""\
-  api:
+  {PROD_API_SERVICE}:
     build:
       context: .
       dockerfile: docker/backend/Dockerfile
       target: production
     ports:
-      - "${{API_PORT:-8000}}:8000"
-    environment:
-      DEBUG: "false"
-      DATABASE_URL: postgres://${{POSTGRES_USER:-postgres}}:${{POSTGRES_PASSWORD}}@db:5432/{config.python_package_name}
-      DB_NAME: {config.python_package_name}
-      DB_USER: ${{DB_USER:-postgres}}
-      DB_PASSWORD: ${{DB_PASSWORD:-postgres}}
-      DB_HOST: db
-      DB_PORT: 5432
-      SECRET_KEY: ${{SECRET_KEY}}
-      REDIS_URL: redis://redis:6379/0
-      ALLOWED_HOSTS: ${{ALLOWED_HOSTS:-*}}
-      # prod.py reads these with an empty default, and only keys listed under
-      # `environment:` reach the container, so an SPA call would be blocked
-      # by CORS without them.
-      CORS_ALLOWED_ORIGINS: ${{CORS_ALLOWED_ORIGINS:-http://localhost:3000}}
-      CSRF_TRUSTED_ORIGINS: ${{CSRF_TRUSTED_ORIGINS:-http://localhost:3000}}
-    depends_on:
-{depends_block}
+      - "${{API_PORT:-{port}}}:{port}"
+{service_environment(extra)}
+{depends_block(config)}
     restart: unless-stopped"""
 
 
-def _celery_worker_service(config: ProjectConfig) -> str:
+def _celery_service(config: ProjectConfig, role: str, options: str) -> str:
+    flags = f"-l warning {options}".rstrip()
     return f"""\
-  celery-worker:
+  celery-{role}:
     build:
       context: .
       dockerfile: docker/backend/Dockerfile
       target: production
-    command: celery -A {config.django_package} worker -l warning --concurrency=4
-    environment:
-      DATABASE_URL: postgres://${{POSTGRES_USER:-postgres}}:${{POSTGRES_PASSWORD}}@db:5432/{config.python_package_name}
-      DB_NAME: {config.python_package_name}
-      DB_USER: ${{DB_USER:-postgres}}
-      DB_PASSWORD: ${{DB_PASSWORD:-postgres}}
-      DB_HOST: db
-      DB_PORT: 5432
-      SECRET_KEY: ${{SECRET_KEY}}
-      REDIS_URL: redis://redis:6379/0
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    restart: unless-stopped"""
-
-
-def _celery_beat_service(config: ProjectConfig) -> str:
-    return f"""\
-  celery-beat:
-    build:
-      context: .
-      dockerfile: docker/backend/Dockerfile
-      target: production
-    command: celery -A {config.django_package} beat -l warning
-    environment:
-      DATABASE_URL: postgres://${{POSTGRES_USER:-postgres}}:${{POSTGRES_PASSWORD}}@db:5432/{config.python_package_name}
-      DB_NAME: {config.python_package_name}
-      DB_USER: ${{DB_USER:-postgres}}
-      DB_PASSWORD: ${{DB_PASSWORD:-postgres}}
-      DB_HOST: db
-      DB_PORT: 5432
-      SECRET_KEY: ${{SECRET_KEY}}
-      REDIS_URL: redis://redis:6379/0
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+    command: celery -A {config.django_package} {role} {flags}
+{service_environment({})}
+{depends_block(config)}
     restart: unless-stopped"""
 
 
 def _frontend_service(config: ProjectConfig) -> str:
+    """Next.js serves on 3000; the static frontends serve through nginx on 80."""
+    internal_port = FRONTEND_PORT if config.is_nextjs else 80
     lines = [
         "  frontend:",
         "    build:",
         "      context: .",
         "      dockerfile: docker/frontend/Dockerfile",
-        "    ports:",
-        '      - "${FRONTEND_PORT:-3000}:80"',
     ]
-
+    env: dict[str, str] = {}
     if config.has_backend:
-        lines.extend(
-            [
-                "    depends_on:",
-                "      - api",
-            ]
-        )
-
+        upstream = service_origin(config, PROD_API_SERVICE)
+        # The bundler inlines the browser variables, so they are build args.
+        # Each one is relative and can be overridden from .env.production.
+        args = {key: f"${{{key}:-{value}}}" for key, value in browser_env(config).items()}
+        if config.is_nextjs:
+            # next.config.ts bakes the server-side rewrite target at build time.
+            args["INTERNAL_API_URL"] = upstream
+            env = {"INTERNAL_API_URL": upstream}
+        else:
+            env = {"API_UPSTREAM": upstream, "API_PREFIX": api_prefix(config)}
+        lines.extend(["      args:", render_mapping(args, indent=8)])
+    lines.extend(["    ports:", f'      - "${{FRONTEND_PORT:-{FRONTEND_PORT}}}:{internal_port}"'])
+    if env:
+        lines.extend(["    environment:", render_mapping(env, indent=6)])
+    if config.has_backend:
+        lines.extend(["    depends_on:", f"      - {PROD_API_SERVICE}"])
     lines.append("    restart: unless-stopped")
     return "\n".join(lines)

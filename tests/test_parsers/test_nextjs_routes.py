@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
+import pytest
+
+from mattstack.auditors.base import AuditConfig
+from mattstack.auditors.endpoints import EndpointAuditor
 from mattstack.parsers.nextjs_routes import (
     find_nextjs_app_dirs,
     parse_nextjs_routes,
@@ -164,7 +169,13 @@ def test_nonexistent_app_dir(tmp_path: Path) -> None:
     assert routes == []
 
 
+def _package(root: Path, deps: dict[str, str]) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "package.json").write_text(json.dumps({"dependencies": deps}))
+
+
 def test_find_nextjs_app_dirs_frontend(tmp_path: Path) -> None:
+    _package(tmp_path / "frontend", {"next": "^15"})
     (tmp_path / "frontend" / "app").mkdir(parents=True)
     dirs = find_nextjs_app_dirs(tmp_path)
     assert len(dirs) == 1
@@ -172,6 +183,7 @@ def test_find_nextjs_app_dirs_frontend(tmp_path: Path) -> None:
 
 
 def test_find_nextjs_app_dirs_src(tmp_path: Path) -> None:
+    _package(tmp_path / "frontend", {"next": "^15"})
     (tmp_path / "frontend" / "src" / "app").mkdir(parents=True)
     dirs = find_nextjs_app_dirs(tmp_path)
     assert len(dirs) == 1
@@ -179,9 +191,30 @@ def test_find_nextjs_app_dirs_src(tmp_path: Path) -> None:
 
 
 def test_find_nextjs_app_dirs_standalone(tmp_path: Path) -> None:
+    _package(tmp_path, {"next": "^15"})
     (tmp_path / "app").mkdir()
     dirs = find_nextjs_app_dirs(tmp_path)
     assert len(dirs) == 1
+
+
+@pytest.mark.parametrize(
+    ("deps", "audited"),
+    [
+        ({"next": "^15", "react": "^19"}, True),
+        ({"@tanstack/react-router": "^1", "vite": "^6"}, False),
+        ({"react-router-dom": "^7", "vite": "^6"}, False),
+    ],
+)
+def test_src_app_route_handlers_audited_only_for_next(
+    tmp_path: Path, deps: dict[str, str], audited: bool
+) -> None:
+    frontend = tmp_path / "frontend"
+    _package(frontend, deps)
+    handler = frontend / "src" / "app" / "upload" / "route.ts"
+    handler.parent.mkdir(parents=True)
+    handler.write_text("export async function POST() { return Response.json({}) }\n")
+    findings = EndpointAuditor(AuditConfig(project_path=tmp_path)).run()
+    assert any("No auth on write API route" in f.message for f in findings) is audited
 
 
 def test_find_nextjs_app_dirs_none(tmp_path: Path) -> None:

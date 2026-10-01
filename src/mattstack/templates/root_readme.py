@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from mattstack.config import ProjectConfig
+from mattstack.config import FrontendFramework, ProjectConfig
 
 
 def generate_readme(config: ProjectConfig) -> str:
@@ -68,23 +68,43 @@ def _tech_stack(config: ProjectConfig) -> str:
         elif config.is_nestjs_backend:
             stack.append("- **Background Jobs**: Bull (Redis-based)")
     if config.has_frontend:
-        if config.is_nextjs:
-            stack.append("- **Frontend**: Next.js (App Router, TypeScript, Tailwind)")
-        elif config.frontend_framework.value == "react-rsbuild-kibo":
-            stack.append(
-                "- **Frontend**: React + Rsbuild + Kibo UI + TypeScript (TanStack Router/Table)"
-            )
-        elif config.frontend_framework.value == "react-rsbuild":
-            stack.append("- **Frontend**: React + Rsbuild + TypeScript (TanStack Router)")
-        else:
-            is_tanstack = config.frontend_framework.value == "react-vite"
-            fw = "TanStack Router" if is_tanstack else "React Router"
-            stack.append(f"- **Frontend**: React + Vite + TypeScript ({fw})")
+        stack.append(f"- **Frontend**: {_frontend_description(config)}")
     if config.include_ios:
         stack.append("- **iOS**: SwiftUI (iOS 17+)")
 
     stack_list = "\n".join(stack)
     return f"## Tech Stack\n\n{stack_list}"
+
+
+# Router per template, from each source repo's package.json and route files.
+_FRONTEND_DESCRIPTIONS = {
+    FrontendFramework.REACT_VITE: (
+        "React + Vite + TypeScript (TanStack Router, file routes in src/routes)"
+    ),
+    FrontendFramework.REACT_VITE_STARTER: (
+        "React + Vite + TypeScript (React Router, JSX routes in src/App.tsx)"
+    ),
+    FrontendFramework.REACT_RSBUILD: (
+        "React + Rsbuild + TypeScript (TanStack Router, file routes in src/routes)"
+    ),
+    FrontendFramework.REACT_RSBUILD_KIBO: (
+        "React + Rsbuild + Kibo UI + TypeScript "
+        "(TanStack Router file routes in src/routes, TanStack Table)"
+    ),
+    FrontendFramework.NEXTJS: "Next.js (App Router, TypeScript, Tailwind)",
+}
+
+
+def _frontend_description(config: ProjectConfig) -> str:
+    return _FRONTEND_DESCRIPTIONS[config.frontend_framework]
+
+
+def _frontend_label(config: ProjectConfig) -> str:
+    if config.is_nextjs:
+        return "Next.js App"
+    if config.frontend_framework == FrontendFramework.REACT_VITE_STARTER:
+        return "React SPA (React Router)"
+    return "React SPA (TanStack Router)"
 
 
 def _quickstart(config: ProjectConfig) -> str:
@@ -132,7 +152,7 @@ def _quickstart(config: ProjectConfig) -> str:
 
 def _project_structure_fullstack(config: ProjectConfig) -> str:
     ios_line = "\n├── ios/                  # iOS client (SwiftUI)" if config.include_ios else ""
-    fe_label = "Next.js App" if config.is_nextjs else "React SPA"
+    fe_label = _frontend_label(config)
     backend_label = "NestJS API (TypeScript)" if config.is_nestjs_backend else "Django API (Python)"
     return f"""\
 ## Project Structure
@@ -165,7 +185,7 @@ def _project_structure_backend(config: ProjectConfig) -> str:
 
 
 def _project_structure_frontend(config: ProjectConfig) -> str:
-    label = "Next.js App" if config.is_nextjs else "React SPA"
+    label = _frontend_label(config)
     return f"""\
 ## Project Structure
 

@@ -12,12 +12,15 @@ DB_PASSWORD, DB_HOST, and DB_PORT.
 
 from __future__ import annotations
 
+import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
 import yaml
 
-from mattstack.config import FrontendFramework, ProjectConfig, ProjectType
+from mattstack.config import BackendFramework, FrontendFramework, ProjectConfig, ProjectType
 from mattstack.templates.docker_compose import generate_docker_compose
 from mattstack.templates.docker_compose_prod import generate_docker_compose_prod
 from mattstack.templates.root_env import generate_env_example, generate_env_production_example
@@ -63,7 +66,7 @@ def test_dev_api_keeps_redis_and_cors(tmp_path: Path) -> None:
     compose = generate_docker_compose(_fullstack(tmp_path))
     env = _service_env(compose, "api-dev")
     assert env["REDIS_URL"] == "redis://redis:6379/0"
-    assert "localhost:3000" in env["CORS_ALLOWED_ORIGINS"]
+    assert "localhost:3000" in _interpolate(env["CORS_ALLOWED_ORIGINS"], {})
 
 
 @pytest.mark.parametrize("service", ["api", "celery-worker", "celery-beat"])
@@ -137,3 +140,134 @@ def test_dockerfile_pins_the_interpreter_and_venv(tmp_path: Path) -> None:
     # A literal $$PATH is the shell PID, which breaks PATH and every lookup.
     assert "$$PATH" not in dockerfile
     assert "python:3.12-slim" not in dockerfile
+
+
+_REFERENCE = re.compile(r"\$\{(\w+)(?::([-?])([^}]*))?\}")
+
+
+def _interpolate(value: str, env: dict[str, str]) -> str:
+    """Resolve Compose ``${NAME}``, ``${NAME:-default}``, and ``${NAME:?error}``."""
+
+    def resolve(match: re.Match[str]) -> str:
+        name, operator, argument = match.groups()
+        if env.get(name):
+            return env[name]
+        if operator == "?":
+            raise KeyError(f"{name}: {argument}")
+        return argument if operator == "-" else ""
+
+    return _REFERENCE.sub(resolve, value)
+
+
+def _resolved_env(compose_text: str, service: str, env: dict[str, str]) -> dict[str, str]:
+    return {k: _interpolate(v, env) for k, v in _service_env(compose_text, service).items()}
+
+
+def _published(compose_text: str, service: str) -> list[tuple[str, ...]]:
+    """Return (host default, container port) for each published port."""
+    ports = yaml.safe_load(compose_text)["services"][service]["ports"]
+    return [tuple(_interpolate(p, {}).rsplit(":", 2)[-2:]) for p in ports]
+
+
+def test_custom_credentials_reach_the_database_and_every_backend_service(
+    tmp_path: Path,
+) -> None:
+    """Changing POSTGRES_* in .env must not leave a service on the old password."""
+    custom = {"POSTGRES_DB": "appdb", "POSTGRES_USER": "app", "POSTGRES_PASSWORD": "s3cret"}
+    compose = generate_docker_compose(_fullstack(tmp_path))
+    assert _resolved_env(compose, "db", custom) == custom
+    for service in ("api-dev", "celery-worker", "celery-beat"):
+        env = _resolved_env(compose, service, custom)
+        assert (env["DB_NAME"], env["DB_USER"], env["DB_PASSWORD"]) == ("appdb", "app", "s3cret")
+        assert env["DATABASE_URL"] == "postgres://app:s3cret@db:5432/appdb"
+
+
+def test_development_services_publish_only_on_loopback(tmp_path: Path) -> None:
+    services = yaml.safe_load(generate_docker_compose(_fullstack(tmp_path)))["services"]
+    for name in ("db", "redis", "api-dev", "frontend-dev"):
+        for port in services[name]["ports"]:
+            assert _interpolate(port, {}).rsplit(":", 2)[0] == "127.0.0.1", name
+
+
+@pytest.mark.parametrize(
+    ("backend", "frontend", "api_port", "frontend_port"),
+    [
+        (BackendFramework.DJANGO_NINJA, FrontendFramework.REACT_VITE, "8000", "80"),
+        (BackendFramework.NESTJS, FrontendFramework.NEXTJS, "4000", "3000"),
+    ],
+)
+def test_prod_ports_map_to_the_ports_the_images_listen_on(
+    tmp_path: Path,
+    backend: BackendFramework,
+    frontend: FrontendFramework,
+    api_port: str,
+    frontend_port: str,
+) -> None:
+    """NestJS listens on 4000 and `next start` on 3000; nginx serves on 80."""
+    config = ProjectConfig(
+        name="todoapp",
+        path=tmp_path / "todoapp",
+        backend_framework=backend,
+        frontend_framework=frontend,
+    )
+    compose = generate_docker_compose_prod(config)
+    assert _published(compose, "api") == [(api_port, api_port)]
+    assert _published(compose, "frontend")[0][1] == frontend_port
+
+
+@pytest.mark.parametrize(
+    ("frontend", "target_var"),
+    [
+        (FrontendFramework.REACT_VITE, "API_PROXY_TARGET"),
+        (FrontendFramework.REACT_RSBUILD, "API_PROXY_TARGET"),
+        (FrontendFramework.NEXTJS, "INTERNAL_API_URL"),
+    ],
+)
+def test_frontend_container_proxies_to_the_api_service(
+    tmp_path: Path, frontend: FrontendFramework, target_var: str
+) -> None:
+    """Inside the container, localhost is the frontend itself, not the API."""
+    config = ProjectConfig(name="todoapp", path=tmp_path / "todoapp", frontend_framework=frontend)
+    compose = generate_docker_compose(config)
+    env = _service_env(compose, "frontend-dev")
+    assert env[target_var] == "http://api-dev:8000"
+    assert not any("localhost" in value for value in env.values())
+    assert _published(compose, "frontend-dev") == [("3000", "3000")]
+
+
+def _run_make(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["make", "-C", str(root), *args], capture_output=True, text=True, check=False
+    )
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make is not installed")
+def test_makefile_never_drops_data_volumes_without_opt_in(tmp_path: Path) -> None:
+    from mattstack.templates.root_makefile import generate_makefile
+
+    config = _fullstack(tmp_path)
+    config.path.mkdir()
+    (config.path / "Makefile").write_text(generate_makefile(config))
+
+    dry_clean = _run_make(config.path, "-n", "clean")
+    assert dry_clean.returncode == 0
+    assert "down -v" not in dry_clean.stdout
+    refused = _run_make(config.path, "clean-volumes")
+    assert refused.returncode != 0
+    assert "CONFIRM=1" in refused.stderr
+
+
+@pytest.mark.skipif(shutil.which("make") is None, reason="make is not installed")
+def test_missing_frontend_test_script_fails_instead_of_passing(tmp_path: Path) -> None:
+    """nextjs-starter ships no test script; `make frontend-test` must not succeed."""
+    from mattstack.templates.root_makefile import generate_makefile
+
+    config = ProjectConfig(
+        name="todoapp", path=tmp_path / "todoapp", frontend_framework=FrontendFramework.NEXTJS
+    )
+    config.path.mkdir()
+    (config.path / "Makefile").write_text(generate_makefile(config))
+
+    result = _run_make(config.path, "frontend-test")
+    assert result.returncode != 0
+    assert "no test script" in result.stderr

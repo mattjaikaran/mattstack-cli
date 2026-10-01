@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import urllib.error
-import urllib.request
 from collections import Counter
 from pathlib import Path
+
+import httpx
 
 from mattstack.auditors.base import AuditFinding, AuditType, BaseAuditor, Severity
 from mattstack.parsers.django_routes import (
@@ -221,37 +221,56 @@ class EndpointAuditor(BaseAuditor):
         """GET-probe discovered endpoints (safe, read-only)."""
         base_url = self.config.base_url
 
-        for r in routes:
-            if r.method != "GET":
-                continue
+        with httpx.Client(timeout=5, follow_redirects=True) as client:
+            for r in routes:
+                if r.method != "GET":
+                    continue
 
-            url = f"{base_url}{r.path}"
-            # Skip parameterized routes
-            if "{" in url or "<" in url:
-                continue
+                url = f"{base_url}{r.path}"
+                # Skip parameterized routes
+                if "{" in url or "<" in url:
+                    continue
 
-            try:
-                req = urllib.request.Request(url, method="GET")
-                with urllib.request.urlopen(req, timeout=5) as resp:
-                    status = resp.status
-                    if status >= 500:
-                        self.add_finding(
-                            Severity.ERROR,
-                            self._rel(r.file),
-                            r.line,
-                            f"Live probe {r.method} {r.path} returned {status}",
-                            "Check server logs for the error",
-                        )
-            except urllib.error.HTTPError as e:
-                if e.code >= 500:
+                try:
+                    status = client.get(url).status_code
+                except (httpx.UnsupportedProtocol, httpx.InvalidURL) as exc:
+                    self.add_finding(
+                        Severity.WARNING,
+                        Path("."),
+                        0,
+                        f"Invalid base URL {base_url}: {exc}",
+                        "Pass an http:// or https:// URL to --base-url",
+                    )
+                    break
+                except httpx.TransportError:
+                    # Server not running or not reachable
+                    self.add_finding(
+                        Severity.INFO,
+                        Path("."),
+                        0,
+                        f"Could not reach {base_url} — is the server running?",
+                        "Start the backend with 'make backend-dev' before using --live",
+                    )
+                    break  # No point probing more
+                except httpx.RequestError as exc:
+                    self.add_finding(
+                        Severity.WARNING,
+                        self._rel(r.file),
+                        r.line,
+                        f"Live probe {r.method} {r.path} failed: {exc}",
+                        "Check the route's redirects and response encoding",
+                    )
+                    continue
+
+                if status >= 500:
                     self.add_finding(
                         Severity.ERROR,
                         self._rel(r.file),
                         r.line,
-                        f"Live probe {r.method} {r.path} returned {e.code}",
+                        f"Live probe {r.method} {r.path} returned {status}",
                         "Check server logs for the error",
                     )
-                elif e.code == 404:
+                elif status == 404:
                     self.add_finding(
                         Severity.WARNING,
                         self._rel(r.file),
@@ -259,13 +278,3 @@ class EndpointAuditor(BaseAuditor):
                         f"Live probe {r.method} {r.path} returned 404",
                         "Route may not be registered or server isn't running",
                     )
-            except (urllib.error.URLError, TimeoutError, OSError):
-                # Server not running or not reachable — skip silently
-                self.add_finding(
-                    Severity.INFO,
-                    Path("."),
-                    0,
-                    f"Could not reach {base_url} — is the server running?",
-                    "Start the backend with 'make backend-dev' before using --live",
-                )
-                break  # No point probing more

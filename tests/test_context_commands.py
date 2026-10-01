@@ -10,10 +10,12 @@ import pytest
 from typer.testing import CliRunner
 
 from mattstack.cli import app
-from mattstack.commands.context import (
+from mattstack.commands.context_builders import (
     build_models_context,
     build_routes_context,
     build_types_context,
+)
+from mattstack.commands.context_format import (
     estimate_tokens,
     format_context_claude,
     format_context_markdown,
@@ -22,6 +24,18 @@ from mattstack.parsers.django_models import parse_models_file
 from mattstack.parsers.django_routes import parse_controller_file
 
 runner = CliRunner()
+
+
+def test_invalid_environment_fails_without_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "test"\nversion = "1"\n')
+    monkeypatch.delenv("MATTSTACK_TEST_MISSING", raising=False)
+    (tmp_path / ".env").write_text("DUMMY=${MATTSTACK_TEST_MISSING}\n")
+    result = runner.invoke(app, ["context", "stack", str(tmp_path), "--format", "json"])
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "Traceback" not in result.stderr
 
 
 # ── fixtures ──────────────────────────────────────────────────────────────────

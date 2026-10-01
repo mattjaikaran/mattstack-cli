@@ -11,8 +11,9 @@ from pathlib import Path
 class PydanticField:
     name: str
     type_str: str
-    optional: bool = False
+    optional: bool = False  # the annotation admits None
     default: str | None = None
+    has_default: bool = False  # the field may be omitted from input
     constraints: dict[str, str] = field(default_factory=dict)
     alias: str | None = None
     serialization_alias: str | None = None
@@ -43,6 +44,8 @@ class PydanticSchema:
     fields: list[PydanticField] = field(default_factory=list)
     parent: str | None = None
     alias_generator: str | None = None  # e.g. "to_camel", "to_pascal"
+    # Field name -> return annotation of a `@field_serializer` that covers it.
+    serializers: dict[str, str] = field(default_factory=dict)
 
 
 # Pattern: class Name(SomeBase):
@@ -62,63 +65,9 @@ def _is_schema_parent(parent: str) -> bool:
     return name in SCHEMA_BASES or name.endswith("Schema")
 
 
-# Pattern: class Name(str, Enum): or class Name(StrEnum):
-ENUM_RE = re.compile(
-    r"^class\s+(\w+)\s*\(\s*(?:[\w.]+,\s*)*"
-    r"(?:str\s*,\s*)?(?:IntEnum|StrEnum|Enum)\s*\)\s*:",
-    re.MULTILINE,
-)
-
-# Pattern: MEMBER = "value"
-ENUM_MEMBER_RE = re.compile(r"^\s{4}(\w+)\s*=\s*(.+?)\s*$", re.MULTILINE)
-
-
-@dataclass
-class PythonEnum:
-    """A Python enum, emitted as a TypeScript union type."""
-
-    name: str
-    values: list[str] = field(default_factory=list)
-
-
-def parse_enums_file(path: Path) -> list[PythonEnum]:
-    """Parse every enum class from a Python file.
-
-    A schema field can reference an enum, and TypeScript cannot resolve a
-    name that was never emitted, so the type-check fails.
-    """
-    text = path.read_text(encoding="utf-8", errors="replace")
-    lines = text.split("\n")
-    enums: list[PythonEnum] = []
-
-    for match in ENUM_RE.finditer(text):
-        name = match.group(1)
-        start = text[: match.start()].count("\n") + 1
-        body: list[str] = []
-        for line in lines[start:]:
-            if line.strip() == "" or line.startswith("    ") or line.strip().startswith("#"):
-                body.append(line)
-            elif body:
-                break
-
-        values: list[str] = []
-        for member in ENUM_MEMBER_RE.finditer(_strip_docstrings("\n".join(body))):
-            if member.group(1).startswith("_"):
-                continue
-            raw = member.group(2).strip().rstrip(",")
-            # Drop a trailing comment: `BOOLEAN = "boolean"  # on/off toggle`
-            # would otherwise emit `"boolean"  # on/off toggle` as the value.
-            if "#" in raw:
-                raw = raw[: raw.index("#")].strip()
-            if raw.startswith(('"', "'")):
-                values.append(raw.strip("\"'"))
-        enums.append(PythonEnum(name=name, values=values))
-
-    return enums
-
-
-# Pattern: field_name: type = default or Field(...)
-FIELD_RE = re.compile(r"^\s{2,8}(\w+)\s*:\s*(.+?)(?:\s*=\s*(.+))?\s*$", re.MULTILINE)
+# Pattern: field_name: type = default or Field(...). Class-body fields sit at
+# exactly four spaces; deeper lines belong to methods or nested classes.
+FIELD_RE = re.compile(r"^ {4}(\w+)\s*:\s*(.+?)(?:\s*=\s*(.+))?\s*$", re.MULTILINE)
 
 # Pattern: Field(min_length=X, max_length=Y, ...) constraints
 CONSTRAINT_RE = re.compile(r"(\w+)\s*=\s*([^,\)]+)")
@@ -134,8 +83,89 @@ ALIAS_GENERATOR_RE = re.compile(r"\balias_generator\s*=\s*(\w+)")
 # Pattern: model_config = ConfigDict(...) on a single line (common case)
 MODEL_CONFIG_RE = re.compile(r"^\s+model_config\s*=\s*ConfigDict\((.+?)\)", re.MULTILINE)
 
-# Type patterns for optionality
-OPTIONAL_RE = re.compile(r"Optional\[(.+)\]|(\w+)\s*\|\s*None|None\s*\|\s*(\w+)")
+OPTIONAL_WRAPPER_RE = re.compile(r"^(?:typing\.)?Optional\[(.+)\]$")
+ANNOTATED_RE = re.compile(r"^(?:typing\.)?Annotated\[(.+)\]$")
+NULL_MEMBERS = frozenset({"None", "NoneType"})
+
+
+def split_top_level_union(type_str: str) -> list[str]:
+    """Split on `|` that sits outside brackets.
+
+    A naive split breaks `dict[str, bool | str]`, where the bar belongs to the
+    inner type. Only a bar at bracket depth zero separates union members.
+    """
+    parts: list[str] = []
+    depth = 0
+    current: list[str] = []
+    for char in type_str:
+        if char == "[":
+            depth += 1
+        elif char == "]":
+            depth -= 1
+        if char == "|" and depth == 0:
+            parts.append("".join(current).strip())
+            current = []
+            continue
+        current.append(char)
+    parts.append("".join(current).strip())
+    return [part for part in parts if part]
+
+
+def _split_top_level_args(type_str: str) -> list[str]:
+    """Split comma-separated generic arguments at bracket depth zero."""
+    parts: list[str] = []
+    depth = 0
+    current: list[str] = []
+    for char in type_str:
+        if char in "[(":
+            depth += 1
+        elif char in "])":
+            depth -= 1
+        if char == "," and depth == 0:
+            parts.append("".join(current).strip())
+            current = []
+            continue
+        current.append(char)
+    parts.append("".join(current).strip())
+    return [part for part in parts if part]
+
+
+def split_nullable(type_str: str) -> tuple[str, bool]:
+    """Return the annotation without None members and whether None was allowed."""
+    t = type_str.strip()
+    if len(t) > 1 and t[0] == t[-1] and t[0] in "\"'":
+        t = t[1:-1]  # a whole forward reference: "Model"
+    if "Literal[" not in t:
+        # Forward references inside generics: list["Model"]. Literal values keep quotes.
+        t = t.replace('"', "").replace("'", "")
+    annotated = ANNOTATED_RE.match(t)
+    if annotated:
+        t = _split_top_level_args(annotated.group(1))[0]
+    wrapper = OPTIONAL_WRAPPER_RE.match(t)
+    if wrapper:
+        inner, _ = split_nullable(wrapper.group(1))
+        return inner, True
+    members = split_top_level_union(t)
+    non_null = [m for m in members if m not in NULL_MEMBERS]
+    if len(non_null) < len(members):
+        return " | ".join(non_null) if non_null else "None", True
+    return t, False
+
+
+def _field_has_default(default_val: str | None) -> bool:
+    """Return True when a field may be omitted, given its `= ...` text."""
+    if default_val is None:
+        return False
+    value = default_val.strip()
+    if not value.startswith("Field("):
+        return value != "..."
+    args = value[len("Field(") :].rstrip()
+    if args.endswith(")"):
+        args = args[:-1]
+    parts = _split_top_level_args(args)
+    if parts and "=" not in parts[0].split("(")[0]:
+        return parts[0] != "..."
+    return any(part.startswith(("default=", "default_factory=")) for part in parts)
 
 
 def parse_pydantic_file(path: Path) -> list[PydanticSchema]:
@@ -147,7 +177,10 @@ def parse_pydantic_file(path: Path) -> list[PydanticSchema]:
     for match in CLASS_RE.finditer(text):
         class_name = match.group(1)
         parent = match.group(2)
-        if not _is_schema_parent(parent):
+        # A subclass of an earlier schema in this file is a schema too, even
+        # when its base is named `CommentBase` rather than `...Schema`.
+        local_parent = parent.rsplit(".", 1)[-1] in {s.name for s in schemas}
+        if not (_is_schema_parent(parent) or local_parent):
             continue
         class_start = text[: match.start()].count("\n") + 1
 
@@ -171,20 +204,41 @@ def parse_pydantic_file(path: Path) -> list[PydanticSchema]:
                 fields=fields,
                 parent=parent,
                 alias_generator=alias_gen,
+                serializers=_serializers(body_text),
             )
         )
 
     return schemas
 
 
-def _strip_docstrings(body: str) -> str:
-    """Remove triple-quoted blocks from a class body.
+# @field_serializer("a", "b", ...) stacked on `def name(...) -> ReturnType:`
+SERIALIZER_RE = re.compile(
+    r"@(?:pydantic\.)?field_serializer\(([^)]*)\)\s*\n(?:\s*@[^\n]*\n)*"
+    r"\s*def\s+\w+\s*\([^)]*\)\s*->\s*([^:\n]+):"
+)
 
-    A docstring is not a field. Without this, a docstring line such as
-    ``- ``alias_generator=to_camel``: field ``first_name`` -> key`` parses as
-    a field named ``alias_generator``, and the generated TypeScript is
-    invalid.
+
+def _serializers(body: str) -> dict[str, str]:
+    """Field name -> return annotation for each always-active `@field_serializer`.
+
+    `when_used="json"` serializers are skipped: Ninja dumps responses in
+    Python mode and leaves the final encoding to the project's renderer.
     """
+    found: dict[str, str] = {}
+    for args, returns in SERIALIZER_RE.findall(body):
+        when = re.search(r"""when_used\s*=\s*['"]([\w-]+)['"]""", args)
+        if when and when.group(1).startswith("json"):
+            continue
+        for arg in args.split(","):
+            name = re.fullmatch(r"""\s*['"](\w+)['"]\s*""", arg)
+            if name:  # positional field names only; keyword args are options
+                found[name.group(1)] = returns.strip()
+    return found
+
+
+def _strip_docstrings(body: str) -> str:
+    """Remove triple-quoted blocks: a docstring line such as
+    ``alias_generator=to_camel`` would otherwise parse as a field."""
     return re.sub(r'"""(?:.|\n)*?"""', "", body)
 
 
@@ -199,10 +253,12 @@ def _parse_fields(body: str) -> list[PydanticField]:
         default_val = match.group(3)
 
         # Skip class Meta, Config, methods, private attrs
-        if name.startswith("_") or name in ("class", "def", "Meta", "Config"):
+        if name.startswith("_") or name in ("class", "def", "Meta", "Config", "model_config"):
+            continue
+        if type_str.startswith(("ClassVar", "typing.ClassVar")):
             continue
 
-        optional = bool(OPTIONAL_RE.search(type_str))
+        normalized, optional = split_nullable(type_str)
 
         # Parse constraints and aliases from Field(...)
         constraints: dict[str, str] = {}
@@ -235,9 +291,10 @@ def _parse_fields(body: str) -> list[PydanticField]:
         fields.append(
             PydanticField(
                 name=name,
-                type_str=_normalize_type(type_str),
+                type_str=normalized,
                 optional=optional,
                 default=default_val.strip() if default_val else None,
+                has_default=_field_has_default(default_val),
                 constraints=constraints,
                 alias=alias,
                 serialization_alias=serialization_alias,
@@ -263,16 +320,53 @@ def _detect_alias_generator(body: str) -> str | None:
     return None
 
 
-def _normalize_type(t: str) -> str:
-    """Normalize Python type to a canonical form."""
-    t = t.strip()
-    # Remove Optional wrapper
-    m = OPTIONAL_RE.match(t)
-    if m:
-        inner = m.group(1) or m.group(2) or m.group(3)
-        if inner:
-            t = inner.strip()
-    return t
+def resolve_schema_inheritance(schemas: list[PydanticSchema]) -> list[PydanticSchema]:
+    """Return copies of *schemas* with fields and alias generators inherited.
+
+    Parents resolve by class name, preferring one in the same file. Subclass
+    fields override inherited fields of the same name, as in Pydantic. A parent
+    outside the parsed set (Schema, BaseModel) adds nothing.
+    """
+    by_name: dict[str, list[PydanticSchema]] = {}
+    for schema in schemas:
+        by_name.setdefault(schema.name, []).append(schema)
+    resolved: dict[int, PydanticSchema] = {}
+
+    def find_parent(schema: PydanticSchema) -> PydanticSchema | None:
+        candidates = by_name.get((schema.parent or "").rsplit(".", 1)[-1], [])
+        same_file = [c for c in candidates if c.file == schema.file and c is not schema]
+        others = [c for c in candidates if c is not schema]
+        choices = same_file or others
+        return choices[0] if choices else None
+
+    def resolve(schema: PydanticSchema, seen: frozenset[int]) -> PydanticSchema:
+        key = id(schema)
+        if key in resolved:
+            return resolved[key]
+        parent = find_parent(schema)
+        fields: dict[str, PydanticField] = {}
+        alias_generator = schema.alias_generator
+        serializers: dict[str, str] = {}
+        if parent is not None and id(parent) not in seen:
+            base = resolve(parent, seen | {key})
+            fields = {f.name: f for f in base.fields}
+            alias_generator = alias_generator or base.alias_generator
+            serializers = dict(base.serializers)
+        for own in schema.fields:
+            fields[own.name] = own
+        result = PydanticSchema(
+            name=schema.name,
+            file=schema.file,
+            line=schema.line,
+            fields=list(fields.values()),
+            parent=schema.parent,
+            alias_generator=alias_generator,
+            serializers={**serializers, **schema.serializers},
+        )
+        resolved[key] = result
+        return result
+
+    return [resolve(schema, frozenset()) for schema in schemas]
 
 
 def find_schema_files(project_path: Path) -> list[Path]:

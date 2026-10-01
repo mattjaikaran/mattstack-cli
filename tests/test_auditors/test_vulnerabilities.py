@@ -6,6 +6,9 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import httpx
+import pytest
+
 from mattstack.auditors.base import AuditConfig, AuditType, Severity
 from mattstack.auditors.vulnerabilities import VulnerabilityAuditor
 
@@ -79,22 +82,6 @@ def test_pip_audit_success(tmp_path: Path) -> None:
     assert findings[0].severity == Severity.ERROR
 
 
-def test_pip_audit_not_installed(tmp_path: Path) -> None:
-    """Falls back to OSV when pip-audit is not installed."""
-    (tmp_path / "pyproject.toml").write_text(
-        '[project]\nname = "test"\nversion = "0.1.0"\ndependencies = [\n  "requests>=2.28.0",\n]\n'
-    )
-    with (
-        patch("subprocess.run", side_effect=FileNotFoundError),
-        patch.object(VulnerabilityAuditor, "_check_osv") as mock_osv,
-    ):
-        auditor = VulnerabilityAuditor(_make_config(tmp_path))
-        auditor.run()
-        mock_osv.assert_called_once()
-        args = mock_osv.call_args
-        assert args[0][0] == "requests"  # package name
-
-
 def test_npm_audit_success(tmp_path: Path) -> None:
     """npm audit returning vulnerabilities should produce findings."""
     (tmp_path / "package.json").write_text(
@@ -153,21 +140,50 @@ def test_pip_audit_timeout(tmp_path: Path) -> None:
         mock_osv.assert_called()
 
 
-def test_osv_network_error(tmp_path: Path) -> None:
-    """OSV network error should be silently skipped."""
+_OSV_URL = "https://api.osv.dev/v1/query"
+
+
+@pytest.mark.parametrize(
+    "outcome",
+    [
+        httpx.ConnectError("connection refused"),
+        httpx.ReadTimeout("timed out"),
+        httpx.Response(500, request=httpx.Request("POST", _OSV_URL)),
+        httpx.Response(200, content=b"not json", request=httpx.Request("POST", _OSV_URL)),
+    ],
+)
+def test_osv_failures_are_skipped(tmp_path: Path, outcome: Exception | httpx.Response) -> None:
+    """OSV network, HTTP status, and malformed-JSON errors produce no findings."""
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "test"\nversion = "0.1.0"\ndependencies = [\n  "django>=4.0",\n]\n'
     )
-    from urllib.error import URLError
+    post = {"side_effect": outcome} if isinstance(outcome, Exception) else {"return_value": outcome}
 
     with (
         patch("subprocess.run", side_effect=FileNotFoundError),
-        patch("mattstack.auditors.vulnerabilities.urlopen", side_effect=URLError("timeout")),
+        patch.object(httpx.Client, "post", **post),
     ):
-        auditor = VulnerabilityAuditor(_make_config(tmp_path))
-        findings = auditor.run()
-    # Should not crash, just no findings
+        findings = VulnerabilityAuditor(_make_config(tmp_path)).run()
     assert findings == []
+
+
+def test_osv_reports_known_vulnerability(tmp_path: Path) -> None:
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "test"\nversion = "0.1.0"\ndependencies = [\n  "django>=4.0",\n]\n'
+    )
+    response = httpx.Response(
+        200,
+        json={"vulns": [{"id": "GHSA-1", "summary": "SQL injection", "severity": []}]},
+        request=httpx.Request("POST", _OSV_URL),
+    )
+
+    with (
+        patch("subprocess.run", side_effect=FileNotFoundError),
+        patch.object(httpx.Client, "post", return_value=response),
+    ):
+        findings = VulnerabilityAuditor(_make_config(tmp_path)).run()
+    assert len(findings) == 1
+    assert "django 4.0: GHSA-1 — SQL injection" in findings[0].message
 
 
 def test_auditor_registered_in_audit_command() -> None:

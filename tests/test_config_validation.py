@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from mattstack.config import ProjectConfig, ProjectType
+from mattstack.config import BackendFramework, ProjectConfig, ProjectType
 
 
 def test_empty_name_raises() -> None:
@@ -48,14 +48,24 @@ def test_celery_auto_enables_redis() -> None:
     assert config.use_redis is True
 
 
-def test_no_celery_no_auto_redis() -> None:
+@pytest.mark.parametrize(
+    ("backend", "expected"),
+    [
+        (BackendFramework.DJANGO_NINJA, True),  # cache, sessions, and throttles need it
+        (BackendFramework.DJANGO_MATT, False),
+        (BackendFramework.FASTAPI, False),
+    ],
+)
+def test_redis_without_celery_follows_backend(backend: BackendFramework, expected: bool) -> None:
     config = ProjectConfig(
         name="test",
         path=Path("/tmp/test"),
+        backend_framework=backend,
         use_celery=False,
         use_redis=False,
     )
-    assert config.use_redis is False
+    assert config.use_redis is expected
+    assert config.use_celery is False
 
 
 def test_path_string_converted() -> None:

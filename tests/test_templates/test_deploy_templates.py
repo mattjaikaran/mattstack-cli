@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from mattstack.config import (
+    BackendFramework,
     DeploymentTarget,
     FrontendFramework,
     ProjectConfig,
@@ -74,6 +75,8 @@ def render_backend_no_redis_config(tmp_path: Path) -> ProjectConfig:
         project_type=ProjectType.BACKEND_ONLY,
         variant=Variant.STARTER,
         deployment=DeploymentTarget.RENDER,
+        # django-ninja always keeps Redis for its cache; django-matt does not.
+        backend_framework=BackendFramework.DJANGO_MATT,
         use_celery=False,
         use_redis=False,
     )

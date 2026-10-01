@@ -2,54 +2,31 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 import typer
+from rich.markup import escape
 
+from mattstack.project import find_project_root, parse_env_file
 from mattstack.utils.console import console, create_table, print_error, print_info, print_success
 
-# Common locations for .env files
-ENV_PATHS = [
-    ".env.example",
-    ".env",
-    "backend/.env.example",
-    "backend/.env",
-    "frontend/.env.example",
-    "frontend/.env.local",
-]
 
-
-def _parse_env_file(path: Path) -> dict[str, str]:
-    """Parse .env file into key -> value dict. Uses regex, no new deps."""
-    if not path.exists():
-        return {}
-    text = path.read_text(encoding="utf-8")
-    result: dict[str, str] = {}
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-        match = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", line)
-        if match:
-            key, value = match.group(1), match.group(2).strip()
-            # Strip surrounding quotes
-            if (value.startswith('"') and value.endswith('"')) or (
-                value.startswith("'") and value.endswith("'")
-            ):
-                value = value[1:-1]
-            result[key] = value
-    return result
+def _frontend_env_file(frontend: Path) -> Path:
+    """Return the frontend env file in use: .env.local, else .env, else .env.local."""
+    for name in (".env.local", ".env"):
+        if (frontend / name).exists():
+            return frontend / name
+    return frontend / ".env.local"
 
 
 def _find_env_pairs(path: Path) -> list[tuple[Path, Path]]:
     """Find (example, actual) pairs: .env.example -> .env, etc."""
     pairs: list[tuple[Path, Path]] = []
+    frontend = path / "frontend"
     candidates = [
         (path / ".env.example", path / ".env"),
         (path / "backend" / ".env.example", path / "backend" / ".env"),
-        (path / "frontend" / ".env.example", path / "frontend" / ".env.local"),
-        (path / "frontend" / ".env.example", path / "frontend" / ".env"),
+        (frontend / ".env.example", _frontend_env_file(frontend)),
     ]
     for example_path, actual_path in candidates:
         if example_path.exists():
@@ -58,16 +35,16 @@ def _find_env_pairs(path: Path) -> list[tuple[Path, Path]]:
 
 
 def _mask_value(value: str) -> str:
-    """Mask value: show first 3 chars + ***."""
+    """Mask value: show first 3 chars + ***; an empty value shows as (empty)."""
     if not value:
-        return "***"
+        return "(empty)"
     if len(value) <= 3:
         return "*" * len(value)
     return value[:3] + "***"
 
 
 def run_env_check(path: Path) -> None:
-    """Compare .env.example vs .env, report missing and extra vars."""
+    """Compare .env.example vs .env; exit 1 when any example variable is missing."""
     path = path.resolve()
     if not path.is_dir():
         print_error(f"Directory not found: {path}")
@@ -82,37 +59,40 @@ def run_env_check(path: Path) -> None:
     console.print("[bold cyan]mattstack env check[/bold cyan]")
     console.print()
 
-    any_issues = False
+    any_missing = False
     for example_path, actual_path in pairs:
         rel_ex = example_path.relative_to(path)
         rel_act = actual_path.relative_to(path)
-        example_vars = _parse_env_file(example_path)
-        actual_vars = _parse_env_file(actual_path)
+        example_vars = parse_env_file(example_path)
+        actual_vars = parse_env_file(actual_path)
 
         missing = [k for k in example_vars if k not in actual_vars]
+        empty = [k for k in example_vars if actual_vars.get(k) == ""]
         extra = [k for k in actual_vars if k not in example_vars]
 
-        if not missing and not extra:
+        if not missing and not empty and not extra:
             print_success(f"{rel_ex} ↔ {rel_act}: OK (all vars present, no extras)")
             continue
 
-        any_issues = True
+        any_missing = any_missing or bool(missing)
         table = create_table(f"{rel_ex} vs {rel_act}", ["Type", "Variables"])
         if missing:
-            table.add_row("[yellow]Missing in .env[/yellow]", ", ".join(missing))
+            table.add_row(f"[red]Missing in {rel_act}[/red]", ", ".join(missing))
+        if empty:
+            table.add_row(f"[yellow]Empty in {rel_act}[/yellow]", ", ".join(empty))
         if extra:
-            table.add_row("[dim]Extra in .env[/dim]", ", ".join(extra))
+            table.add_row(f"[dim]Extra in {rel_act}[/dim]", ", ".join(extra))
         console.print(table)
         console.print()
 
-    if any_issues:
-        print_info("Run 'mattstack env sync' to copy missing vars from .env.example")
-    else:
-        print_success("All .env files are in sync")
+    if any_missing:
+        print_error("Missing variables. Run 'mattstack env sync' to copy them from .env.example")
+        raise typer.Exit(code=1)
+    print_success("No variables missing")
 
 
 def run_env_sync(path: Path) -> None:
-    """Copy missing vars from .env.example to .env with empty values."""
+    """Append missing vars to .env, copying each default from .env.example."""
     path = path.resolve()
     if not path.is_dir():
         print_error(f"Directory not found: {path}")
@@ -128,8 +108,8 @@ def run_env_sync(path: Path) -> None:
     console.print()
 
     for example_path, actual_path in pairs:
-        example_vars = _parse_env_file(example_path)
-        actual_vars = _parse_env_file(actual_path)
+        example_vars = parse_env_file(example_path)
+        actual_vars = parse_env_file(actual_path)
         missing = [k for k in example_vars if k not in actual_vars]
 
         if not missing:
@@ -174,10 +154,10 @@ def run_env_show(path: Path) -> None:
         if not env_path.exists():
             continue
         found_any = True
-        vars_dict = _parse_env_file(env_path)
+        vars_dict = parse_env_file(env_path)
         table = create_table(str(env_path.relative_to(path)), ["Variable", "Value (masked)"])
         for k, v in sorted(vars_dict.items()):
-            table.add_row(k, _mask_value(v))
+            table.add_row(k, escape(_mask_value(v)))
         console.print(table)
         console.print()
 
@@ -189,14 +169,16 @@ def run_env(
     action: str,
     path: Path,
 ) -> None:
-    """Dispatch to check, sync, or show."""
+    """Dispatch to check, sync, or show for the project that contains ``path``."""
     action = action.lower().strip()
+    if action not in ("check", "sync", "show"):
+        print_error(f"Unknown action: {action}. Use: check, sync, show")
+        raise typer.Exit(code=1)
+    if path.is_dir():
+        path = find_project_root(path)
     if action == "check":
         run_env_check(path)
     elif action == "sync":
         run_env_sync(path)
-    elif action == "show":
-        run_env_show(path)
     else:
-        print_error(f"Unknown action: {action}. Use: check, sync, show")
-        raise typer.Exit(code=1)
+        run_env_show(path)

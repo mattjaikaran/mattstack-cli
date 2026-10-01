@@ -7,12 +7,13 @@ from collections.abc import Callable
 from mattstack.config import DeploymentTarget
 from mattstack.generators.base import BaseGenerator
 from mattstack.post_processors.customizer import customize_frontend
+from mattstack.post_processors.frontend_config import setup_frontend_monorepo
 from mattstack.templates.cursorrules import generate_cursorrules
 from mattstack.templates.pre_commit_config import generate_pre_commit_config
 from mattstack.templates.root_gitignore import generate_gitignore
 from mattstack.templates.root_makefile import generate_makefile
 from mattstack.templates.root_readme import generate_readme
-from mattstack.utils.console import print_error
+from mattstack.utils.console import print_error, print_info
 
 
 class FrontendOnlyGenerator(BaseGenerator):
@@ -26,6 +27,7 @@ class FrontendOnlyGenerator(BaseGenerator):
             ("Creating root files", self._step_create_root_files),
             ("Writing pre-commit config", self._write_pre_commit_config),
             ("Customizing frontend", self._step_customize_frontend),
+            ("Writing project configuration", self.write_project_configuration),
             ("Initializing git", self._step_init_git),
         ]
 
@@ -65,8 +67,12 @@ class FrontendOnlyGenerator(BaseGenerator):
             return False
 
     def _step_customize_frontend(self) -> bool:
+        if self.config.dry_run:
+            print_info("[dry-run] Would customize frontend")
+            return True
         try:
             customize_frontend(self.config)
+            setup_frontend_monorepo(self.config)
             return True
         except Exception as e:
             print_error(f"Failed to customize frontend: {e}")
