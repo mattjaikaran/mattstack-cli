@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Preserve canonical backend rules and gate scripts; install all declared hook stages with prerequisite checks.
 - Discover Ninja's documented OpenAPI export while preserving explicit schema overrides and local-only SDK tools.
 - Keep B2B frontend/router selection explicit; do not substitute an incompatible B2B API source.
+- Separate CLI control flow, selected-project runtime, and deployment diagrams; explain access policies, runtime choices, source provenance, and verification limits.
 
 ### Fixed
 

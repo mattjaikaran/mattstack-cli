@@ -817,3 +817,15 @@ a frontend-only project.
   production-image smoke verifies TLS redirects, host checks, HSTS, and health.
 - Keep owning-source fixes local until you publish them. Fresh GitHub clones do
   not contain unpublished frontend pins, source routes, or canonical gate fixes.
+
+### Documentation review for PR #14
+
+- [x] Separate the CLI's init/generation flow from a selected project's runtime.
+- [x] Replace the all-framework architecture diagram with one selected API and UI.
+- [x] Explain task backends, access policies, routing, deployment prerequisites,
+  source provenance, lock updates, and trusted plugin behavior.
+- [x] Render seven Mermaid diagrams in Chromium and check local Markdown links.
+- [x] Exercise scaffold and model dry-runs, inspect actual CLI help, and run the
+  documented plugin against an isolated source fixture.
+- Keep the user's existing README source-link edits outside the documentation
+  commit. Preserve their bytes in the working tree.

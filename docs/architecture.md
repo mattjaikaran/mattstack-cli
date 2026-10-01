@@ -1,186 +1,438 @@
 # mattstack architecture
 
-## File map
+This page explains how the mattstack CLI turns your choices into one
+generated project, and how later commands change that project safely. For
+flags and examples, see the [CLI reference](commands.md). For production
+targets, see the [deployment guide](deployment-guide.md). For custom
+boilerplate repos, presets, and optional tools, see the
+[ecosystem guide](ecosystem.md). For custom auditors, see the
+[plugin guide](plugin-guide.md).
 
+## Two views: the CLI and the generated project
+
+Keep these two views separate:
+
+- **The CLI (this repository)** knows every supported backend and frontend.
+  It holds their enums, source repo URLs, presets, templates, and code
+  generators.
+- **A generated project** contains only the components you selected: at most
+  one backend in `backend/`, at most one frontend in `frontend/`, and an
+  optional iOS client in `ios/`. The CLI does not install the other
+  frameworks.
+
+| Role | Supported choices in the CLI | Selected in one project |
+|------|------------------------------|-------------------------|
+| Project type | `fullstack`, `backend-only`, `frontend-only` | Exactly one |
+| Backend | `django-ninja`, `django-matt`, `fastapi`, `nestjs` | One, or none for `frontend-only` |
+| Frontend | `react-vite`, `react-vite-starter`, `react-rsbuild`, `react-rsbuild-kibo`, `nextjs` | One, or none for `backend-only` |
+| iOS client | `swift-ios` | Optional, `fullstack` only |
+| Task backend | `celery`, `huey`, `django_q`, `django_rq`, `dramatiq`, `none` | One that the backend supports; see [Task backend selection](#task-backend-selection) |
+| Realtime | Centrifugo | Optional, `django-ninja` only |
+| Media storage | `local`, `s3` | One; `s3` needs `django-ninja` |
+| Deployment target | `docker`, `railway`, `render`, `fly-io`, `cloudflare`, `digital-ocean`, `aws`, `gcp`, `hetzner`, `self-hosted` | One; `init` refuses unsupported combinations |
+
+## Init pipeline
+
+`mattstack init` resolves your choices into one `ProjectConfig`, then runs
+one generator. Each step returns success or failure. A failure removes the
+project directory that this run created.
+
+```mermaid
+flowchart TD
+    start["mattstack init"] --> mode{"Entry mode"}
+    mode -->|"--config file.yml"| file["load_config_file()"]
+    mode -->|"name + --preset"| preset["Preset.to_config()"]
+    mode -->|"terminal, no preset"| wizard["Wizard: type, variant,<br/>one backend, one frontend,<br/>iOS, task backend, realtime"]
+    file --> flags["Apply --task-backend, --realtime,<br/>--media-storage flags"]
+    preset --> flags
+    wizard --> config
+    flags --> config["ProjectConfig.__post_init__<br/>normalize and validate runtime"]
+    config --> guard{"_generate() checks"}
+    guard -->|"directory exists or<br/>unsupported deployment"| refuse["Exit; nothing written"]
+    guard -->|"ok"| pick{"project_type"}
+    pick -->|"fullstack"| full["FullstackGenerator"]
+    pick -->|"backend-only"| back["BackendOnlyGenerator"]
+    pick -->|"frontend-only"| front["FrontendOnlyGenerator"]
+    full --> steps["Run steps in order"]
+    back --> steps
+    front --> steps
+    steps -->|"a step fails"| cleanup["cleanup(): remove the<br/>root this run created"]
+    steps -->|"all pass"| done["Print next steps"]
 ```
+
+### How init resolves choices
+
+1. `run_init()` selects one entry mode. `--config` cannot combine with a
+   name or `--preset`. Without a terminal, you must pass `--preset` with a
+   name, or `--config`.
+2. Runtime flags override the config file or preset. The wizard asks only
+   for the runtime choices that flags did not set, and it lists only the
+   task backends that the selected backend supports.
+3. `ProjectConfig.__post_init__` normalizes the choice set:
+   - `frontend-only` sets the task backend to `none` and turns off Redis,
+     iOS, realtime, and S3 media.
+   - `nestjs` maps the legacy Celery default to `none` and keeps Redis on,
+     because Bull runs inside the NestJS API.
+   - `django-ninja` always uses Redis. Any task backend other than `none`
+     also turns on Redis.
+   - An unsupported task backend, realtime, or media choice raises
+     `ValueError`. `init` prints the valid choices and exits before it
+     creates any file.
+4. `_generate()` refuses an existing directory and a deployment target that
+   cannot run the stack, for example Next.js on Cloudflare.
+
+### What each generator writes
+
+The generator clones only the selected source repos. `clone_and_strip()`
+shallow-clones the default branch of the URL in `REPO_URLS`, or your
+override from `~/.mattstack/config.yaml`. It then removes the `.git`
+history. A fresh `init` therefore uses the published boilerplates, not
+unpublished local changes.
+
+| Step | Fullstack | Backend-only | Frontend-only |
+|------|:---------:|:------------:|:-------------:|
+| Create the project directory | yes | yes | yes |
+| Clone the selected backend into `backend/` | yes | yes | no |
+| Clone the selected frontend into `frontend/` | yes | no | yes |
+| Clone the iOS starter into `ios/` | if `--ios` | no | no |
+| Consolidate component root files | yes | yes | no |
+| Check task and realtime prerequisites | yes | yes | no |
+| Write root files (Makefile, README, `.cursorrules`, `.gitignore`, deployment files) | yes | yes | yes |
+| Write Compose files, `.env*`, `CLAUDE.md`, and Dockerfiles | yes | yes | no |
+| Write the root `.pre-commit-config.yaml` | yes | yes | yes |
+| Customize cloned components (names; frontend bundler config and API proxy) | yes | backend only | frontend only |
+| Write `mattstack.yml` and `.dockerignore` | yes | yes | yes |
+| Initialize Git with a first commit | yes | yes | yes |
+
+Frontend-only provider recipes can add image files separately. Fly emits a
+frontend Dockerfile; Render and DigitalOcean emit one for Next.js. Static-site
+recipes do not need those containers.
+
+`--dry-run` runs the same steps but prints each action instead of writing.
+
+## Generated project runtime
+
+A generated project runs only its selected components. The diagram shows a
+fullstack project. A backend-only project has no frontend node. A
+frontend-only project has only the frontend.
+
+```mermaid
+flowchart TD
+    browser["Browser"] --> fe["One selected frontend"]
+    fe -->|"dev proxy or Next.js rewrite<br/>of the API prefix"| api["One selected backend"]
+    api --> db[("PostgreSQL :5432")]
+    api -.->|"optional: Redis enabled"| redis[("Redis :6379")]
+    worker["Optional task worker<br/>Compose profile per task backend"] -.-> redis
+    api -.->|"optional: --realtime,<br/>django-ninja only"| cent["Centrifugo :8800"]
+    browser -.->|"optional: authenticated WebSocket"| cent
+```
+
+- Dashed edges are optional. Task workers and Centrifugo start only with
+  their Compose profile, so `docker compose up` alone starts the same core
+  services.
+- `mattstack dev` runs in host mode by default: Compose starts only the
+  database and Redis, and the app servers run on your machine. Container
+  mode runs the `api-dev` and `frontend-dev` Compose services instead.
+- The production Compose file and deployment recipes follow the same
+  selection. See the [deployment guide](deployment-guide.md) for the
+  production prerequisites and the verification boundary.
+
+### Default ports
+
+| Service | Default | Override |
+|---------|---------|----------|
+| Backend API | 8000 for Python backends, 4000 for NestJS | `API_PORT` |
+| Frontend dev server | 3000 for every frontend | `FRONTEND_PORT` |
+| PostgreSQL | 5432 | `DB_PORT` |
+| Redis | 6379 | `REDIS_PORT` |
+
+`resolve_project()` reads each port from the root `.env` first, then from
+`project.ports` in `mattstack.yml`, then from these defaults. Commands use
+the resolved project. Do not add a second detection path.
+
+## Project metadata and secret environment
+
+Generated projects keep stack facts and secrets in different files:
+
+| File | Content | In Git |
+|------|---------|--------|
+| `mattstack.yml` | Control-plane settings (`deps`, `scope`, `board`, `notify`) and the `project:` stack metadata | Yes |
+| `.env.example`, `.env.production.example` | Variable names with placeholder values | Yes |
+| `.env` | Local values. Realtime projects get random Centrifugo secrets. | No |
+| `.env.production` | A copy of the production example. Replace every placeholder before you deploy. | No |
+
+`save_project_config()` writes only nonsecret choices under `project:`:
+name, type, variant, iOS, deployment target, execution mode, the backend
+framework, directory, Redis, API prefix, task backend, realtime, media
+storage, and settings module, the frontend framework and directory, and
+ports. It overwrites scaffold choices, keeps user-tuned values such as
+ports, and keeps every other key and comment. Configuration that needs a
+credential names an environment variable, for example
+`board.api_key_env`, instead of the value.
+
+When a command reads an existing project, persisted metadata wins over
+filesystem detection. Detection in `stack_detection.py` returns `None` for
+a framework it does not recognize, and callers refuse rather than guess.
+
+## Task backend selection
+
+`ProjectConfig.task_backend` is the single runtime selection. `use_celery`
+is a derived property, not a constructor argument.
+
+| Backend | Supported task backends | Worker processes |
+|---------|-------------------------|------------------|
+| `django-ninja` | `celery`, `huey`, `django_q`, `django_rq`, `dramatiq`, `none` | Celery worker and beat, or one worker for the other backends |
+| `django-matt`, `fastapi` | `celery`, `none` | Celery worker and beat |
+| `nestjs` | `none` | None; Bull queues run inside the API |
+| Frontend-only | `none` | None |
+
+For `django-ninja`, the generator writes `TASK_BACKEND` to the environment
+files. Before it writes root files, `prepare_runtime()` checks the cloned
+backend:
+
+- It adds the disabled `none` backend to `api/tasks/loader.py` when the
+  clone does not have it. With `none`, `.delay()` raises
+  `TaskDispatchDisabled` instead of queueing a job that no worker reads.
+- It fails when the loader does not list the selected backend, when
+  `pyproject.toml` lacks the backend's optional extra, or when realtime
+  files are missing.
+
+For an existing project, `runtime_kwargs()` resolves the task backend in
+this order: `project.backend.task_backend`, then `TASK_BACKEND` in `.env`
+for `django-ninja`, then the legacy `celery` flag, then a `celery`
+dependency in the backend manifest.
+
+## Code generation: plan, validate, then write
+
+`mattstack generate` commands collect every create and update in one
+`FilePlan` in memory. All validation runs before the first write. A
+`GenerateError` at any point means that nothing was written.
+
+```mermaid
+flowchart TD
+    cmd["mattstack generate model, crud,<br/>endpoint, schema, page, component, hook"] --> resolve["resolve_project()<br/>root, backend/, frontend/"]
+    resolve --> layout["Detect layout<br/>backend_layout.py, frontend_layout.py"]
+    layout --> policy["Validate inputs<br/>fields, policy, router shape"]
+    policy -->|"GenerateError"| stop["Exit 1; nothing written"]
+    policy --> plan["Plan backend and frontend<br/>writes into one FilePlan"]
+    plan -->|"GenerateError"| stop
+    plan --> conflicts{"finish(): new files<br/>already exist?"}
+    conflicts -->|"yes, without --force"| stop
+    conflicts -->|"no, or --force"| apply["FilePlan.apply(dry_run)"]
+    apply -->|"--dry-run"| preview["Print planned paths only"]
+    apply -->|"normal run"| write["Create planned files,<br/>then update existing files"]
+```
+
+- `generate crud` plans the backend and the frontend in the same plan, so
+  a refused frontend route also stops the backend files.
+- `FilePlan.text()` returns the planned content of a file, so later
+  planners build on earlier planned edits, not stale disk content.
+- `FilePlan.apply()` writes files one at a time and has no rollback. The
+  guarantee covers validation and conflict errors, not an operating system
+  error during the write.
+- Backend generation needs a Django backend with a `NinjaExtraAPI` or
+  django-matt API instance. It refuses plain `NinjaAPI`. It does not
+  generate FastAPI or NestJS code.
+
+### Router detection
+
+`detect_frontend_layout()` reads `frontend/package.json` and selects one
+router. Page and CRUD generation then use that router's own conventions.
+
+| Dependency found | Router | Where pages go |
+|------------------|--------|----------------|
+| `next` | `nextjs` | App Router directory (`app/` or `src/app/`) |
+| `@tanstack/react-router` | `tanstack` | Routes directory from the TanStack config (`parsers/tanstack_config.py`) |
+| `react-router-dom` or `react-router` | `react-router` | `src/pages/`, registered in the route declaration |
+| None of these | `unknown` | Page generation refuses |
+
+For React Router, the generator edits one of two declaration styles: a
+module that renders `<Routes>` with literal `<Route>` elements, or exactly
+one `createBrowserRouter`, `createHashRouter`, `createMemoryRouter`, or
+`useRoutes` call with a literal or named `const` route array. It refuses
+computed, spread, or mapped routes, and `createRoutesFromElements`. Then
+you register the page by hand.
+
+A browser guard (`--guard`, or the React Router `protected` group) is a
+client-side redirect. It is not authorization, and audits never report it
+as a backend control.
+
+### Resource policy: global and owned
+
+`generate model` and `generate crud` take a resource policy.
+`resource_policy.py` checks the policy against the backend before it plans
+any file.
+
+| Scope | Reads | Writes | Requirements |
+|-------|-------|--------|--------------|
+| `global` (default) | Every caller reads every row | Need a valid JWT when the backend has JWT auth; open to every caller when it does not | None |
+| `owned` | Each caller sees only their rows; another user's row answers 404 | Every route needs a valid JWT; create sets the owner from the request user | `--owner-field` names a `name:fk:User` field, and the backend depends on `django-ninja-jwt` or `django-matt[auth]` |
+
+- A user foreign key does not grant access by itself. Only
+  `--scope owned --owner-field <field>` binds rows to a user.
+- The generated module states its policy and lifecycle in its docstring.
+- In a `global` resource, the list query line carries
+  `# global policy; noqa: UNSCOPED_QUERY` for the backend convention gate.
+  The generator does not change the route-auth contract. When the backend
+  has `core/tests/test_route_auth.py`, the CLI prints a security review
+  warning. Review the anonymous GET operations, and then add them to
+  `PUBLIC_OPERATIONS` yourself.
+- `--lifecycle soft-delete` requires a base model whose default manager
+  hides inactive rows. The check refuses a base model that does not.
+
+## Component guidance and quality gates
+
+Consolidation removes each cloned component's standalone root files,
+because the generated project has one root. Agent guidance follows one
+rule: canonical sources stay, and harness adapters go.
+
+- **Kept in the component:** `AGENTS.md`, `SKILLS.md`, `.agents/skills/`,
+  `.omp/`, and `.context/`.
+- **Removed from the component:** `CLAUDE.md`, `.cursorrules`, `.claude/`,
+  `.cursor/`, `.windsurf/`, `.kiro/`, and `.continue/`. The root
+  `CLAUDE.md` and `.cursorrules` replace them.
+- The root `CLAUDE.md` lists each component's guidance files that exist,
+  and its quick gate: `cd backend && just gauntlet-quick` when the
+  component has that `justfile` recipe, or its `gauntlet:quick` package
+  script.
+- The root `.pre-commit-config.yaml` runs each tool inside its component.
+  For `django-ninja`, it runs the backend's locked ruff on commit and
+  `just gauntlet-quick` on push. Other Python backends use the ruff
+  pre-commit mirror, NestJS uses its `lint` script, and frontends use
+  their own prettier.
+
+Keep this guidance and these gate scripts during consolidation. Do not
+replace the generated hooks with the open PR #1 implementation.
+
+## CLI source map
+
+```text
 src/mattstack/
-├── cli.py              # Root Typer app and subgroup registration
-├── cli_scaffold.py     # Scaffold command registration
-├── cli_project.py      # Project command registration
-├── config.py           # Framework enums, ProjectConfig, upstream repo URLs
-├── project.py          # Root, environment, ports, API mount, resolved configuration
-├── config_file.py      # Persist nonsecret metadata and preserve control-plane settings
-├── stack.py            # Shared command-facing stack resolution
-├── stack_detection.py  # Framework and component detection
-├── presets.py          # Named stack configurations
-├── runtime_profiles.py # Task workers, realtime, storage prerequisites and context
-│
+├── cli.py              # Root Typer app; registers the subgroups
+├── cli_scaffold.py     # init, add, upgrade, doctor, info, presets, audit, config
+├── cli_project.py      # dev, test, lint, fmt, env, health, workflow, protect, notify, verify, ...
+├── config.py           # Enums, ProjectConfig, supported_task_backends, REPO_URLS
+├── presets.py          # Built-in presets and user presets from ~/.mattstack/config.yaml
+├── user_config.py      # User config: repo overrides, presets, defaults
+├── project.py          # resolve_project(), save_project_config(), .env parsing
+├── config_file.py      # mattstack.yml control plane and the project: section
+├── stack.py            # Resolved stack for add, upgrade, rules, and workflow
+├── stack_detection.py  # Conservative backend and frontend detection
+├── runtime_profiles.py # Task workers, realtime, and runtime prerequisites
+├── notify.py           # Deploy notification backends
 ├── commands/
-│   ├── init.py         # 3 modes: config-file → preset → interactive wizard
-│   ├── add.py          # Add frontend/backend/ios, validates --framework
-│   ├── upgrade.py      # Diff-based updates, detects nextjs/rsbuild/kibo/vite
-│   ├── generate.py     # Subgroup: model, endpoint, component, page, hook, schema
-│   ├── codegen/        # Backend schemas/exports, UI routing, TS clients/hooks/Zod
-│   ├── db.py           # Subgroup: migrate, makemigrations, status, seed, reset, shell, dump, load
-│   ├── sync.py         # types, zod, api-client, all
-│   ├── openapi.py      # Local OpenAPI SDK generation, ownership, drift checks
-│   ├── deps.py         # Subgroup: check, update, audit
-│   ├── health.py       # Docker, DB, Redis, backend, frontend port/HTTP checks
-│   ├── hooks.py        # Subgroup: install, status, run (pre-commit)
-│   ├── workflow.py     # GitHub Actions / GitLab CI generation
-│   ├── audit.py        # 6 auditor classes + plugin loader
-│   ├── dev.py          # Start services with port conflict detection
-│   ├── test.py         # Unified pytest + vitest, --parallel, timing
-│   ├── lint.py         # Unified ruff + eslint, --parallel, timing
-│   ├── env.py          # check/sync/show .env files
-│   ├── rules.py        # Generate CLAUDE.md, .cursorrules, GSD files
-│   ├── context.py      # Dump project context as markdown/JSON
-│   ├── context_builders.py # Collect context without terminal formatting
-│   ├── context_format.py   # Markdown, Claude, and raw JSON output
-│   ├── client.py       # Subgroup: add/remove/install/run/dev/build/exec/which
-│   ├── doctor.py       # Environment checks
-│   ├── info.py         # Presets, repos, examples tables
-│   ├── version.py      # Version + update check
-│   └── completions.py  # Shell completions
-│
-├── generators/         # BaseGenerator ABC → Fullstack/BackendOnly/FrontendOnly + iOS
-├── auditors/           # BaseAuditor ABC → types, quality, endpoints, tests, dependencies, vulnerabilities
-├── parsers/            # Regex schema, route, enum, dependency, and frontend-layout parsers
-├── post_processors/    # Customization, active bundler config, TanStack version alignment
-├── templates/          # Root Makefile, Compose, runtime env, agent rules, Dockerfiles
-└── utils/              # Console, Git, Docker, process supervision, jobs, package managers
+│   ├── init.py, init_runtime.py   # Entry modes, wizard, runtime flags
+│   ├── generate.py, generate_crud.py  # generate subgroup
+│   ├── codegen/        # FilePlan, layouts, resource policy, router planners, TS/Zod
+│   ├── add.py, upgrade.py  # Add a component; preview boilerplate updates
+│   ├── db.py, db_target.py  # Database subgroup and target detection
+│   ├── sync.py, openapi.py  # Types, Zod, API client, OpenAPI SDK
+│   ├── dev.py, test.py, lint.py, health.py, env.py
+│   ├── deps.py, hooks.py, workflow.py  # Dependencies, Git hooks, GitHub Actions
+│   ├── audit.py        # AUDITOR_CLASSES and plugin loading
+│   ├── rules.py, context*.py  # Agent config files and context dumps
+│   ├── board.py, todo.py, protect.py, verify.py, notify.py  # Control plane
+│   └── client.py, doctor.py, info.py, version.py, completions.py
+├── generators/         # BaseGenerator and the fullstack, backend-only, frontend-only, iOS generators
+├── post_processors/    # Consolidation, customization, bundler config, task runtime, TLS health
+├── templates/          # Python functions that return file content (no Jinja2)
+├── parsers/            # Regex parsers that return dataclasses
+├── auditors/           # BaseAuditor subclasses that return AuditFinding objects
+├── boards/             # Board backends (axis, none; Hermes, Jira, Linear are stubs)
+└── utils/              # Console, Git, Docker, processes, jobs, package managers
 ```
 
-## Backend frameworks
+`scripts/check_architecture.py` enforces the layers: `commands/` can import
+core modules, and core modules cannot import from `commands/`.
 
-| Key | Enum | Language | Package Manager | Port (monorepo) |
-|-----|------|----------|-----------------|-----------------|
-| `django-ninja` | `BackendFramework.DJANGO_NINJA` | Python | `uv` | 8000 |
-| `django-matt` | `BackendFramework.DJANGO_MATT` | Python | `uv` | 8000 |
-| `fastapi` | `BackendFramework.FASTAPI` | Python | `uv` | 8000 |
-| `nestjs` | `BackendFramework.NESTJS` | TypeScript/Node.js | `bun` | 4000 |
+## Key patterns
 
-Use `ProjectConfig.task_backend` as the runtime selection. Ninja supports
-Celery, Huey, django-q, django-rq, Dramatiq, and disabled dispatch. FastAPI and
-django-matt support Celery or no worker. NestJS uses Bull internally.
-`use_celery` is a derived property, not a constructor argument. Preserve only
-nonsecret runtime choices in project metadata.
-
-## Frontend frameworks
-
-| Key | Enum | Bundler | Router | Dev port |
-|-----|------|---------|--------|----------|
-| `react-vite` | `REACT_VITE` | Vite | TanStack Router | 3000 |
-| `react-vite-starter` | `REACT_VITE_STARTER` | Vite | React Router | 3000 |
-| `react-rsbuild` | `REACT_RSBUILD` | Rsbuild | TanStack Router | 3000 |
-| `react-rsbuild-kibo` | `REACT_RSBUILD_KIBO` | Rsbuild | TanStack Router | 3000 |
-| `nextjs` | `NEXTJS` | Next.js | App Router | 3000 |
-
-Use `FrontendLayout` for router, bundler, alias, auth/transport, and styling
-detection. Keep UI inventory in `parsers/frontend_routes.py` and TanStack
-configuration in `parsers/tanstack_config.py`. Reuse the configured route tokens
-in generation and source alignment. Never report a page or browser guard as
-a backend endpoint or authorization control.
-
-Plan backend and frontend writes in one `FilePlan`; validate both before
-committing any file. `resource_policy.py` resolves ownership and lifecycle.
-`crud_backend.py` and `crud_frontend.py` plan their respective artifacts.
-`page_routes.py` selects router-native page planning. Static React Router data,
-JSX, and `useRoutes` registrations are supported; refuse computed mutations.
-Preserve package exports through the backend export planner.
-
-Keep canonical component guidance and gate scripts during consolidation.
-Generate root hooks that run the backend's locked dev tools and real quick
-gauntlet. Do not replace these tools with the unmerged PR #1 implementation.
+1. Templates are Python functions that return strings.
+2. Each generator defines `steps`. `BaseGenerator.run()` runs them in order
+   and calls `cleanup()` on failure.
+3. `ProjectConfig` is the single scaffold configuration. Commands that act
+   on an existing project use `resolve_project()` or `stack.py`.
+4. Parsers use regex, not AST, and have no extra dependencies.
+5. Auditors subclass `BaseAuditor` and return `list[AuditFinding]`.
+6. Code generators plan into a `FilePlan` and write only through
+   `finish()`.
 
 ## Development tools and security gate
 
-Run `uv sync --locked --extra dev` to install the existing development tools,
-including mypy, Bandit, and PyYAML stubs. CI selects each matrix interpreter
-explicitly and uses the committed lockfile.
+Run `uv sync --locked --extra dev` to install the development tools,
+including mypy, Bandit, and PyYAML stubs. CI selects each matrix
+interpreter explicitly and uses the committed lockfile.
 
-Keep the Bandit gate blocking at every severity. Do not add global rule skips,
-a blanket baseline, or a lower severity threshold. Use an exact rule-ID
-annotation with a reason only after you review its trust boundary.
+Keep the Bandit gate blocking at every severity. Do not add global rule
+skips, a blanket baseline, or a lower severity threshold. Add an exact
+rule-ID annotation with a reason only after you review its trust boundary.
 
-Existing scoped waivers cover trusted project/tool execution, XML serialization
-without parsing, public token-storage names, explicit environment examples,
-an internal process-pipe invariant, and container-internal listeners. Execute
-project scripts, dependencies, hooks, and tools only when you trust the project,
-your `PATH`, and your environment. An argv list does not make an untrusted
-project safe. Re-review a waiver when you change its command or data flow.
+The existing scoped waivers cover trusted project and tool execution, XML
+serialization without parsing, public token-storage names, explicit
+environment examples, an internal process-pipe invariant, and
+container-internal listeners. Run project scripts, dependencies, hooks,
+and tools only when you trust the project, your `PATH`, and your
+environment. An argv list does not make an untrusted project safe.
+Review a waiver again when you change its command or data flow.
 
-Publish development services on loopback. Replace production placeholders
-with real secrets; the examples do not prove secret strength.
+Generated development Compose services publish ports on loopback. Replace
+production placeholders with real secrets; the examples do not prove secret
+strength.
 
-## Monorepo Port Assignment
+## Extension workflows
 
-To avoid dev-server conflicts in fullstack projects:
+### Add a backend framework
 
-| Backend | Frontend | API Port | Frontend Port |
-|---------|----------|----------|---------------|
-| Django | Vite | 8000 | 3000 |
-| Django | Rsbuild | 8000 | 3000 |
-| Django | Next.js | 8000 | 3000 |
-| FastAPI | Vite | 8000 | 3000 |
-| FastAPI | Rsbuild | 8000 | 3000 |
-| FastAPI | Next.js | 8000 | 3000 |
-| NestJS | Vite | 4000 | 3000 |
-| NestJS | Rsbuild | 4000 | 3000 |
-| NestJS | Next.js | 4000 | 3000 |
+1. In `config.py`, add the `BackendFramework` member, its `REPO_URLS`
+   entry, an `is_<name>_backend` property if needed, and its rules in
+   `supported_task_backends()` and `backend_api_port`.
+2. Add detection in `stack_detection.py`. Update the default API port in
+   `project.py` if it is not 8000.
+3. Add presets in `presets.py`, the wizard choice in `commands/init.py`,
+   and the `add --framework` help in `cli_scaffold.py`.
+4. Add a branch in `post_processors/customizer.py` and, if needed,
+   `post_processors/consolidate.py`.
+5. Update the templates that branch on the backend: `root_makefile.py`,
+   `docker_compose.py`, `compose_env.py`, `dockerfiles.py`,
+   `backend_entrypoint.py`, `root_env.py`, `pre_commit_config.py`, the
+   `deploy_*.py` recipes, `root_readme.py`, and `root_claude_md.py`.
+6. Update `runtime_profiles.py` if the backend runs task workers.
+7. Add tests in `tests/test_presets.py` and the generator and template
+   tests.
 
-These are defaults. `resolve_project()` applies root environment values and
-persisted port metadata. Use the resolved project in commands rather than a
-second detection path. Host mode runs applications locally; container mode
-supervises Compose applications.
+### Add a frontend framework
 
-## Key Patterns
+1. Add the `FrontendFramework` member and its `REPO_URLS` entry in
+   `config.py`.
+2. Add detection in `stack_detection.py`. `add` and `upgrade` use it.
+3. Add presets in `presets.py`, the wizard choice in `commands/init.py`,
+   and the `add --framework` help in `cli_scaffold.py`.
+4. Update `templates/frontend_runtime.py` (bundler groups, browser env
+   variable, proxy) and `post_processors/frontend_config.py` (bundler
+   config patch).
+5. Update `frontend_commands.py`, `dockerfiles.py`, `root_readme.py`,
+   `root_claude_md.py`, and `gsd_project.py`.
+6. If the framework uses a new bundler or router, update
+   `parsers/frontend_layout.py` and add a page planner in
+   `commands/codegen/`.
+7. Add tests in `tests/test_presets.py`, `tests/test_project.py`, and
+   `tests/test_templates/test_frontend_commands.py`.
 
-1. **Templates = Python functions** returning f-strings (not Jinja2)
-2. **Generators inherit BaseGenerator**. Each defines `steps` property; base runs them in sequence
-3. **ProjectConfig** is the single config object. Key properties:
-   - `has_backend`, `has_frontend`, `is_fullstack`, `is_b2b`
-   - `is_nextjs`, `is_django_matt`, `is_fastapi_backend`, `is_nestjs_backend`, `is_django_backend`
-   - `backend_api_port` — dynamically set based on framework
-4. **BackendFramework** enum: `django-ninja`, `django-matt`, `fastapi`, `nestjs`
-5. **FrontendFramework** enum: `react-vite`, `react-vite-starter`, `react-rsbuild`, `react-rsbuild-kibo`, `nextjs`
-6. **Parsers are pure functions** — regex-based, no AST, no deps. Return dataclasses
-7. **Auditors inherit BaseAuditor**. `run() → list[AuditFinding]`
-8. **Subgroups** use Typer apps registered by `cli.py`.
-9. **Command registration** is split across `cli_scaffold.py` and `cli_project.py`.
+### Add an audit domain
 
-## Common Workflows
+1. Create the parser in `parsers/`.
+2. Create the auditor in `auditors/`, subclassing `BaseAuditor`.
+3. Add the domain to `AuditType` in `auditors/base.py`.
+4. Add the auditor to `AUDITOR_CLASSES` in `commands/audit.py`.
 
-### Add a new backend framework
-1. Add to `BackendFramework` enum in `config.py`
-2. Add repo URL to `REPO_URLS` in `config.py`
-3. Add `is_<name>_backend` property to `ProjectConfig` if needed
-4. Update `backend_api_port` property if non-standard port
-5. Add presets in `presets.py`
-6. Add wizard choice in `commands/init.py`
-7. Add customizer branch in `post_processors/customizer.py`
-8. Update Makefile template in `templates/root_makefile.py`
-9. Update docker-compose template in `templates/docker_compose.py`
-10. Update env template in `templates/root_env.py`
-11. Update test in `tests/test_presets.py`
+For a project-specific check, write a plugin in `mattstack-plugins/`
+instead. See the [plugin guide](plugin-guide.md).
 
-### Add a new frontend framework
-1. Add to `FrontendFramework` enum in `config.py`
-2. Add repo URL to `REPO_URLS` in `config.py`
-3. Add presets in `presets.py`
-4. Add wizard choice in `commands/init.py`
-5. Add upgrade detection in `commands/upgrade.py`
-6. Add monorepo proxy in `post_processors/frontend_config.py`
-7. Update templates: `root_readme.py`, `root_claude_md.py`
-8. Update CLI help in `cli.py`
-9. Update test in `tests/test_presets.py`
+### Add a command or subgroup
 
-### Add a new audit domain
-1. Create `parsers/new_parser.py`
-2. Create `auditors/new_auditor.py` inheriting `BaseAuditor`
-3. Add to `AUDITOR_CLASSES` in `commands/audit.py`
-4. Add to `AuditType` enum in `auditors/base.py`
-
-### Add a new command subgroup
-1. Create `commands/new_cmd.py` with `new_app = typer.Typer(...)` + subcommands
-2. Register the subgroup in `cli.py`.
+1. For a subgroup, create `commands/<name>.py` with a `typer.Typer` app
+   and register it in `_register_subgroups()` in `cli.py`.
+2. For a root command, add the function and register it in
+   `register_scaffold_commands()` in `cli_scaffold.py` or
+   `register_project_commands()` in `cli_project.py`.
+3. Document the command in the [CLI reference](commands.md).
