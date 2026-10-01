@@ -5,6 +5,37 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Persist nonsecret project metadata and resolve nested commands consistently.
+- Add local OpenAPI SDK generation with ownership protection and read-only drift checks.
+- Add project-aware JSON diagnostics and optional, privacy-aware frontend tool guidance.
+
+### Changed
+
+- Separate host and container development modes; supervise process groups and application containers.
+- Keep parallel lint and test failure behavior consistent, including format checks.
+- Preserve existing add, upgrade, and workflow files unless replacement is explicit.
+- Keep regression coverage focused on safety and API contracts; remove redundant test additions.
+
+### Fixed
+
+- Prevent dry-run writes and cleanup of directories the generator does not own.
+- Return failure exits for failed commands, audit errors, and unverifiable Git scope.
+- Load root environment values without overriding exported shell values.
+- Require explicit authorization for destructive database operations.
+- Align Compose credentials, ports, readiness, and volume-preserving cleanup.
+- Align generated controllers, primary keys, request aliases, pagination, and TypeScript clients.
+- Validate model storage limits before writes; return not-found errors for missing foreign keys.
+- Serialize generated Decimal responses consistently and reject invalid explicit null updates.
+- Configure active frontend plugins and aliases; use a published, compatible TanStack devtools package.
+- Use the reachable Django Matt starter and migrate its imports to `DjangoMattAPI`.
+- Detect Django Matt's settings package and use its installed Granian server in production.
+- Install Git for Git-based backend dependencies and fail builds when static collection fails.
+- Select production Django settings explicitly and require separate Ninja signing secrets.
+
 ## [0.7.0] - 2026-08-12
 
 ### Added

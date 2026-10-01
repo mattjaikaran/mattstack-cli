@@ -668,3 +668,51 @@ Not introduced by recent work; listed so the inventory is honest.
 | FILELENGTH | **fail** — cli.py 590, context.py 575, generate.py 1870, rules.py 621, sync.py 763 |
 | SECURITY | warnings — bandit findings, mostly low severity |
 | CI | failing since 2026-08-12 on FILELENGTH and bandit |
+
+## CLI remediation (2026-09-30)
+
+Fix command and generated-project behavior before adding verification tools.
+Keep the standalone Gauntlet migration in PR #1 separate.
+
+- [x] Incorporate and verify PR #4's dry-run guards, then close the superseded PR.
+- [x] Return nonzero for failed initialization, audit errors, missing environment variables, and failed upgrades.
+- [x] Fail scope verification when Git discovery fails; handle renamed and unusual paths.
+- [x] Emit raw structured output; keep diagnostics on stderr and escape dynamic terminal text.
+- [x] Preserve stack metadata in `mattstack.yml`; resolve the same project from nested directories.
+- [x] Load root environment values for host commands; preserve explicit shell overrides.
+- [x] Authorize database destruction explicitly and validate seed inputs before a flush.
+- [x] Supervise development processes; separate host and container execution modes.
+- [x] Resolve health checks from actual services and configured ports.
+- [x] Align Compose credentials, readiness, API prefixes, and image ports.
+- [x] Preserve database volumes in routine cleanup.
+- [x] Preserve existing project files during add/upgrade unless replacement is explicit.
+- [x] Compile generated CRUD and sync artifacts; align controllers, schemas, routes, aliases, and mutation payloads.
+- [x] Configure the active frontend bundler without removing router plugins or aliases.
+- [x] Honor noninteractive command requirements, parallel formatting checks, and documented field syntax.
+- [x] Evaluate optional React Doctor, API-contract, frontend-analysis, and Django-development tools.
+- [x] Exercise real CLI commands, generated TypeScript, rendered routes, and Docker/Postgres integration.
+- [x] Update command documentation and the changelog with verified behavior.
+
+Verification: the reduced pytest suite passes. Ruff, mypy, architecture, file
+length, and editable installation checks pass. The quick gauntlet still fails
+its Bandit gate; the existing security-gate debt remains above.
+
+Runtime proof: scaffold and install Django Ninja/Kibo, standalone Vite, and
+Django Matt projects. Run Django checks and Postgres migrations. Exercise the
+generated SDK's create/read/update/delete calls, Decimal wire format, integer
+foreign keys, null rejection, and storage-limit errors. Observe rendered
+Rsbuild/Vite routes. Generate and compile a real OpenAPI SDK and check drift.
+React Doctor completes without skipped checks: no errors and nine warnings.
+
+Keep only essential safety and data-contract regressions. Remove redundant
+diagnostic, forwarding, framework-matrix, source-wording, and optional skipped
+tests. Do not add a per-field generated test matrix. Keep PR #1 unchanged;
+PR #4 is closed. Preserve the user's existing README edits.
+
+Public-release review caught and fixed the Django Matt production image's
+missing Git executable, wrong server, and wrong settings package. Select
+production Django settings explicitly; require distinct runtime signing secrets.
+Do not hide static collection errors. Both Django production images build and
+serve their API surfaces; verify Django Ninja uses production settings with
+`DEBUG=False`. Push grouped commits to a feature branch and PR, not directly
+to main, as selected by the user.

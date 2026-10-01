@@ -1,14 +1,18 @@
-# mattstack Architecture
+# mattstack architecture
 
 ## File Map
 
 ```
 src/mattstack/
-├── cli.py              # Typer app — 26 commands, 6 subgroups
-├── config.py           # ProjectType, Variant, BackendFramework (3), FrontendFramework (5),
-│                       # DeploymentTarget enums; ProjectConfig dataclass; REPO_URLS (10 repos)
-├── presets.py          # 19 presets (starter/b2b × fullstack/api/frontend, rsbuild, kibo,
-│                       #             nextjs, django-matt, nestjs)
+├── cli.py              # Root Typer app and subgroup registration
+├── cli_scaffold.py     # Scaffold command registration
+├── cli_project.py      # Project command registration
+├── config.py           # Framework enums, ProjectConfig, upstream repo URLs
+├── project.py          # Root, environment, ports, API mount, resolved configuration
+├── config_file.py      # Persist nonsecret metadata and preserve control-plane settings
+├── stack.py            # Shared command-facing stack resolution
+├── stack_detection.py  # Framework and component detection
+├── presets.py          # Named stack configurations
 │
 ├── commands/
 │   ├── init.py         # 3 modes: config-file → preset → interactive wizard
@@ -16,7 +20,8 @@ src/mattstack/
 │   ├── upgrade.py      # Diff-based updates, detects nextjs/rsbuild/kibo/vite
 │   ├── generate.py     # Subgroup: model, endpoint, component, page, hook, schema
 │   ├── db.py           # Subgroup: migrate, makemigrations, status, seed, reset, shell, dump, load
-│   ├── sync.py         # Subgroup: types, zod, api-client, all (uses existing parsers)
+│   ├── sync.py         # types, zod, api-client, all
+│   ├── openapi.py      # Local OpenAPI SDK generation, ownership, drift checks
 │   ├── deps.py         # Subgroup: check, update, audit
 │   ├── health.py       # Docker, DB, Redis, backend, frontend port/HTTP checks
 │   ├── hooks.py        # Subgroup: install, status, run (pre-commit)
@@ -28,6 +33,8 @@ src/mattstack/
 │   ├── env.py          # check/sync/show .env files
 │   ├── rules.py        # Generate CLAUDE.md, .cursorrules, GSD files
 │   ├── context.py      # Dump project context as markdown/JSON
+│   ├── context_builders.py # Collect context without terminal formatting
+│   ├── context_format.py   # Markdown, Claude, and raw JSON output
 │   ├── client.py       # Subgroup: add/remove/install/run/dev/build/exec/which
 │   ├── doctor.py       # Environment checks
 │   ├── info.py         # Presets, repos, examples tables
@@ -36,10 +43,11 @@ src/mattstack/
 │
 ├── generators/         # BaseGenerator ABC → Fullstack/BackendOnly/FrontendOnly + iOS
 ├── auditors/           # BaseAuditor ABC → types, quality, endpoints, tests, dependencies, vulnerabilities
-├── parsers/            # Pure regex parsers: pydantic, typescript, zod, django_routes, nextjs, tests, deps
-├── post_processors/    # customizer (Django + NestJS rename), frontend_config (dynamic port proxy), b2b
-├── templates/          # f-string template functions (makefile, docker_compose, env, readme, etc.)
-└── utils/              # console, git, docker, process, yaml_config, package_manager
+├── codegen/            # Django/Matt layouts, model PKs, schemas, CRUD, TS transport/hooks/Zod
+├── parsers/            # Regex schema, route, enum, dependency, and frontend-layout parsers
+├── post_processors/    # Customization, active bundler config, TanStack version alignment
+├── templates/          # Root Makefile, Compose, runtime env, agent rules, Dockerfiles
+└── utils/              # Console, Git, Docker, process supervision, jobs, package managers
 ```
 
 ## Backend Frameworks
@@ -57,8 +65,8 @@ NestJS uses Bull (Redis-based) for queues — `use_celery` is always `False` for
 
 | Key | Enum | Bundler | Dev Port |
 |-----|------|---------|----------|
-| `react-vite` | `REACT_VITE` | Vite | 5173 |
-| `react-vite-starter` | `REACT_VITE_STARTER` | Vite | 5173 |
+| `react-vite` | `REACT_VITE` | Vite | 3000 |
+| `react-vite-starter` | `REACT_VITE_STARTER` | Vite | 3000 |
 | `react-rsbuild` | `REACT_RSBUILD` | Rsbuild | 3000 |
 | `react-rsbuild-kibo` | `REACT_RSBUILD_KIBO` | Rsbuild | 3000 |
 | `nextjs` | `NEXTJS` | Next.js | 3000 |
@@ -69,17 +77,20 @@ To avoid dev-server conflicts in fullstack projects:
 
 | Backend | Frontend | API Port | Frontend Port |
 |---------|----------|----------|---------------|
-| Django | Vite | 8000 | 5173 |
+| Django | Vite | 8000 | 3000 |
 | Django | Rsbuild | 8000 | 3000 |
 | Django | Next.js | 8000 | 3000 |
-| FastAPI | Vite | 8000 | 5173 |
+| FastAPI | Vite | 8000 | 3000 |
 | FastAPI | Rsbuild | 8000 | 3000 |
 | FastAPI | Next.js | 8000 | 3000 |
-| NestJS | Vite | 4000 | 5173 |
+| NestJS | Vite | 4000 | 3000 |
 | NestJS | Rsbuild | 4000 | 3000 |
 | NestJS | Next.js | 4000 | 3000 |
 
-`config.backend_api_port` encodes this: `4000` for NestJS, `8000` for Django and FastAPI.
+These are defaults. `resolve_project()` applies root environment values and
+persisted port metadata. Use the resolved project in commands rather than a
+second detection path. Host mode runs applications locally; container mode
+supervises Compose applications.
 
 ## Key Patterns
 
@@ -93,8 +104,8 @@ To avoid dev-server conflicts in fullstack projects:
 5. **FrontendFramework** enum: `react-vite`, `react-vite-starter`, `react-rsbuild`, `react-rsbuild-kibo`, `nextjs`
 6. **Parsers are pure functions** — regex-based, no AST, no deps. Return dataclasses
 7. **Auditors inherit BaseAuditor**. `run() → list[AuditFinding]`
-8. **Subgroups** use Typer pattern: `new_app = typer.Typer()`, registered in `_register_subgroups()`
-9. **Lazy imports** in cli.py — each command imports its module only when invoked
+8. **Subgroups** use Typer apps registered by `cli.py`.
+9. **Command registration** is split across `cli_scaffold.py` and `cli_project.py`.
 
 ## Common Workflows
 
@@ -130,4 +141,4 @@ To avoid dev-server conflicts in fullstack projects:
 
 ### Add a new command subgroup
 1. Create `commands/new_cmd.py` with `new_app = typer.Typer(...)` + subcommands
-2. Register in `cli.py` `_register_subgroups()`
+2. Register the subgroup in `cli.py`.
