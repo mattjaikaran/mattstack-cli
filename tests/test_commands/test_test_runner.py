@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import json
 import subprocess
-import threading
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 import typer
 
-from mattstack.commands.test import _has_backend, _has_frontend, _stream_process, run_test
+from mattstack.commands.test import _has_backend, _has_frontend, run_test
 
 
 class TestHasBackend:
@@ -169,32 +168,3 @@ class TestRunTest:
             run_test(tmp_path, parallel=True)
 
         assert exc_info.value.exit_code == 1
-
-
-class TestStreamProcess:
-    def test_streams_lines_with_label(self) -> None:
-        proc = MagicMock()
-        proc.stdout = iter(["PASSED test_one\n", "PASSED test_two\n"])
-        proc.returncode = 0
-        proc.wait.return_value = None
-
-        lock = threading.Lock()
-        printed: list[str] = []
-        with patch("mattstack.commands.test.console") as mock_console:
-            mock_console.print.side_effect = lambda *a, **kw: printed.append(str(a[0]))
-            result = _stream_process(proc, "[backend]", lock)
-
-        assert result == 0
-        assert any("[backend]" in line for line in printed)
-
-    def test_returns_returncode_on_failure(self) -> None:
-        proc = MagicMock()
-        proc.stdout = iter([])
-        proc.returncode = 2
-        proc.wait.return_value = None
-
-        lock = threading.Lock()
-        with patch("mattstack.commands.test.console"):
-            result = _stream_process(proc, "[frontend]", lock)
-
-        assert result == 2

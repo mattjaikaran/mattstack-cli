@@ -15,27 +15,37 @@ from mattstack.commands.upgrade import (
     _detect_components,
     run_upgrade,
 )
+from mattstack.stack import load_stack
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _make_project(tmp_path: Path, *, backend: bool = True, frontend: bool = True) -> Path:
+NINJA_PYPROJECT = "[project]\nname = 'myapp'\ndependencies = ['django-ninja']\n"
+
+
+def _make_project(
+    tmp_path: Path,
+    *,
+    backend: bool = True,
+    frontend: bool = True,
+    pyproject: str = NINJA_PYPROJECT,
+) -> Path:
     """Create a minimal project directory with backend and/or frontend."""
     proj = tmp_path / "test-proj"
     proj.mkdir()
     if backend:
         be = proj / "backend"
         be.mkdir()
-        (be / "pyproject.toml").write_text("[project]\nname = 'myapp'\n")
+        (be / "pyproject.toml").write_text(pyproject)
         (be / "manage.py").write_text("#!/usr/bin/env python\n")
         (be / "app").mkdir()
         (be / "app" / "models.py").write_text("# models\n")
     if frontend:
         fe = proj / "frontend"
         fe.mkdir()
-        (fe / "package.json").write_text('{"name": "myapp"}\n')
+        (fe / "package.json").write_text('{"name": "myapp", "devDependencies": {"vite": "6"}}\n')
         (fe / "src").mkdir()
         (fe / "src" / "App.tsx").write_text("export default function App() {}\n")
     return proj
@@ -71,23 +81,23 @@ def _fake_clone(target_dir: Path) -> bool:
 
 def test_detect_backend_and_frontend(tmp_path: Path) -> None:
     proj = _make_project(tmp_path, backend=True, frontend=True)
-    assert _detect_components(proj) == ["backend", "frontend"]
+    assert _detect_components(load_stack(proj)) == ["backend", "frontend"]
 
 
 def test_detect_backend_only(tmp_path: Path) -> None:
     proj = _make_project(tmp_path, backend=True, frontend=False)
-    assert _detect_components(proj) == ["backend"]
+    assert _detect_components(load_stack(proj)) == ["backend"]
 
 
 def test_detect_frontend_only(tmp_path: Path) -> None:
     proj = _make_project(tmp_path, backend=False, frontend=True)
-    assert _detect_components(proj) == ["frontend"]
+    assert _detect_components(load_stack(proj)) == ["frontend"]
 
 
 def test_detect_no_components(tmp_path: Path) -> None:
     proj = tmp_path / "empty"
     proj.mkdir()
-    assert _detect_components(proj) == []
+    assert _detect_components(load_stack(proj)) == []
 
 
 # ---------------------------------------------------------------------------
@@ -294,23 +304,54 @@ def test_dry_run_reports_changes_without_applying(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_new_files_are_copied(tmp_path: Path) -> None:
-    """New files from upstream should be copied when not in dry_run mode."""
+def _mock_clone(url: str, destination: Path, **kwargs: object) -> bool:
+    return _fake_clone(destination)
+
+
+def test_new_files_are_copied_with_force(tmp_path: Path) -> None:
+    """New upstream files are copied only with --force."""
     proj = _make_project(tmp_path, backend=True, frontend=False)
 
-    def mock_clone(url: str, destination: Path, **kwargs: object) -> bool:
-        return _fake_clone(destination)
-
     with (
-        patch("mattstack.commands.upgrade.clone_repo", side_effect=mock_clone),
+        patch("mattstack.commands.upgrade.clone_repo", side_effect=_mock_clone),
         patch("mattstack.commands.upgrade.remove_git_history"),
     ):
-        run_upgrade(proj, component="backend", dry_run=False)
+        run_upgrade(proj, component="backend", dry_run=False, force=True)
 
-    # New file should be copied
     new_file = proj / "backend" / "app" / "new_feature.py"
-    assert new_file.exists()
     assert "new feature from upstream" in new_file.read_text()
+
+
+def test_forced_upgrade_preserves_symlink_directory(tmp_path: Path) -> None:
+    proj = _make_project(tmp_path, backend=True, frontend=False)
+    external = tmp_path / "user-owned"
+    external.mkdir()
+    owned = external / "new_feature.py"
+    owned.write_text("Keep user data.")
+    (proj / "backend/app").rename(tmp_path / "original-app")
+    (proj / "backend/app").symlink_to(external, target_is_directory=True)
+    with (
+        patch("mattstack.commands.upgrade.clone_repo", side_effect=_mock_clone),
+        patch("mattstack.commands.upgrade.remove_git_history"),
+    ):
+        run_upgrade(proj, component="backend", force=True)
+    assert owned.read_text() == "Keep user data."
+    assert (proj / "backend/app").is_symlink()
+
+
+def test_no_files_written_without_force(tmp_path: Path) -> None:
+    """Without --force, upgrade previews: new and modified files stay out."""
+    proj = _make_project(tmp_path, backend=True, frontend=False)
+    before = {p: p.read_bytes() for p in proj.rglob("*") if p.is_file()}
+
+    with (
+        patch("mattstack.commands.upgrade.clone_repo", side_effect=_mock_clone),
+        patch("mattstack.commands.upgrade.remove_git_history"),
+    ):
+        run_upgrade(proj, component="backend", dry_run=False, force=False)
+
+    after = {p: p.read_bytes() for p in proj.rglob("*") if p.is_file()}
+    assert after == before
 
 
 def test_modified_files_skipped_without_force(tmp_path: Path) -> None:
@@ -349,16 +390,91 @@ def test_modified_files_overwritten_with_force(tmp_path: Path) -> None:
     assert "updated upstream" in content
 
 
-def test_clone_failure_returns_empty_report(tmp_path: Path) -> None:
-    """If clone fails, the component report should have no changes."""
+def test_clone_failure_exits_nonzero_without_up_to_date(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A failed clone is a failure, never a clean 'up to date' result."""
     proj = _make_project(tmp_path, backend=True, frontend=False)
 
     with (
         patch("mattstack.commands.upgrade.clone_repo", return_value=False),
         patch("mattstack.commands.upgrade.remove_git_history"),
+        pytest.raises((SystemExit, click.exceptions.Exit)) as exc,
     ):
-        # Should not raise, just report the error
-        run_upgrade(proj, component="backend", dry_run=False)
+        run_upgrade(proj, component="backend", dry_run=False, force=True)
+
+    assert getattr(exc.value, "exit_code", getattr(exc.value, "code", None)) == 1
+    output = capsys.readouterr()
+    assert "up to date" not in (output.out + output.err).lower()
+
+
+def _snapshot(proj: Path) -> dict[Path, bytes]:
+    return {p: p.read_bytes() for p in proj.rglob("*") if p.is_file()}
+
+
+@pytest.mark.parametrize("frontend_package", ['{"devDependencies": {"vite": "6"}}', "{}"])
+def test_forced_upgrade_writes_nothing_when_a_later_component_fails(
+    tmp_path: Path, frontend_package: str
+) -> None:
+    """A failed frontend clone or unknown frontend blocks the backend writes too."""
+    proj = _make_project(tmp_path, backend=True, frontend=True)
+    (proj / "frontend" / "package.json").write_text(frontend_package)
+    before = _snapshot(proj)
+
+    def clone(url: str, destination: Path, **kwargs: object) -> bool:
+        return _fake_clone(destination) if "django" in url else False
+
+    with (
+        patch("mattstack.commands.upgrade.clone_repo", side_effect=clone),
+        patch("mattstack.commands.upgrade.remove_git_history"),
+        pytest.raises((SystemExit, click.exceptions.Exit)),
+    ):
+        run_upgrade(proj, dry_run=False, force=True)
+
+    assert _snapshot(proj) == before
+
+
+# ---------------------------------------------------------------------------
+# run_upgrade — upstream selection
+# ---------------------------------------------------------------------------
+
+
+def _clone_urls(proj: Path, **kwargs: object) -> list[str]:
+    urls: list[str] = []
+
+    def record(url: str, destination: Path, **_: object) -> bool:
+        urls.append(url)
+        return _fake_clone(destination)
+
+    with (
+        patch("mattstack.commands.upgrade.clone_repo", side_effect=record),
+        patch("mattstack.commands.upgrade.remove_git_history"),
+    ):
+        run_upgrade(proj, component="backend", dry_run=True, **kwargs)  # type: ignore[arg-type]
+    return urls
+
+
+def test_fastapi_backend_compares_against_fastapi_upstream(tmp_path: Path) -> None:
+    pyproject = "[project]\nname = 'api'\ndependencies = ['fastapi']\n"
+    proj = _make_project(tmp_path, frontend=False, pyproject=pyproject)
+    assert _clone_urls(proj) == ["https://github.com/mattjaikaran/fastapi-boilerplate.git"]
+
+
+def test_user_repo_override_is_used(tmp_path: Path) -> None:
+    proj = _make_project(tmp_path, frontend=False)
+    override = {"django-ninja": "https://example.com/team/ninja.git"}
+    with patch("mattstack.user_config.get_user_repos", return_value=override):
+        assert _clone_urls(proj) == ["https://example.com/team/ninja.git"]
+
+
+def test_unknown_backend_fails_without_cloning(tmp_path: Path) -> None:
+    proj = _make_project(tmp_path, frontend=False, pyproject="[project]\nname = 'x'\n")
+    with (
+        patch("mattstack.commands.upgrade.clone_repo") as clone,
+        pytest.raises((SystemExit, click.exceptions.Exit)),
+    ):
+        run_upgrade(proj, component="backend", force=True)
+    clone.assert_not_called()
 
 
 # ---------------------------------------------------------------------------

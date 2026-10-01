@@ -11,8 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from mattstack.commands.sync import _resolve_ts_type, _split_top_level_union
-from mattstack.parsers.python_schemas import parse_enums_file, parse_pydantic_file
+from mattstack.commands.codegen.ts_schemas import resolve_ts_type
+from mattstack.parsers.python_enums import parse_enums_file
+from mattstack.parsers.python_schemas import parse_pydantic_file, split_top_level_union
 
 
 @pytest.mark.parametrize(
@@ -37,15 +38,58 @@ from mattstack.parsers.python_schemas import parse_enums_file, parse_pydantic_fi
         # A bar inside brackets belongs to the inner type.
         ("dict[str, bool | str]", "Record<string, boolean | string>"),
         ("list[dict[str, int]]", "Record<string, number>[]"),
+        # Ninja writes Decimal as a string, an orjson renderer as a number.
+        ("Decimal", "number | string"),
+        ("list[str | None]", "(string | null)[]"),
+        # Literal values are TypeScript literal types, not bare identifiers.
+        ("Literal['draft', 'live']", '"draft" | "live"'),
+        ("Literal[1, None, True]", "1 | null | true"),
     ],
 )
 def test_type_mapping(python_type: str, expected: str) -> None:
-    assert _resolve_ts_type(python_type) == expected
+    assert resolve_ts_type(python_type) == expected
+
+
+def test_unknown_names_do_not_leak_into_typescript() -> None:
+    assert resolve_ts_type("ThirdPartyThing", {"Known"}) == "unknown"
+    assert resolve_ts_type("list[Known]", {"Known"}) == "Known[]"
+
+
+def test_nullability_and_defaults_are_tracked_separately(tmp_path: Path) -> None:
+    f = tmp_path / "schemas.py"
+    f.write_text("""\
+class ItemSchema(Schema):
+    required_nullable: str | None
+    optional_value: int = 0
+    field_required: str = Field(..., min_length=1)
+    field_default: str = Field("x")
+    wrapped: Optional[list[str]] = None
+    status: Literal["draft", "None"] | None = None
+    parent: "ItemSchema | None" = None
+""")
+    fields = {f.name: f for f in parse_pydantic_file(f)[0].fields}
+    assert (fields["required_nullable"].optional, fields["required_nullable"].has_default) == (
+        True,
+        False,
+    )
+    assert (fields["optional_value"].optional, fields["optional_value"].has_default) == (
+        False,
+        True,
+    )
+    assert fields["field_required"].has_default is False
+    assert fields["field_default"].has_default is True
+    assert (fields["wrapped"].type_str, fields["wrapped"].optional) == ("list[str]", True)
+    # Literal strings keep their quotes; the string "None" is a value, not null.
+    assert (fields["status"].type_str, fields["status"].optional) == (
+        'Literal["draft", "None"]',
+        True,
+    )
+    assert (fields["parent"].type_str, fields["parent"].optional) == ("ItemSchema", True)
 
 
 def test_union_split_ignores_bracketed_bars() -> None:
-    assert _split_top_level_union("dict[str, bool | str]") == ["dict[str, bool | str]"]
-    assert _split_top_level_union("str | None") == ["str", "None"]
+    assert split_top_level_union("dict[str, bool | str]") == ["dict[str, bool | str]"]
+    assert split_top_level_union("str | None") == ["str", "None"]
 
 
 def test_enum_members_drop_trailing_comments(tmp_path: Path) -> None:

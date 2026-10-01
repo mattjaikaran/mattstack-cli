@@ -13,18 +13,26 @@ def git_available() -> bool:
     return shutil.which("git") is not None
 
 
-def clone_repo(url: str, destination: Path, branch: str = "main", depth: int = 1) -> bool:
-    """Shallow clone a repo to destination."""
+def clone_repo(url: str, destination: Path, branch: str | None = None, depth: int = 1) -> bool:
+    """Shallow clone the requested branch, or the repository's default branch."""
+    command = ["git", "clone", "--depth", str(depth)]
+    if branch:
+        command.extend(["--branch", branch])
+    command.extend([url, str(destination)])
     try:
         subprocess.run(
-            ["git", "clone", "--branch", branch, "--depth", str(depth), url, str(destination)],
+            command,
             check=True,
             capture_output=True,
             text=True,
+            timeout=120,
         )
         return True
     except subprocess.CalledProcessError as e:
         print_error(f"Failed to clone {url}: {e.stderr.strip()}")
+        return False
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        print_error(f"Could not clone {url}: {exc}")
         return False
 
 
@@ -50,6 +58,9 @@ def init_repo(path: Path) -> bool:
     except subprocess.CalledProcessError as e:
         print_error(f"Failed to init git repo: {e.stderr.strip()}")
         return False
+    except OSError as exc:
+        print_error(f"Could not initialize git repository: {exc}")
+        return False
 
 
 def create_initial_commit(path: Path, message: str = "Initial commit") -> bool:
@@ -72,6 +83,9 @@ def create_initial_commit(path: Path, message: str = "Initial commit") -> bool:
         return True
     except subprocess.CalledProcessError as e:
         print_error(f"Failed to create initial commit: {e.stderr.strip()}")
+        return False
+    except OSError as exc:
+        print_error(f"Could not create initial commit: {exc}")
         return False
 
 

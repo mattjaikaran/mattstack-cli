@@ -16,6 +16,9 @@ class Route:
     line: int
     has_auth: bool = False
     is_stub: bool = False
+    response: str | None = None  # declared response annotation, as written
+    body_type: str | None = None  # request body schema name
+    pagination: str | None = None  # paginator class from `@paginate(...)`
 
 
 # Patterns for django-ninja decorators:

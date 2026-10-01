@@ -31,6 +31,7 @@ class BaseGenerator(ABC):
     def __init__(self, config: ProjectConfig) -> None:
         self.config = config
         self.created_files: list[Path] = []
+        self._owns_root = False
 
     def create_root_directory(self) -> bool:
         """Create the project root directory."""
@@ -39,6 +40,7 @@ class BaseGenerator(ABC):
             return True
         try:
             self.config.path.mkdir(parents=True, exist_ok=False)
+            self._owns_root = True
             print_success(f"Created directory: {self.config.path}")
             return True
         except FileExistsError:
@@ -147,7 +149,7 @@ class BaseGenerator(ABC):
 
     def cleanup(self) -> None:
         """Remove the project directory on failure."""
-        if self.config.path.exists():
+        if self._owns_root and not self.config.dry_run and self.config.path.exists():
             shutil.rmtree(self.config.path, ignore_errors=True)
             print_warning(f"Cleaned up partial project: {self.config.path}")
 
@@ -162,9 +164,23 @@ class BaseGenerator(ABC):
             task = progress.add_task("Generating project...", total=len(self.steps))
             for description, step_fn in self.steps:
                 progress.update(task, description=description)
-                result = step_fn()
+                try:
+                    result = step_fn()
+                except BaseException:
+                    self.cleanup()
+                    raise
                 if result is False:
                     self.cleanup()
                     return False
                 progress.advance(task)
+        return True
+
+    def write_project_configuration(self) -> bool:
+        """Write project metadata before the initial Git commit."""
+        from mattstack.project import save_project_config
+        from mattstack.templates.mattstack_yml import generate_mattstack_yml
+
+        self.write_file("mattstack.yml", generate_mattstack_yml())
+        if not self.config.dry_run:
+            save_project_config(self.config)
         return True

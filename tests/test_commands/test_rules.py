@@ -1,4 +1,4 @@
-"""Tests for mattstack rules sync (harness-agnostic adapters)."""
+"""Tests for mattstack rules: stack-specific agent files and harness adapters."""
 
 from __future__ import annotations
 
@@ -11,8 +11,79 @@ from mattstack.commands.rules import (
     HARNESS_ADAPTERS,
     collect_canonical,
     render_adapter,
+    run_rules,
     sync_harness_rules,
 )
+
+
+def _backend(tmp_path: Path, files: dict[str, str]) -> Path:
+    backend = tmp_path / "backend"
+    backend.mkdir()
+    for name, content in files.items():
+        (backend / name).write_text(content, encoding="utf-8")
+    return tmp_path
+
+
+@pytest.mark.parametrize(
+    ("files", "expected", "forbidden"),
+    [
+        (
+            {"pyproject.toml": '[project]\ndependencies = ["fastapi"]\n'},
+            "alembic",
+            ("django-ninja", "manage.py"),
+        ),
+        (
+            {"package.json": '{"dependencies": {"@nestjs/core": "11"}}'},
+            "bun run db:migrate",
+            ("django-ninja", "manage.py", "uv run"),
+        ),
+        (
+            {"pyproject.toml": '[project]\ndependencies = ["django-matt"]\n'},
+            "django-matt",
+            ("django-ninja (",),
+        ),
+    ],
+)
+def test_agent_files_describe_the_actual_backend(
+    tmp_path: Path, files: dict[str, str], expected: str, forbidden: tuple[str, ...]
+) -> None:
+    _backend(tmp_path, files)
+    run_rules(tmp_path, gsd=True)
+    for name in ("CLAUDE.md", ".cursorrules", ".planning/PROJECT.md"):
+        text = (tmp_path / name).read_text(encoding="utf-8")
+        for phrase in forbidden:
+            assert phrase not in text, f"{name} mentions {phrase!r}"
+    assert expected in (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
+
+
+def test_agent_files_name_the_lockfile_package_manager(tmp_path: Path) -> None:
+    _backend(tmp_path, {"pyproject.toml": '[project]\ndependencies = ["django-ninja"]\n'})
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    (frontend / "package.json").write_text('{"devDependencies": {"vite": "6"}}')
+    (frontend / "pnpm-lock.yaml").write_text("")
+    run_rules(tmp_path)
+    claude = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
+    assert "ALWAYS use `pnpm`" in claude
+    assert "pnpm run test" in claude
+
+
+def test_unknown_backend_refuses_to_write(tmp_path: Path) -> None:
+    _backend(tmp_path, {"pyproject.toml": "[project]\nname = 'x'\n"})
+    with pytest.raises(typer.Exit) as exc:
+        run_rules(tmp_path)
+    assert exc.value.exit_code == 1
+    assert not (tmp_path / "CLAUDE.md").exists()
+
+
+def test_dry_run_shows_status_tags(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _backend(tmp_path, {"pyproject.toml": '[project]\ndependencies = ["django-ninja"]\n'})
+    (tmp_path / "CLAUDE.md").write_text("mine\n", encoding="utf-8")
+    run_rules(tmp_path, dry_run=True)
+    out = capsys.readouterr().out
+    assert "[overwrite] CLAUDE.md" in out
+    assert "[create] .cursorrules" in out
+    assert (tmp_path / "CLAUDE.md").read_text(encoding="utf-8") == "mine\n"
 
 
 def test_collect_canonical_concatenates_sorted(tmp_path: Path) -> None:

@@ -1,4 +1,4 @@
-"""mattstack.yml control-plane configuration (Phase 1)."""
+"""mattstack.yml control-plane configuration and persisted stack metadata."""
 
 from __future__ import annotations
 
@@ -61,6 +61,18 @@ class MattstackConfig:
     notify: NotifyConfig = field(default_factory=NotifyConfig)
 
 
+def _read_yaml(path: Path) -> Any:
+    """Read and parse ``path``; raise ``ValueError`` when unreadable or invalid."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as e:
+        raise ValueError(f"Cannot read {path}: {e}") from e
+    try:
+        return yaml.safe_load(text)
+    except yaml.YAMLError as e:
+        raise ValueError(f"Invalid YAML in {path}: {e}") from e
+
+
 def load_config(path: Path) -> MattstackConfig:
     """Load mattstack.yml, tolerating missing, partial, or invalid files.
 
@@ -71,15 +83,68 @@ def load_config(path: Path) -> MattstackConfig:
         return MattstackConfig()
 
     try:
-        data: Any = yaml.safe_load(path.read_text())
-    except yaml.YAMLError as e:
-        print_error(f"Invalid YAML in {path}: {e}")
+        data: Any = _read_yaml(path)
+    except ValueError as e:
+        print_error(str(e))
         return MattstackConfig()
 
     if not isinstance(data, dict):
         return MattstackConfig()
 
     return _from_dict(data)
+
+
+def load_project_section(path: Path) -> dict[str, Any]:
+    """Return the ``project:`` stack metadata from mattstack.yml, or {}.
+
+    Missing, unreadable, or invalid files yield {} so detection can fall back
+    to the filesystem.
+    """
+    if not path.is_file():
+        return {}
+    try:
+        data = _read_yaml(path)
+    except ValueError as e:
+        print_error(str(e))
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return dict(_as_dict(data.get("project")))
+
+
+def write_project_section(path: Path, section: dict[str, Any]) -> None:
+    """Replace the top-level ``project:`` block in mattstack.yml with ``section``.
+
+    Every other key, comment, and line is kept byte-for-byte. Raises
+    ``ValueError`` instead of overwriting a file that is unreadable, invalid,
+    or not a mapping.
+    """
+    lines: list[str] = []
+    if path.exists():
+        data = _read_yaml(path)
+        if data is not None and not isinstance(data, dict):
+            raise ValueError(f"{path} must contain a YAML mapping")
+        lines = _without_top_level_key(path.read_text(encoding="utf-8").splitlines(), "project")
+    while lines and not lines[-1].strip():
+        lines.pop()
+    block = yaml.safe_dump({"project": section}, sort_keys=False, default_flow_style=False)
+    prefix = "\n".join(lines) + "\n\n" if lines else ""
+    path.write_text(prefix + block, encoding="utf-8")
+
+
+def _without_top_level_key(lines: list[str], key: str) -> list[str]:
+    """Drop the block that starts at top-level ``key:`` up to the next top-level line.
+
+    A column-0 comment also ends the block, because it introduces the next key.
+    """
+    kept: list[str] = []
+    skipping = False
+    for line in lines:
+        if line and not line[0].isspace():
+            skipping = not line.startswith("#") and line.split(":", 1)[0].strip() == key
+        if not skipping:
+            kept.append(line)
+    return kept
 
 
 def _from_dict(data: Any) -> MattstackConfig:

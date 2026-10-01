@@ -33,11 +33,14 @@ TOP_LEVEL_CORE = {
     "config",
     "presets",
     "user_config",
-    "detected",
+    "project",
+    "config_file",
+    "stack_detection",
+    "stack",
 }
 
-# cli.py is considered part of the CLI layer for import rules
-CLI_ALLOWED = CLI_LAYER | {"cli"}
+# Root CLI modules belong to the CLI layer.
+CLI_ALLOWED = CLI_LAYER | {"cli", "cli_scaffold", "cli_project"}
 
 CORE = CORE_LAYER | TOP_LEVEL_CORE
 

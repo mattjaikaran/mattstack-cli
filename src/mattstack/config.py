@@ -50,7 +50,7 @@ class DeploymentTarget(StrEnum):
 REPO_URLS: dict[str, str] = {
     # Python backends
     "django-ninja": "https://github.com/mattjaikaran/django-ninja-boilerplate.git",
-    "django-matt": "https://github.com/mattjaikaran/django-matt-boilerplate.git",
+    "django-matt": "https://github.com/mattjaikaran/django-matt-starter.git",
     "fastapi": "https://github.com/mattjaikaran/fastapi-boilerplate.git",
     # Node.js / TypeScript backends
     "nestjs": "https://github.com/mattjaikaran/nestjs-boilerplate.git",
@@ -63,8 +63,6 @@ REPO_URLS: dict[str, str] = {
     # Mobile
     "swift-ios": "https://github.com/mattjaikaran/swift-ios-starter.git",
 }
-
-DEFAULT_BRANCH = "main"
 
 
 def get_repo_urls() -> dict[str, str]:
@@ -107,6 +105,9 @@ class ProjectConfig:
     author_name: str = ""
     author_email: str = ""
     dry_run: bool = False
+    # URL prefix where the backend API is mounted. The Django boilerplates
+    # mount the API with ``path("api/", api.urls)``.
+    api_prefix: str = "/api"
 
     def __post_init__(self) -> None:
         self.name = normalize_name(self.name)
@@ -155,7 +156,14 @@ class ProjectConfig:
         if self.is_fastapi_backend:
             return "app.workers.celery_app"
         backend = self.backend_dir
-        for candidate in ("api", "app"):
+        from mattstack.stack_detection import settings_module_from_manage
+
+        settings_module = settings_module_from_manage(backend)
+        if settings_module:
+            package = settings_module.rsplit(".", 1)[0]
+            if (backend.joinpath(*package.split(".")) / "wsgi.py").is_file():
+                return package
+        for candidate in ("api", "app", "config"):
             if (backend / candidate).is_dir():
                 return candidate
         return "api"
@@ -165,11 +173,7 @@ class ProjectConfig:
         """Return the WSGI or settings module root, without the submodule."""
         if self.is_fastapi_backend:
             return "app"
-        backend = self.backend_dir
-        for candidate in ("api", "app"):
-            if (backend / candidate).is_dir():
-                return candidate
-        return "api"
+        return self.django_package
 
     @property
     def display_name(self) -> str:

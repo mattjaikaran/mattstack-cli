@@ -10,7 +10,6 @@ import typer
 from mattstack.commands.env import (
     _find_env_pairs,
     _mask_value,
-    _parse_env_file,
     run_env,
     run_env_check,
     run_env_show,
@@ -18,44 +17,10 @@ from mattstack.commands.env import (
 )
 
 
-class TestParseEnvFile:
-    def test_basic_key_value(self, tmp_path: Path) -> None:
-        env_file = tmp_path / ".env"
-        env_file.write_text("FOO=bar\nBAZ=qux\n")
-        assert _parse_env_file(env_file) == {"FOO": "bar", "BAZ": "qux"}
-
-    def test_ignores_comments(self, tmp_path: Path) -> None:
-        env_file = tmp_path / ".env"
-        env_file.write_text("# comment\nFOO=bar\n# another\nBAZ=qux\n")
-        assert _parse_env_file(env_file) == {"FOO": "bar", "BAZ": "qux"}
-
-    def test_strips_quotes(self, tmp_path: Path) -> None:
-        env_file = tmp_path / ".env"
-        env_file.write_text("FOO=\"bar\"\nBAZ='qux'\n")
-        assert _parse_env_file(env_file) == {"FOO": "bar", "BAZ": "qux"}
-
-    def test_empty_values(self, tmp_path: Path) -> None:
-        env_file = tmp_path / ".env"
-        env_file.write_text("FOO=\nBAZ=\n")
-        assert _parse_env_file(env_file) == {"FOO": "", "BAZ": ""}
-
-    def test_handles_spaces_around_equals(self, tmp_path: Path) -> None:
-        env_file = tmp_path / ".env"
-        env_file.write_text("FOO= bar \nBAZ= qux \n")
-        assert _parse_env_file(env_file) == {"FOO": "bar", "BAZ": "qux"}
-
-    def test_ignores_empty_lines(self, tmp_path: Path) -> None:
-        env_file = tmp_path / ".env"
-        env_file.write_text("\n\nFOO=bar\n\n\n")
-        assert _parse_env_file(env_file) == {"FOO": "bar"}
-
-    def test_nonexistent_returns_empty(self, tmp_path: Path) -> None:
-        assert _parse_env_file(tmp_path / "nonexistent.env") == {}
-
-
 class TestMaskValue:
-    def test_empty_returns_stars(self) -> None:
-        assert _mask_value("") == "***"
+    def test_empty_value_is_distinct_from_masked_secret(self) -> None:
+        assert _mask_value("") == "(empty)"
+        assert _mask_value("") != _mask_value("abc")
 
     def test_short_value_masks_fully(self) -> None:
         assert _mask_value("ab") == "**"
@@ -85,6 +50,21 @@ class TestFindEnvPairs:
     def test_empty_when_no_examples(self, tmp_path: Path) -> None:
         assert _find_env_pairs(tmp_path) == []
 
+    def test_frontend_example_pairs_with_the_file_in_use(self, tmp_path: Path) -> None:
+        frontend = tmp_path / "frontend"
+        frontend.mkdir()
+        (frontend / ".env.example").write_text("VITE_API=x\n")
+        (frontend / ".env").write_text("VITE_API=y\n")
+        assert _find_env_pairs(tmp_path) == [(frontend / ".env.example", frontend / ".env")]
+
+    def test_frontend_sync_creates_a_single_env_file(self, tmp_path: Path) -> None:
+        frontend = tmp_path / "frontend"
+        frontend.mkdir()
+        (frontend / ".env.example").write_text("VITE_API=x\n")
+        run_env_sync(tmp_path)
+        assert (frontend / ".env.local").read_text() == "VITE_API=x\n"
+        assert not (frontend / ".env").exists()
+
 
 class TestRunEnvCheck:
     def test_matching_env_files(self, tmp_path: Path) -> None:
@@ -93,11 +73,26 @@ class TestRunEnvCheck:
         run_env_check(tmp_path)
         # Should not raise
 
-    def test_mismatching_reports_missing(self, tmp_path: Path) -> None:
+    def test_missing_vars_exit_1(self, tmp_path: Path) -> None:
         (tmp_path / ".env.example").write_text("FOO=bar\nBAZ=qux\nMISSING=val\n")
-        (tmp_path / ".env").write_text("FOO=bar\n")
+        (tmp_path / ".env").write_text("FOO=bar\nBAZ=qux\n")
+        with pytest.raises(typer.Exit) as exc_info:
+            run_env_check(tmp_path)
+        assert exc_info.value.exit_code == 1
+
+    def test_empty_and_extra_vars_do_not_fail(self, tmp_path: Path) -> None:
+        (tmp_path / ".env.example").write_text("FOO=bar\nSECRET_KEY=x\n")
+        (tmp_path / ".env").write_text("FOO=bar\nSECRET_KEY=\nLOCAL_ONLY=1\n")
         run_env_check(tmp_path)
-        # Should not raise; check produces output
+
+    def test_check_from_nested_dir_uses_project_root(self, tmp_path: Path) -> None:
+        (tmp_path / "mattstack.yml").write_text("version: 1\n")
+        (tmp_path / ".env.example").write_text("FOO=bar\n")
+        nested = tmp_path / "backend" / "api"
+        nested.mkdir(parents=True)
+        with pytest.raises(typer.Exit) as exc_info:
+            run_env("check", nested)
+        assert exc_info.value.exit_code == 1
 
     def test_nonexistent_path_exits_1(self, tmp_path: Path) -> None:
         with pytest.raises(typer.Exit) as exc_info:

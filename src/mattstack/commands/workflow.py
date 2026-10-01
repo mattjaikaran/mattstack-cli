@@ -3,6 +3,11 @@
 Job names are part of the contract. `mattstack protect` requires the
 `gauntlet` status check by default, so this generator emits a job with that
 exact name for every project type.
+
+Backend and frontend jobs follow the project's resolved frameworks: Python
+backends run uv, ruff, and pytest; a NestJS backend runs its package scripts.
+JavaScript jobs use the package manager that the committed lockfile names;
+a project without a lockfile keeps the scaffold default, Bun.
 """
 
 from __future__ import annotations
@@ -11,104 +16,39 @@ import time
 from pathlib import Path
 
 import typer
+from rich.markup import escape
 
-from mattstack.config import (
-    BackendFramework,
-    FrontendFramework,
-    ProjectConfig,
-    ProjectType,
+from mattstack.config import ProjectConfig
+from mattstack.stack import load_stack, unknown_framework_message
+from mattstack.templates.ci_toolchain import (
+    CiLayout,
+    JsCi,
+    backend_test_env,
+    github_js_setup,
+    in_dir,
+    js_ci,
+    yaml_mapping,
+    yaml_str,
 )
 from mattstack.templates.frontend_commands import frontend_commands
+from mattstack.templates.stack_facts import BackendFacts, backend_facts
 from mattstack.utils.console import (
     console,
     print_error,
     print_info,
     print_success,
-    print_warning,
 )
-
-
-def _detect_project_type(path: Path) -> str:
-    """Detect if project is fullstack, backend-only, or frontend-only."""
-    has_be = (path / "backend" / "pyproject.toml").exists()
-    has_fe = (path / "frontend" / "package.json").exists()
-    if has_be and has_fe:
-        return "fullstack"
-    if has_be:
-        return "backend-only"
-    if has_fe:
-        return "frontend-only"
-    return "unknown"
-
-
-def _detect_frontend_framework(path: Path) -> FrontendFramework:
-    """Resolve the frontend framework from the generated package.json.
-
-    The scaffolding process renames the package, so the manifest does not
-    name the framework. Two markers are reliable, in order:
-
-    1. The dev script: `next` or `rsbuild` identify those boilerplates.
-    2. The type-check script name. `react-vite-boilerplate` and
-       `react-vite-starter` both run `vite` for dev, so the dev script
-       cannot tell them apart, but only the boilerplate defines
-       `type-check`; the starter defines `typecheck`.
-
-    Getting this wrong emits a CI job that fails on its first run, so this
-    must agree with `mattstack.templates.frontend_commands`.
-    """
-    import json
-
-    package_json = path / "frontend" / "package.json"
-    try:
-        pkg = json.loads(package_json.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return FrontendFramework.REACT_VITE
-
-    scripts = pkg.get("scripts", {})
-    if not isinstance(scripts, dict):
-        return FrontendFramework.REACT_VITE
-    dev = str(scripts.get("dev", ""))
-    if "next" in dev:
-        return FrontendFramework.NEXTJS
-    if "rsbuild" in dev:
-        return FrontendFramework.REACT_RSBUILD
-    if "type-check" in scripts:
-        return FrontendFramework.REACT_VITE
-    return FrontendFramework.REACT_VITE_STARTER
-
-
-def _config_for_ci(path: Path, project_type: str) -> ProjectConfig:
-    """Build the minimal config needed to resolve frontend commands."""
-    has_backend = (path / "backend" / "pyproject.toml").exists()
-    if project_type == "frontend-only":
-        ptype = ProjectType.FRONTEND_ONLY
-    elif project_type == "backend-only":
-        ptype = ProjectType.BACKEND_ONLY
-    else:
-        ptype = ProjectType.FULLSTACK
-    return ProjectConfig(
-        name=path.name or "project",
-        path=path,
-        project_type=ptype,
-        frontend_framework=_detect_frontend_framework(path),
-        backend_framework=BackendFramework.DJANGO_NINJA,
-        use_celery=False,
-        use_redis=has_backend,
-        init_git=False,
-    )
+from mattstack.utils.package_manager import PackageManager
 
 
 def _gauntlet_job() -> str:
     """Build the Gauntlet verification job.
 
     The job name is the status check that `mattstack protect` requires, so
-    do not rename it. It calls mattstack rather than the gauntlet binary,
-    because `mattstack gauntlet` exits 1 when the binary is missing.
-
-    mattstack is not on PyPI yet, so install it from git. The job runs
-    `mattstack audit`, which delegates to the Gauntlet binary when it is
-    installed and falls back to the built-in auditors otherwise, so the
-    job is useful on any machine.
+    do not rename it. mattstack is not on PyPI yet, so the job installs it
+    from git. It runs `mattstack audit --no-todo`: the built-in auditors
+    (no external binary), which exit 1 when any error-severity finding
+    exists. `--no-todo` keeps CI from writing tasks/todo.md.
     """
     return """  gauntlet:
     runs-on: ubuntu-latest
@@ -121,25 +61,43 @@ def _gauntlet_job() -> str:
         run: mattstack audit --no-todo"""
 
 
-def _generate_github_actions(path: Path, project_type: str, *, with_gauntlet: bool) -> str:
-    """Generate GitHub Actions CI workflow YAML."""
+def _default_layout(config: ProjectConfig) -> CiLayout:
+    return CiLayout(config.path, config.backend_dir, config.frontend_dir)
+
+
+def _generate_github_actions(
+    config: ProjectConfig, *, with_gauntlet: bool, layout: CiLayout | None = None
+) -> str:
+    """Generate GitHub Actions CI workflow YAML.
+
+    ``layout`` holds the resolved component directories; the default is the
+    scaffold layout (`backend/` and `frontend/`).
+    """
+    layout = layout or _default_layout(config)
+    backend_dir, frontend_dir = layout.rel(layout.backend), layout.rel(layout.frontend)
     jobs: list[str] = []
 
     if with_gauntlet:
         jobs.append(_gauntlet_job())
 
-    if project_type in ("fullstack", "backend-only"):
-        jobs.append(_backend_lint_job())
-        jobs.append(_backend_test_job())
+    if config.has_backend:
+        backend = backend_facts(config.backend_framework)
+        if backend.is_python:
+            jobs.append(_backend_lint_job(backend, backend_dir))
+            jobs.append(_backend_test_job(backend, backend_dir))
+        else:
+            js = js_ci(layout.backend, layout.root)
+            jobs.append(_js_job("backend-lint", js.run(backend.lint), js, backend_dir))
+            jobs.append(_js_job("backend-test", js.run(backend.test), js, backend_dir))
 
-    if project_type in ("fullstack", "frontend-only"):
-        config = _config_for_ci(path, project_type)
+    if config.has_frontend:
         cmds = frontend_commands(config)
-        jobs.append(_bun_job("frontend-lint", cmds.lint))
+        js = js_ci(layout.frontend, layout.root)
+        jobs.append(_js_job("frontend-lint", js.run(cmds.lint), js, frontend_dir))
         if cmds.test:
-            jobs.append(_bun_job("frontend-test", cmds.test))
+            jobs.append(_js_job("frontend-test", js.run(cmds.test), js, frontend_dir))
         if cmds.typecheck:
-            jobs.append(_bun_job("frontend-typecheck", cmds.typecheck))
+            jobs.append(_js_job("frontend-typecheck", js.run(cmds.typecheck), js, frontend_dir))
 
     jobs_block = "\n\n".join(jobs)
 
@@ -160,15 +118,15 @@ jobs:
 """
 
 
-def _backend_lint_job() -> str:
-    return """  backend-lint:
+def _backend_lint_job(backend: BackendFacts, directory: str) -> str:
+    return f"""  backend-lint:
     runs-on: ubuntu-latest
     strategy:
       matrix:
         python-version: ["3.12", "3.13"]
     defaults:
       run:
-        working-directory: backend
+        working-directory: {yaml_str(directory)}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
@@ -176,14 +134,14 @@ def _backend_lint_job() -> str:
           enable-cache: true
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
-      - run: uv sync --frozen
+          python-version: ${{{{ matrix.python-version }}}}
+      - run: uv sync --frozen{backend.ci_sync_args}
       - run: uv run ruff check .
       - run: uv run ruff format --check ."""
 
 
-def _backend_test_job() -> str:
-    return """  backend-test:
+def _backend_test_job(backend: BackendFacts, directory: str) -> str:
+    return f"""  backend-test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -213,10 +171,9 @@ def _backend_test_job() -> str:
           --health-retries 5
     defaults:
       run:
-        working-directory: backend
+        working-directory: {yaml_str(directory)}
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
-      REDIS_URL: redis://localhost:6379/0
+{yaml_mapping(backend_test_env(backend, "localhost", "localhost"), 6)}
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v4
@@ -224,29 +181,31 @@ def _backend_test_job() -> str:
           enable-cache: true
       - uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
-      - run: uv sync --frozen
+          python-version: ${{{{ matrix.python-version }}}}
+      - run: uv sync --frozen{backend.ci_sync_args}
       - run: uv run pytest -x -q"""
 
 
-def _bun_job(name: str, command: str) -> str:
-    """Build one CI job that runs a bun command in frontend/."""
+def _js_job(name: str, command: str, js: JsCi, directory: str) -> str:
+    """Build one CI job that installs and runs ``command`` in ``directory``."""
     return f"""  {name}:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: frontend
+        working-directory: {yaml_str(directory)}
     steps:
       - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - run: bun install --frozen-lockfile
+{github_js_setup(js)}
+      - run: {js.install}
       - run: {command}"""
 
 
-def _generate_gitlab_ci(path: Path, project_type: str, *, with_gauntlet: bool) -> str:
-    """Generate GitLab CI configuration."""
+def _generate_gitlab_ci(
+    config: ProjectConfig, *, with_gauntlet: bool, layout: CiLayout | None = None
+) -> str:
+    """Generate GitLab CI configuration. See _generate_github_actions for ``layout``."""
+    layout = layout or _default_layout(config)
+    backend_dir, frontend_dir = layout.rel(layout.backend), layout.rel(layout.frontend)
     stages: list[str] = []
     jobs: list[str] = []
 
@@ -261,51 +220,35 @@ gauntlet:
   script:
     - mattstack audit --no-todo""")
 
-    if project_type in ("fullstack", "backend-only"):
+    if config.has_backend:
         stages.extend(["lint", "test"])
-        jobs.append("""
-backend-lint:
-  stage: lint
-  image: python:3.13-slim
-  before_script:
-    - pip install uv
-    - cd backend && uv sync --frozen
-  script:
-    - uv run ruff check .
-    - uv run ruff format --check .""")
+        backend = backend_facts(config.backend_framework)
+        if backend.is_python:
+            jobs.extend(_gitlab_python_jobs(backend, backend_dir))
+        else:
+            js = js_ci(layout.backend, layout.root)
+            for name, stage, command in (
+                ("backend-lint", "lint", backend.lint),
+                ("backend-test", "test", backend.test),
+            ):
+                jobs.append(_gitlab_js_job(name, stage, js.run(command), js, backend_dir))
 
-        jobs.append("""
-backend-test:
-  stage: test
-  image: python:3.13-slim
-  services:
-    - postgres:17
-    - redis:7
-  variables:
-    POSTGRES_DB: test_db
-    POSTGRES_USER: postgres
-    POSTGRES_PASSWORD: postgres
-    DATABASE_URL: postgresql://postgres:postgres@postgres:5432/test_db
-    REDIS_URL: redis://redis:6379/0
-  before_script:
-    - pip install uv
-    - cd backend && uv sync --frozen
-  script:
-    - uv run pytest -x -q""")
-
-    if project_type in ("fullstack", "frontend-only"):
-        config = _config_for_ci(path, project_type)
+    if config.has_frontend:
         cmds = frontend_commands(config)
         if "lint" not in stages:
             stages.append("lint")
         if "test" not in stages:
             stages.append("test")
 
-        jobs.append(_gitlab_frontend_job("frontend-lint", "lint", cmds.lint))
-        if cmds.test:
-            jobs.append(_gitlab_frontend_job("frontend-test", "test", cmds.test))
-        if cmds.typecheck:
-            jobs.append(_gitlab_frontend_job("frontend-typecheck", "test", cmds.typecheck))
+        js = js_ci(layout.frontend, layout.root)
+        frontend_jobs = (
+            ("frontend-lint", "lint", cmds.lint),
+            ("frontend-test", "test", cmds.test),
+            ("frontend-typecheck", "test", cmds.typecheck),
+        )
+        for name, stage, frontend_command in frontend_jobs:
+            if frontend_command:
+                jobs.append(_gitlab_js_job(name, stage, js.run(frontend_command), js, frontend_dir))
 
     stages_str = "\n".join(f"  - {s}" for s in stages)
     jobs_str = "\n".join(jobs)
@@ -316,14 +259,48 @@ backend-test:
 """
 
 
-def _gitlab_frontend_job(name: str, stage: str, command: str) -> str:
-    """Build one GitLab job that runs a bun command in frontend/."""
+def _gitlab_python_jobs(backend: BackendFacts, directory: str) -> list[str]:
+    install = yaml_str(in_dir(directory, f"uv sync --frozen{backend.ci_sync_args}"))
+    lint = f"""
+backend-lint:
+  stage: lint
+  image: python:3.13-slim
+  before_script:
+    - pip install uv
+    - {install}
+  script:
+    - uv run ruff check .
+    - uv run ruff format --check ."""
+    test = f"""
+backend-test:
+  stage: test
+  image: python:3.13-slim
+  services:
+    - postgres:17
+    - redis:7
+  variables:
+    POSTGRES_DB: test_db
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: postgres
+{yaml_mapping(backend_test_env(backend, "postgres", "redis"), 4)}
+  before_script:
+    - pip install uv
+    - {install}
+  script:
+    - uv run pytest -x -q"""
+    return [lint, test]
+
+
+def _gitlab_js_job(name: str, stage: str, command: str, js: JsCi, directory: str) -> str:
+    """Build one GitLab job that installs and runs ``command`` in ``directory``."""
+    image = "oven/bun:latest" if js.pm == PackageManager.BUN else "node:22"
+    corepack = "corepack enable && " if js.pm in (PackageManager.PNPM, PackageManager.YARN) else ""
     return f"""
 {name}:
   stage: {stage}
-  image: oven/bun:latest
+  image: {image}
   before_script:
-    - cd frontend && bun install --frozen-lockfile
+    - {yaml_str(in_dir(directory, corepack + js.install))}
   script:
     - {command}"""
 
@@ -332,8 +309,13 @@ def run_generate_workflow(
     path: Path,
     platform: str = "github-actions",
     dry_run: bool = False,
+    force: bool = False,
 ) -> None:
-    """Generate CI/CD workflow configuration."""
+    """Generate CI/CD workflow configuration.
+
+    An existing workflow file is a user file: it is replaced only with
+    ``force``. Without it, a differing file stops the command with exit 1.
+    """
     path = path.resolve()
     if not path.is_dir():
         print_error(f"Directory not found: {path}")
@@ -345,39 +327,66 @@ def run_generate_workflow(
     console.print("[bold cyan]mattstack workflow[/bold cyan]")
     console.print()
 
-    project_type = _detect_project_type(path)
-    if project_type == "unknown":
+    stack = load_stack(path)
+    if not stack.has_backend and not stack.has_frontend:
         print_error("Could not detect project type (no backend/ or frontend/ found)")
         raise typer.Exit(code=1)
+    unknown = stack.unknown_components()
+    if unknown:
+        print_error(unknown_framework_message(unknown))
+        raise typer.Exit(code=1)
 
-    print_info(f"Detected project type: {project_type}")
+    config = stack.config()
+    layout = CiLayout(stack.root, stack.project.backend_dir, stack.project.frontend_dir)
+    stack_desc = [config.project_type.value]
+    if config.has_backend:
+        stack_desc.append(f"backend {config.backend_framework.value}")
+    if config.has_frontend:
+        stack_desc.append(f"frontend {config.frontend_framework.value}")
+    print_info(f"Detected stack: {', '.join(stack_desc)}")
     print_info(f"Platform: {platform}")
 
     if platform == "github-actions":
-        content = _generate_github_actions(path, project_type, with_gauntlet=True)
-        output_path = path / ".github" / "workflows" / "ci.yml"
+        content = _generate_github_actions(config, with_gauntlet=True, layout=layout)
+        output_path = stack.root / ".github" / "workflows" / "ci.yml"
     elif platform == "gitlab-ci":
-        content = _generate_gitlab_ci(path, project_type, with_gauntlet=True)
-        output_path = path / ".gitlab-ci.yml"
+        content = _generate_gitlab_ci(config, with_gauntlet=True, layout=layout)
+        output_path = stack.root / ".gitlab-ci.yml"
     else:
         print_error(f"Unknown platform: {platform}. Use: github-actions, gitlab-ci")
         raise typer.Exit(code=1)
 
+    exists = output_path.exists()
+    if exists and output_path.read_text(encoding="utf-8", errors="replace") == content:
+        print_success(f"{output_path} is already up to date")
+        return
+    blocked = exists and not force
+
     if dry_run:
+        if not exists:
+            action = "Would create:"
+        elif blocked:
+            action = "Would overwrite (requires --force):"
+        else:
+            action = "Would overwrite:"
         console.print()
-        console.print(f"[bold]Would create:[/bold] {output_path}")
+        console.print(f"[bold]{action}[/bold] {escape(str(output_path))}")
         console.print()
-        console.print(content)
+        console.print(content, markup=False, highlight=False)
         elapsed = time.perf_counter() - start
         console.print(f"[dim]({elapsed:.1f}s)[/dim]")
         return
 
-    # Write file
+    if blocked:
+        print_error(
+            f"{output_path} already exists and differs. "
+            "Re-run with --force to replace it, or --dry-run to review the new version."
+        )
+        raise typer.Exit(code=1)
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    if output_path.exists():
-        print_warning(f"Overwriting existing {output_path.name}")
     output_path.write_text(content, encoding="utf-8")
 
     elapsed = time.perf_counter() - start
-    print_success(f"Created {output_path}")
+    print_success(f"{'Replaced' if exists else 'Created'} {output_path}")
     console.print(f"[dim]({elapsed:.1f}s)[/dim]")

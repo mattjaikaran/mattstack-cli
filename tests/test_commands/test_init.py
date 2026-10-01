@@ -100,6 +100,7 @@ def test_generate_dry_run_skips_dir_check(tmp_path: Path) -> None:
 
 def test_keyboard_interrupt_handling(tmp_path: Path) -> None:
     with (
+        patch("mattstack.commands.init.sys.stdin.isatty", return_value=True),
         patch("mattstack.commands.init._run_interactive", side_effect=KeyboardInterrupt),
         pytest.raises((SystemExit, click.exceptions.Exit)),
     ):
@@ -233,6 +234,7 @@ def test_wizard_creates_backend_only(tmp_path: Path) -> None:
 def test_wizard_cancel_on_name(tmp_path: Path) -> None:
     """Returning None from the name prompt should raise KeyboardInterrupt (caught by run_init)."""
     with (
+        patch("mattstack.commands.init.sys.stdin.isatty", return_value=True),
         patch("mattstack.commands.init._generate") as mock_gen,
         patch("mattstack.commands.init.questionary") as mock_q,
         patch(

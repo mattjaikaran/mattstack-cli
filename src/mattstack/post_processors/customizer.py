@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+import re
 
-from mattstack.config import ProjectConfig
+from mattstack.config import BackendFramework, ProjectConfig
 from mattstack.utils.console import print_info
 
 
@@ -31,8 +32,22 @@ def _customize_django_backend(config: ProjectConfig) -> None:
             'name = "django_ninja_boilerplate"',
             f'name = "{config.python_package_name}_backend"',
         )
+        if config.backend_framework == BackendFramework.DJANGO_MATT:
+            content = content.replace(
+                'name = "django-matt-starter"', f'name = "{config.name}-backend"'
+            )
+            content = content.replace('name = "myproject"', f'name = "{config.name}-backend"')
+            content = content.replace(
+                "git+ssh://git@github.com/mattjaikaran/django-matt.git",
+                "git+https://github.com/mattjaikaran/django-matt.git",
+            )
         pyproject.write_text(content)
         print_info(f"Renamed backend to {config.name}-backend")
+    if config.backend_framework == BackendFramework.DJANGO_MATT:
+        for source in config.backend_dir.rglob("*.py"):
+            content = source.read_text()
+            if "from django_matt import MattAPI" in content:
+                source.write_text(re.sub(r"\bMattAPI\b", "DjangoMattAPI", content))
 
     # Remove boilerplate cli/ dir if somehow still present
     cli_dir = config.backend_dir / "cli"

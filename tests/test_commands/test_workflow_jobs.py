@@ -12,11 +12,11 @@ from pathlib import Path
 import pytest
 
 from mattstack.commands.workflow import (
-    _detect_frontend_framework,
     _generate_github_actions,
     _generate_gitlab_ci,
 )
-from mattstack.config import FrontendFramework
+from mattstack.config import FrontendFramework, ProjectConfig
+from mattstack.stack import load_stack
 
 # The scripts each boilerplate actually ships, from its package.json.
 BOILERPLATE_SCRIPTS: dict[str, dict[str, str]] = {
@@ -25,6 +25,26 @@ BOILERPLATE_SCRIPTS: dict[str, dict[str, str]] = {
     "react-rsbuild": {"dev": "rsbuild dev", "test": "vitest run", "typecheck": "tsc --noEmit"},
     "nextjs": {"dev": "next dev", "lint": "eslint"},
 }
+
+# The build tool each boilerplate depends on.
+BOILERPLATE_DEPS: dict[str, dict[str, str]] = {
+    "react-vite": {"vite": "^6.0.0"},
+    "react-vite-starter": {"vite": "^6.0.0"},
+    "react-rsbuild": {"@rsbuild/core": "^1.0.0"},
+    "nextjs": {"next": "^15.0.0"},
+}
+
+
+def _write_frontend(tmp_path: Path, name: str) -> Path:
+    frontend = tmp_path / "frontend"
+    frontend.mkdir()
+    package = {
+        "name": "app",
+        "scripts": BOILERPLATE_SCRIPTS[name],
+        "devDependencies": BOILERPLATE_DEPS[name],
+    }
+    (frontend / "package.json").write_text(json.dumps(package))
+    return tmp_path
 
 
 @pytest.mark.parametrize(
@@ -39,19 +59,14 @@ BOILERPLATE_SCRIPTS: dict[str, dict[str, str]] = {
 def test_detects_framework_from_package_json(
     tmp_path: Path, name: str, expected: FrontendFramework
 ) -> None:
-    frontend = tmp_path / "frontend"
-    frontend.mkdir()
-    (frontend / "package.json").write_text(
-        json.dumps({"name": "app", "scripts": BOILERPLATE_SCRIPTS[name]})
-    )
-    assert _detect_frontend_framework(tmp_path) is expected
+    _write_frontend(tmp_path, name)
+    assert load_stack(tmp_path).project.frontend_framework is expected
 
 
-def _project(tmp_path: Path, scripts: dict[str, str]) -> Path:
-    frontend = tmp_path / "frontend"
-    frontend.mkdir()
-    (frontend / "package.json").write_text(json.dumps({"name": "app", "scripts": scripts}))
-    return tmp_path
+def _project(tmp_path: Path, name: str, *, fullstack: bool = True) -> ProjectConfig:
+    """Resolve a project with the given frontend boilerplate, as workflow does."""
+    _write_frontend(tmp_path, name)
+    return load_stack(tmp_path).config(has_backend=fullstack)
 
 
 @pytest.mark.parametrize(
@@ -66,16 +81,16 @@ def test_frontend_typecheck_job_uses_a_real_script(
     tmp_path: Path, name: str, expected_command: str, absent_command: str
 ) -> None:
     """A wrong script name fails the job on its first run."""
-    project = _project(tmp_path, BOILERPLATE_SCRIPTS[name])
-    workflow = _generate_github_actions(project, "fullstack", with_gauntlet=False)
+    project = _project(tmp_path, name)
+    workflow = _generate_github_actions(project, with_gauntlet=False)
     assert expected_command in workflow
     assert absent_command not in workflow
 
 
 def test_nextjs_project_omits_the_test_job(tmp_path: Path) -> None:
     """nextjs-starter ships no test script, so no job can run one."""
-    project = _project(tmp_path, BOILERPLATE_SCRIPTS["nextjs"])
-    workflow = _generate_github_actions(project, "frontend-only", with_gauntlet=False)
+    project = _project(tmp_path, "nextjs", fullstack=False)
+    workflow = _generate_github_actions(project, with_gauntlet=False)
     assert "frontend-test:" not in workflow
     assert "frontend-typecheck:" in workflow
     assert "frontend-lint:" in workflow
@@ -83,31 +98,31 @@ def test_nextjs_project_omits_the_test_job(tmp_path: Path) -> None:
 
 def test_gauntlet_job_is_present_when_requested(tmp_path: Path) -> None:
     """protect.py requires this exact status-check name."""
-    project = _project(tmp_path, BOILERPLATE_SCRIPTS["react-vite"])
-    workflow = _generate_github_actions(project, "fullstack", with_gauntlet=True)
+    project = _project(tmp_path, "react-vite")
+    workflow = _generate_github_actions(project, with_gauntlet=True)
     assert "  gauntlet:" in workflow
     assert "mattstack audit" in workflow
 
 
 def test_gauntlet_job_is_absent_when_not_requested(tmp_path: Path) -> None:
-    project = _project(tmp_path, BOILERPLATE_SCRIPTS["react-vite"])
-    workflow = _generate_github_actions(project, "fullstack", with_gauntlet=False)
+    project = _project(tmp_path, "react-vite")
+    workflow = _generate_github_actions(project, with_gauntlet=False)
     assert "gauntlet:" not in workflow
 
 
 def test_gitlab_emits_resolved_frontend_commands(tmp_path: Path) -> None:
-    project = _project(tmp_path, BOILERPLATE_SCRIPTS["react-vite"])
-    config = _generate_gitlab_ci(project, "fullstack", with_gauntlet=True)
+    project = _project(tmp_path, "react-vite")
+    config = _generate_gitlab_ci(project, with_gauntlet=True)
     assert "bun run type-check" in config
     assert "gauntlet:" in config
     assert "mattstack audit" in config
 
 
 def test_github_output_is_valid_yaml(tmp_path: Path) -> None:
-    project = _project(tmp_path, BOILERPLATE_SCRIPTS["react-rsbuild"])
+    project = _project(tmp_path, "react-rsbuild")
     import yaml
 
-    workflow = _generate_github_actions(project, "fullstack", with_gauntlet=True)
+    workflow = _generate_github_actions(project, with_gauntlet=True)
     document = yaml.safe_load(workflow)
     assert "gauntlet" in document["jobs"]
     assert "backend-test" in document["jobs"]
@@ -118,8 +133,8 @@ def test_job_names_are_stable_for_branch_protection(tmp_path: Path) -> None:
     """protect.py hardcodes `gauntlet`; a rename silently blocks merges."""
     from mattstack.commands.protect import DEFAULT_STATUS_CHECKS
 
-    project = _project(tmp_path, BOILERPLATE_SCRIPTS["react-vite"])
-    workflow = _generate_github_actions(project, "fullstack", with_gauntlet=True)
+    project = _project(tmp_path, "react-vite")
+    workflow = _generate_github_actions(project, with_gauntlet=True)
     jobs = __import__("yaml").safe_load(workflow)["jobs"]
     for check in DEFAULT_STATUS_CHECKS:
         assert check in jobs, f"required status check {check!r} has no job"

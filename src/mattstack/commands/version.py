@@ -7,7 +7,7 @@ import urllib.error
 import urllib.request
 
 from mattstack import __version__
-from mattstack.utils.console import console
+from mattstack.utils.console import console, is_quiet
 
 
 def check_pypi_version(package: str = "mattstack") -> str | None:
@@ -36,6 +36,8 @@ def _parse_version(v: str) -> tuple[int, ...]:
 def run_version() -> None:
     """Show version with optional update check."""
     console.print(f"mattstack [bold]{__version__}[/bold]")
+    if is_quiet():
+        return
 
     latest = check_pypi_version()
     if latest and latest != __version__:

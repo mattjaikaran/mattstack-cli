@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import questionary  # type: ignore
@@ -15,13 +16,13 @@ from mattstack.config import (
     ProjectConfig,
     ProjectType,
     Variant,
+    normalize_name,
 )
 from mattstack.generators.backend_only import BackendOnlyGenerator
 from mattstack.generators.frontend_only import FrontendOnlyGenerator
 from mattstack.generators.fullstack import FullstackGenerator
 from mattstack.presets import get_all_presets, get_preset
-from mattstack.templates.mattstack_yml import generate_mattstack_yml
-from mattstack.utils.console import console, print_error, print_success
+from mattstack.utils.console import console, print_error, print_info, print_success
 from mattstack.utils.git import get_git_user
 from mattstack.utils.yaml_config import load_config_file
 
@@ -49,27 +50,41 @@ def run_init(
     if output_dir is None:
         output_dir = Path.cwd()
 
+    if config_file and (preset or name):
+        print_error("Use --config without a project name or --preset")
+        raise typer.Exit(code=2)
+    if preset and not name:
+        print_error("--preset requires a project name")
+        raise typer.Exit(code=2)
+    if not config_file and not preset and not sys.stdin.isatty():
+        print_error("Use a project name with --preset, or pass --config, without a terminal")
+        raise typer.Exit(code=2)
+
     try:
         if config_file:
-            _run_from_config(Path(config_file), output_dir, dry_run=dry_run)
+            _run_from_config(Path(config_file), output_dir, ios=ios, dry_run=dry_run)
         elif preset and name:
             _run_from_preset(name, preset, ios, output_dir, dry_run=dry_run)
-        elif name and not preset:
-            # Name given but no preset — still run interactive for options
-            _run_interactive(output_dir, default_name=name, dry_run=dry_run)
         else:
-            _run_interactive(output_dir, dry_run=dry_run)
+            _run_interactive(output_dir, default_name=name, dry_run=dry_run)
     except KeyboardInterrupt:
         console.print("\n[yellow]Cancelled.[/yellow]")
         raise typer.Exit(code=130) from None
 
 
-def _run_from_config(config_path: Path, output_dir: Path, *, dry_run: bool = False) -> None:
+def _run_from_config(
+    config_path: Path, output_dir: Path, *, ios: bool = False, dry_run: bool = False
+) -> None:
     """Generate from a YAML config file."""
     config = load_config_file(config_path, output_dir)
     if config is None:
         raise typer.Exit(code=1)
     config.dry_run = dry_run
+    if ios:
+        if not config.is_fullstack:
+            print_error("--ios requires a fullstack project")
+            raise typer.Exit(code=2)
+        config.include_ios = True
     _generate(config)
 
 
@@ -89,10 +104,17 @@ def _run_from_preset(
         print_error("Run 'mattstack info' to see available presets")
         raise typer.Exit(code=1)
 
+    name = normalize_name(name)
+    if not name:
+        print_error("Project name cannot be empty")
+        raise typer.Exit(code=2)
     default_author, default_email = get_git_user()
 
     config = preset.to_config(name, output_dir / name)
     if ios:
+        if config.project_type != ProjectType.FULLSTACK:
+            print_error("--ios requires a fullstack preset")
+            raise typer.Exit(code=2)
         config.include_ios = True
     config.dry_run = dry_run
     config.author_name = default_author or config.author_name
@@ -314,13 +336,19 @@ def _generate(config: ProjectConfig) -> bool:
     else:
         print_error(f"Unknown project type: {config.project_type}")
         raise typer.Exit(code=1)
-    success = generator.run()
+    try:
+        success = generator.run()
+    except (OSError, ValueError) as error:
+        print_error(f"Project generation failed: {error}")
+        raise typer.Exit(code=1) from error
 
-    if success:
-        generator.write_file("mattstack.yml", generate_mattstack_yml())
+    if not success:
+        raise typer.Exit(code=1)
+    if config.dry_run:
+        print_info("Dry-run completed; no project files were written")
+    else:
         _print_next_steps(config)
-
-    return success
+    return True
 
 
 def _print_next_steps(config: ProjectConfig) -> None:
@@ -331,19 +359,17 @@ def _print_next_steps(config: ProjectConfig) -> None:
     console.print(f"  [cyan]cd {config.name}[/cyan]")
     console.print("  [cyan]make setup[/cyan]")
     if config.has_backend:
-        console.print("  [cyan]make up[/cyan]          # Start Docker services")
-        if config.is_nestjs_backend:
-            console.print("  [cyan]make backend-migrate[/cyan]  # Run Drizzle migrations")
-        else:
-            console.print("  [cyan]make backend-migrate[/cyan]")
+        infrastructure = "db redis" if config.use_redis else "db"
+        console.print(f"  [cyan]docker compose up -d --wait {infrastructure}[/cyan]")
+        console.print("  [cyan]make backend-migrate[/cyan]")
+        if config.backend_framework in {
+            BackendFramework.DJANGO_NINJA,
+            BackendFramework.DJANGO_MATT,
+        }:
             console.print("  [cyan]make backend-superuser[/cyan]")
-    if config.is_fullstack:
-        api_port = config.backend_api_port
-        console.print(f"  [cyan]make backend-dev[/cyan]  # http://localhost:{api_port}")
-        console.print("  [cyan]make frontend-dev[/cyan] # http://localhost:3000")
-    elif config.has_backend:
-        api_port = config.backend_api_port
-        console.print(f"  [cyan]make backend-dev[/cyan]  # http://localhost:{api_port}")
-    elif config.has_frontend:
-        console.print("  [cyan]make frontend-dev[/cyan] # http://localhost:3000")
+    console.print("  [cyan]mattstack dev --mode host[/cyan]")
+    if config.has_backend:
+        console.print(f"  API: http://localhost:{config.backend_api_port}{config.api_prefix}")
+    if config.has_frontend:
+        console.print("  Frontend: http://localhost:3000")
     console.print()

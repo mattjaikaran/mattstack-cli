@@ -1,611 +1,196 @@
-"""Tests for generate command — Phase 16A-16D: model, schema, controller, admin; Phase 17: crud."""
+"""Behavior of `mattstack generate`: field specs, wiring, refusal, and output contracts."""
 
 from __future__ import annotations
 
+import ast
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-import typer
+from click.testing import Result
+from typer.testing import CliRunner
 
-from mattstack.commands.generate import (
-    _build_admin_file,
-    _generate_api_controller,
-    _generate_django_model,
-    _generate_pydantic_schema,
-    _generate_pytest_api_tests,
-    _generate_react_list_component,
-    _generate_tanstack_hooks,
-    _generate_ts_api_client,
-    _generate_vitest_component_test,
-    _parse_fields,
-    _update_init_import,
+from mattstack.commands.codegen.fields import FieldSpecError, parse_fields
+from mattstack.commands.generate import generate_app
+from mattstack.parsers.python_schemas import parse_pydantic_file
+
+runner = CliRunner()
+MakeProject = Callable[..., Path]
+
+
+def crud(root: Path, *args: str) -> Result:
+    return runner.invoke(generate_app, ["crud", "Product", "--path", str(root), *args])
+
+
+def test_repeated_and_quoted_field_flags_are_equivalent() -> None:
+    assert parse_fields(["title:str", "price:decimal"]) == parse_fields(["title:str price:decimal"])
+    assert parse_fields(["title:str,price:decimal"]) == parse_fields(["title:str", "price:decimal"])
+
+
+@pytest.mark.parametrize(
+    "spec",
+    ["category:fk", "id:str", "title:str title:text", "class:str", "price:money", "owner:fk:user"],
 )
-
-# ---------------------------------------------------------------------------
-# Fixtures
-# ---------------------------------------------------------------------------
-
-
-def _make_backend(tmp_path: Path, app: str = "core") -> Path:
-    """Minimal backend structure under tmp_path."""
-    backend = tmp_path / "backend"
-    apps_dir = backend / "apps" / app
-    apps_dir.mkdir(parents=True)
-    (apps_dir / "__init__.py").write_text("")
-    return tmp_path
+def test_invalid_field_specs_are_rejected(spec: str) -> None:
+    with pytest.raises(FieldSpecError):
+        parse_fields([spec])
 
 
-# ---------------------------------------------------------------------------
-# 1. AbstractBaseModel — model file imports AbstractBaseModel
-# ---------------------------------------------------------------------------
+def test_crud_registers_controller_before_urls_are_built(
+    tmp_path: Path, make_project: MakeProject
+) -> None:
+    root = make_project(tmp_path)
+    result = crud(
+        root, "-f", "title:str price:decimal", "-f", "category:fk:Category", "--with-tests"
+    )
+    assert result.exit_code == 0, result.output
+
+    urls = (root / "backend" / "api" / "urls.py").read_text()
+    registration = urls.index("api.register_controllers(ProductController)")
+    assert urls.index("from core.controllers.product import ProductController") < registration
+    # Ninja builds its URL list when `api.urls` is read in urlpatterns.
+    assert registration < urls.index("urlpatterns")
+
+    for path in (root / "backend").rglob("*.py"):
+        ast.parse(path.read_text(), filename=str(path))
+    test_source = (root / "backend" / "core" / "tests" / "test_product_api.py").read_text()
+    assert '"/api/products/"' in test_source
 
 
-def test_model_uses_abstract_base_model() -> None:
-    fields = _parse_fields(["title:str", "price:decimal"])
-    source = _generate_django_model("Product", fields)
-    assert "AbstractBaseModel" in source
-    assert "from core.models.base import AbstractBaseModel" in source
-    assert "class Product(AbstractBaseModel):" in source
+def _fk_contract(root: Path) -> tuple[str, str, str]:
+    """Return (Pydantic FK type, TS FK type, model source) for generated Product."""
+    schemas = {
+        s.name: s for s in parse_pydantic_file(root / "backend" / "core" / "schemas" / "product.py")
+    }
+    fk = next(f for f in schemas["ProductBaseSchema"].fields if f.name.endswith("_id"))
+    client = (root / "frontend" / "src" / "api" / "product.ts").read_text()
+    ts = client.split("export interface ProductCreateSchema {", 1)[1].split("}", 1)[0]
+    ts_type = next(line for line in ts.splitlines() if "_id" in line).split(":")[1].strip(" ;")
+    model = (root / "backend" / "core" / "models" / "product.py").read_text()
+    return fk.type_str, ts_type, model
 
 
-# ---------------------------------------------------------------------------
-# 2. @http_* decorators — controller uses ninja-extra decorators
-# ---------------------------------------------------------------------------
+def test_fk_to_integer_key_model_is_numeric(tmp_path: Path, make_project: MakeProject) -> None:
+    root = make_project(tmp_path)  # Category(models.Model): Django's integer auto key
+    assert crud(root, "-f", "title:str category:fk:Category").exit_code == 0
+    py_type, ts_type, model = _fk_contract(root)
+    assert (py_type, ts_type) == ("int", "number")
+    assert 'models.ForeignKey("core.Category"' in model
 
 
-def test_controller_uses_http_decorators() -> None:
-    fields = _parse_fields(["title:str"])
-    source = _generate_api_controller("Product", fields, "core")
-    assert "@http_get" in source
-    assert "@http_post" in source
-    assert "@http_put" in source
-    assert "@http_delete" in source
-    assert "from ninja_extra import api_controller" in source
+def test_fk_to_uuid_key_model_is_string(tmp_path: Path, make_project: MakeProject) -> None:
+    root = make_project(tmp_path)
+    (root / "backend" / "core" / "models" / "base.py").write_text(
+        "class TimestampedModel(models.Model):\n"
+        "    id = models.UUIDField(\n        primary_key=True, default=uuid.uuid4\n    )\n\n\n"
+        "AbstractBaseModel = TimestampedModel\n"
+    )
+    (root / "backend" / "core" / "models" / "tag.py").write_text(
+        "class Tag(AbstractBaseModel):\n    name = models.CharField(max_length=20)\n"
+    )
+    assert crud(root, "-f", "title:str tag:fk:Tag").exit_code == 0
+    py_type, ts_type, _ = _fk_contract(root)
+    assert (py_type, ts_type) == ("UUID", "string")
 
 
-# ---------------------------------------------------------------------------
-# 3. model_dump() — controller uses model_dump(), not .dict()
-# ---------------------------------------------------------------------------
+def test_fk_to_swapped_user_model_uses_auth_user_model(
+    tmp_path: Path, make_project: MakeProject
+) -> None:
+    root = make_project(tmp_path)
+    settings = root / "backend" / "api" / "settings.py"
+    settings.write_text(settings.read_text() + 'AUTH_USER_MODEL = "core.User"\n')
+    (root / "backend" / "core" / "models" / "user.py").write_text(
+        "class User(AbstractUser):\n    pass\n"
+    )
+    assert crud(root, "-f", "owner:fk:User").exit_code == 0
+    py_type, ts_type, model = _fk_contract(root)
+    assert (py_type, ts_type) == ("int", "number")
+    assert "models.ForeignKey(settings.AUTH_USER_MODEL" in model
+    assert "from django.conf import settings" in model
 
 
-def test_controller_uses_model_dump_not_dict() -> None:
-    fields = _parse_fields(["title:str"])
-    source = _generate_api_controller("Product", fields, "core")
-    assert "model_dump()" in source
-    assert ".dict(" not in source
-
-
-# ---------------------------------------------------------------------------
-# 4. --empty guard — model with no fields and no --empty exits code 1
-# ---------------------------------------------------------------------------
-
-
-def test_model_command_no_fields_no_empty_exits(tmp_path: Path) -> None:
-    _make_backend(tmp_path)
-
-    import typer
-    from typer.testing import CliRunner
-
-    from mattstack.commands.generate import model as model_cmd
-
-    app = typer.Typer()
-    app.command()(model_cmd)
-    runner = CliRunner()
-
-    result = runner.invoke(app, ["Product", "--path", str(tmp_path)])
+@pytest.mark.parametrize(
+    ("target", "model_source"),
+    [
+        ("core.Missing", None),
+        ("Thing", "class Thing(ThirdPartyBase):\n    pass\n"),
+    ],
+    ids=["unknown-explicit-label", "unverifiable-primary-key"],
+)
+def test_unresolvable_fk_targets_are_refused(
+    tmp_path: Path, make_project: MakeProject, target: str, model_source: str | None
+) -> None:
+    root = make_project(tmp_path)
+    if model_source:
+        (root / "backend" / "core" / "models" / "thing.py").write_text(model_source)
+    result = crud(root, "-f", f"link:fk:{target}")
     assert result.exit_code == 1
+    assert not (root / "backend" / "core" / "models" / "product.py").exists()
 
 
-# ---------------------------------------------------------------------------
-# 5. FK validation — FK target file missing exits with error
-# ---------------------------------------------------------------------------
+def test_crud_frontend_uses_shared_transport_and_string_decimals(
+    tmp_path: Path, make_project: MakeProject
+) -> None:
+    root = make_project(tmp_path)
+    assert crud(root, "-f", "title:str price:decimal").exit_code == 0
+
+    client = (root / "frontend" / "src" / "api" / "product.ts").read_text()
+    assert 'import { apiClient as http } from "@/api/client";' in client
+    assert "localhost" not in client
+    assert '"/products/"' in client
+    assert "price: string;" in client
+    assert (root / "frontend" / "src" / "routes" / "products.tsx").exists()
 
 
-def test_fk_missing_target_exits(tmp_path: Path) -> None:
-    _make_backend(tmp_path)
+def test_crud_refuses_to_overwrite_existing_files(
+    tmp_path: Path, make_project: MakeProject
+) -> None:
+    root = make_project(tmp_path)
+    assert crud(root, "-f", "title:str").exit_code == 0
+    model = root / "backend" / "core" / "models" / "product.py"
+    model.write_text("# user edits\n")
+    urls_before = (root / "backend" / "api" / "urls.py").read_text()
 
-    import typer
-    from typer.testing import CliRunner
-
-    from mattstack.commands.generate import model as model_cmd
-
-    app = typer.Typer()
-    app.command()(model_cmd)
-    runner = CliRunner()
-
-    result = runner.invoke(
-        app,
-        ["OrderItem", "--fields", "order:fk:Order", "--path", str(tmp_path)],
-    )
+    result = crud(root, "-f", "title:str")
     assert result.exit_code == 1
-
-
-# ---------------------------------------------------------------------------
-# 6. models/__init__.py wiring — import line appended
-# ---------------------------------------------------------------------------
-
-
-def test_update_init_import_appends_line(tmp_path: Path) -> None:
-    init_file = tmp_path / "__init__.py"
-    init_file.write_text("")
-
-    added = _update_init_import(init_file, "from .product import Product", dry_run=False)
-
-    assert added is True
-    content = init_file.read_text()
-    assert "from .product import Product" in content
-
-
-def test_update_init_import_no_duplicate(tmp_path: Path) -> None:
-    init_file = tmp_path / "__init__.py"
-    init_file.write_text("from .product import Product\n")
-
-    added = _update_init_import(init_file, "from .product import Product", dry_run=False)
-
-    assert added is False
-    assert init_file.read_text().count("from .product import Product") == 1
-
-
-# ---------------------------------------------------------------------------
-# 7. Admin file creation — content is valid unfold admin
-# ---------------------------------------------------------------------------
-
-
-def test_admin_file_has_unfold_import() -> None:
-    fields = _parse_fields(["title:str", "price:decimal"])
-    source = _build_admin_file("Product", "product", "core", fields)
-    assert "from unfold.admin import ModelAdmin" in source
-    assert "@admin.register(Product)" in source
-    assert "class ProductAdmin(ModelAdmin):" in source
-
-
-def test_admin_file_list_display_includes_str_fields() -> None:
-    fields = _parse_fields(["title:str", "slug:str"])
-    source = _build_admin_file("Product", "product", "core", fields)
-    assert '"title"' in source
-    assert '"slug"' in source
-    assert '"created_at"' in source
-
-
-# ---------------------------------------------------------------------------
-# 8. admin/__init__.py wiring — admin import wired via _update_init_import
-# ---------------------------------------------------------------------------
-
-
-def test_admin_init_wiring(tmp_path: Path) -> None:
-    admin_init = tmp_path / "admin" / "__init__.py"
-    admin_init.parent.mkdir(parents=True)
-    admin_init.write_text("")
-
-    added = _update_init_import(
-        admin_init, "from .product_admin import ProductAdmin", dry_run=False
-    )
-
-    assert added is True
-    assert "from .product_admin import ProductAdmin" in admin_init.read_text()
-
-
-# ---------------------------------------------------------------------------
-# 9. 4-schema pattern — Base/Create/Update/Response classes all present
-# ---------------------------------------------------------------------------
-
-
-def test_schema_four_class_pattern() -> None:
-    fields = _parse_fields(["title:str", "price:decimal"])
-    source = _generate_pydantic_schema("Product", fields)
-    assert "class ProductBaseSchema(Schema):" in source
-    assert "class ProductCreateSchema(ProductBaseSchema):" in source
-    assert "class ProductUpdateSchema(ProductBaseSchema):" in source
-    assert "class ProductResponseSchema(ProductBaseSchema):" in source
-
-
-def test_schema_response_has_from_attributes() -> None:
-    fields = _parse_fields(["title:str"])
-    source = _generate_pydantic_schema("Product", fields)
-    assert "model_config = ConfigDict(from_attributes=True)" in source
-    assert "id: UUID" in source
-    assert "created_at: datetime" in source
-    assert "updated_at: datetime" in source
-
-
-# ---------------------------------------------------------------------------
-# Phase 17: generate crud — TS API client
-# ---------------------------------------------------------------------------
-
-
-def test_ts_api_client_exports_all_crud_functions() -> None:
-    fields = _parse_fields(["title:str", "price:decimal"])
-    source = _generate_ts_api_client("Product", fields)
-    assert "export async function listProducts" in source
-    assert "export async function getProduct" in source
-    assert "export async function createProduct" in source
-    assert "export async function updateProduct" in source
-    assert "export async function deleteProduct" in source
-
-
-def test_ts_api_client_contains_type_interfaces() -> None:
-    fields = _parse_fields(["title:str", "price:decimal"])
-    source = _generate_ts_api_client("Product", fields)
-    assert "export interface Product {" in source
-    assert "export interface ProductCreate {" in source
-    assert "export interface ProductUpdate {" in source
-
-
-def test_ts_api_client_field_types_mapped() -> None:
-    fields = _parse_fields(["title:str", "active:bool", "price:decimal"])
-    source = _generate_ts_api_client("Product", fields)
-    assert "title: string;" in source
-    assert "active: boolean;" in source
-    assert "price: number;" in source
-
-
-# ---------------------------------------------------------------------------
-# Phase 17: generate crud — TanStack hooks
-# ---------------------------------------------------------------------------
-
-
-def test_tanstack_hooks_exports_all_five_hooks() -> None:
-    fields = _parse_fields(["title:str"])
-    source = _generate_tanstack_hooks("Product", fields)
-    assert "export function useProductList" in source
-    assert "export function useProduct(" in source
-    assert "export function useCreateProduct" in source
-    assert "export function useUpdateProduct" in source
-    assert "export function useDeleteProduct" in source
-
-
-def test_tanstack_hooks_uses_invalidate_queries() -> None:
-    fields = _parse_fields(["title:str"])
-    source = _generate_tanstack_hooks("Product", fields)
-    assert 'invalidateQueries({ queryKey: ["products"]' in source
-
-
-def test_tanstack_hooks_imports_tanstack_query() -> None:
-    fields = _parse_fields(["title:str"])
-    source = _generate_tanstack_hooks("Product", fields)
-    assert 'from "@tanstack/react-query"' in source
-    assert "useQuery" in source
-    assert "useMutation" in source
-    assert "useQueryClient" in source
-
-
-# ---------------------------------------------------------------------------
-# Phase 17: generate crud — React list component
-# ---------------------------------------------------------------------------
-
-
-def test_react_list_component_has_loading_state() -> None:
-    fields = _parse_fields(["title:str"])
-    source = _generate_react_list_component("Product", fields)
-    assert "Loading products..." in source
-
-
-def test_react_list_component_has_error_state() -> None:
-    fields = _parse_fields(["title:str"])
-    source = _generate_react_list_component("Product", fields)
-    assert "error" in source.lower()
-    assert "(error as Error).message" in source
-
-
-def test_react_list_component_has_empty_state() -> None:
-    fields = _parse_fields(["title:str"])
-    source = _generate_react_list_component("Product", fields)
-    assert "No products found." in source
-
-
-def test_react_list_component_uses_hook() -> None:
-    fields = _parse_fields(["title:str"])
-    source = _generate_react_list_component("Product", fields)
-    assert "useProductList" in source
-    assert 'from "@/hooks/useProducts"' in source
-
-
-# ---------------------------------------------------------------------------
-# Phase 17: generate crud — pytest API tests
-# ---------------------------------------------------------------------------
-
-
-def test_pytest_api_tests_covers_all_five_endpoints() -> None:
-    fields = _parse_fields(["title:str", "price:decimal"])
-    source = _generate_pytest_api_tests("Product", fields, "core")
-    assert "test_list_products_returns_200" in source
-    assert "test_get_product_not_found" in source
-    assert "test_create_product_unauthenticated" in source
-    assert "test_update_product_unauthenticated" in source
-    assert "test_delete_product_unauthenticated" in source
-
-
-def test_pytest_api_tests_imports_model() -> None:
-    fields = _parse_fields(["title:str"])
-    source = _generate_pytest_api_tests("Product", fields, "core")
-    assert "from apps.core.models.product import Product" in source
-
-
-def test_pytest_api_tests_checks_auth_status_codes() -> None:
-    fields = _parse_fields(["title:str"])
-    source = _generate_pytest_api_tests("Product", fields, "core")
-    assert "401, 403" in source
-
-
-# ---------------------------------------------------------------------------
-# Phase 17: generate crud — Vitest component test
-# ---------------------------------------------------------------------------
-
-
-def test_vitest_component_test_mocks_hook() -> None:
-    source = _generate_vitest_component_test("Product")
-    assert 'vi.mock("@/hooks/useProducts"' in source
-    assert "useProductList" in source
-
-
-def test_vitest_component_test_checks_empty_state() -> None:
-    source = _generate_vitest_component_test("Product")
-    assert "No products found." in source
-
-
-# ---------------------------------------------------------------------------
-# Phase 17: generate crud — CLI integration (dry-run)
-# ---------------------------------------------------------------------------
-
-
-def test_crud_command_requires_fields(tmp_path: Path) -> None:
-    _make_backend(tmp_path)
-
-    from typer.testing import CliRunner
-
-    from mattstack.commands.generate import crud as crud_cmd
-
-    app = typer.Typer()
-    app.command()(crud_cmd)
-    runner = CliRunner()
-
-    result = runner.invoke(app, ["Product", "--path", str(tmp_path)])
+    assert model.read_text() == "# user edits\n"
+    assert (root / "backend" / "api" / "urls.py").read_text() == urls_before
+
+    assert crud(root, "-f", "title:str", "--force").exit_code == 0
+    urls_after = (root / "backend" / "api" / "urls.py").read_text()
+    assert urls_after.count("register_controllers(ProductController)") == 1
+    assert "class Product(" in model.read_text()
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [{"installed": ("todos",)}, {"api_class": "NinjaAPI"}],
+    ids=["app-not-installed", "plain-ninja-api"],
+)
+def test_crud_refuses_unsupported_projects_without_writing(
+    tmp_path: Path, make_project: MakeProject, kwargs: dict[str, object]
+) -> None:
+    root = make_project(tmp_path, **kwargs)
+    before = sorted(p for p in root.rglob("*"))
+    result = crud(root, "-f", "title:str")
     assert result.exit_code == 1
-
-
-def test_crud_command_dry_run_no_files_created(tmp_path: Path) -> None:
-    _make_backend(tmp_path)
-
-    from typer.testing import CliRunner
-
-    from mattstack.commands.generate import crud as crud_cmd
-
-    app = typer.Typer()
-    app.command()(crud_cmd)
-    runner = CliRunner()
-
-    result = runner.invoke(
-        app,
-        ["Product", "--fields", "title:str", "--path", str(tmp_path), "--dry-run"],
-    )
-    assert result.exit_code == 0
-    assert not (tmp_path / "backend" / "apps" / "core" / "models" / "product.py").exists()
-
-
-def test_crud_command_creates_backend_files(tmp_path: Path) -> None:
-    _make_backend(tmp_path)
-    (tmp_path / "backend" / "apps" / "core" / "models").mkdir(parents=True, exist_ok=True)
-
-    from typer.testing import CliRunner
-
-    from mattstack.commands.generate import crud as crud_cmd
-
-    app = typer.Typer()
-    app.command()(crud_cmd)
-    runner = CliRunner()
-
-    result = runner.invoke(
-        app,
-        ["Product", "--fields", "title:str", "--fields", "price:decimal", "--path", str(tmp_path)],
-    )
-    assert result.exit_code == 0
-
-    backend = tmp_path / "backend" / "apps" / "core"
-    assert (backend / "models" / "product.py").exists()
-    assert (backend / "schemas" / "product.py").exists()
-    assert (backend / "api" / "product.py").exists()
-    assert (backend / "admin" / "product_admin.py").exists()
-
-
-def test_crud_command_with_tests_creates_test_file(tmp_path: Path) -> None:
-    _make_backend(tmp_path)
-
-    from typer.testing import CliRunner
-
-    from mattstack.commands.generate import crud as crud_cmd
-
-    app = typer.Typer()
-    app.command()(crud_cmd)
-    runner = CliRunner()
-
-    result = runner.invoke(
-        app,
-        ["Product", "--fields", "title:str", "--path", str(tmp_path), "--with-tests"],
-    )
-    assert result.exit_code == 0
-    test_file = tmp_path / "backend" / "apps" / "core" / "tests" / "test_product_api.py"
-    assert test_file.exists()
-    content = test_file.read_text()
-    assert "test_list_products_returns_200" in content
-
-
-# ---------------------------------------------------------------------------
-# Phase 21: E2E — generate model wires admin + models/__init__.py
-# ---------------------------------------------------------------------------
-
-
-def test_model_command_creates_admin_file(tmp_path: Path) -> None:
-    """generate model must create admin/{snake}_admin.py."""
-    _make_backend(tmp_path)
-    (tmp_path / "backend" / "apps" / "core" / "models").mkdir(parents=True, exist_ok=True)
-
-    from typer.testing import CliRunner
-
-    from mattstack.commands.generate import model as model_cmd
-
-    app = typer.Typer()
-    app.command()(model_cmd)
-    runner = CliRunner()
-
-    result = runner.invoke(
-        app,
-        ["Product", "--fields", "title:str", "--path", str(tmp_path)],
-    )
-    assert result.exit_code == 0
-    admin_file = tmp_path / "backend" / "apps" / "core" / "admin" / "product_admin.py"
-    assert admin_file.exists(), "admin/product_admin.py was not created"
-    content = admin_file.read_text()
-    assert "ProductAdmin" in content
-    assert "@admin.register(Product)" in content
-
-
-def test_model_command_updates_models_init(tmp_path: Path) -> None:
-    """generate model must append import to models/__init__.py."""
-    _make_backend(tmp_path)
-    (tmp_path / "backend" / "apps" / "core" / "models").mkdir(parents=True, exist_ok=True)
-
-    from typer.testing import CliRunner
-
-    from mattstack.commands.generate import model as model_cmd
-
-    app = typer.Typer()
-    app.command()(model_cmd)
-    runner = CliRunner()
-
-    result = runner.invoke(
-        app,
-        ["Widget", "--fields", "name:str", "--path", str(tmp_path)],
-    )
-    assert result.exit_code == 0
-    init_file = tmp_path / "backend" / "apps" / "core" / "models" / "__init__.py"
-    assert init_file.exists()
-    assert "from .widget import Widget" in init_file.read_text()
-
-
-def test_model_command_updates_admin_init(tmp_path: Path) -> None:
-    """generate model must append admin import to admin/__init__.py."""
-    _make_backend(tmp_path)
-    (tmp_path / "backend" / "apps" / "core" / "models").mkdir(parents=True, exist_ok=True)
-
-    from typer.testing import CliRunner
-
-    from mattstack.commands.generate import model as model_cmd
-
-    app = typer.Typer()
-    app.command()(model_cmd)
-    runner = CliRunner()
-
-    result = runner.invoke(
-        app,
-        ["Order", "--fields", "total:decimal", "--path", str(tmp_path)],
-    )
-    assert result.exit_code == 0
-    admin_init = tmp_path / "backend" / "apps" / "core" / "admin" / "__init__.py"
-    assert admin_init.exists()
-    assert "from .order_admin import OrderAdmin" in admin_init.read_text()
-
-
-# ---------------------------------------------------------------------------
-# Phase 21: Integration — generate crud output is syntactically valid Python
-# ---------------------------------------------------------------------------
-
-
-def test_crud_output_python_files_parse_without_syntax_errors(tmp_path: Path) -> None:
-    """All generated Python files must be parseable by ast.parse."""
-    import ast
-
-    _make_backend(tmp_path)
-    (tmp_path / "backend" / "apps" / "core" / "models").mkdir(parents=True, exist_ok=True)
-
-    from typer.testing import CliRunner
-
-    from mattstack.commands.generate import crud as crud_cmd
-
-    app = typer.Typer()
-    app.command()(crud_cmd)
-    runner = CliRunner()
-
-    result = runner.invoke(
-        app,
-        ["Product", "--fields", "name:str", "--path", str(tmp_path)],
-    )
-    assert result.exit_code == 0
-
-    backend = tmp_path / "backend" / "apps" / "core"
-    python_files = [
-        backend / "models" / "product.py",
-        backend / "schemas" / "product.py",
-        backend / "api" / "product.py",
-        backend / "admin" / "product_admin.py",
-    ]
-    for py_file in python_files:
-        assert py_file.exists(), f"{py_file.name} was not created"
-        try:
-            ast.parse(py_file.read_text())
-        except SyntaxError as exc:
-            pytest.fail(f"SyntaxError in {py_file.name}: {exc}")
-
-
-def test_crud_output_ts_files_are_non_empty(tmp_path: Path) -> None:
-    """Generated TypeScript files must be non-empty and contain expected exports."""
-    _make_backend(tmp_path)
-    (tmp_path / "backend" / "apps" / "core" / "models").mkdir(parents=True, exist_ok=True)
-    frontend = tmp_path / "frontend" / "src"
-    frontend.mkdir(parents=True)
-
-    from typer.testing import CliRunner
-
-    from mattstack.commands.generate import crud as crud_cmd
-
-    app = typer.Typer()
-    app.command()(crud_cmd)
-    runner = CliRunner()
-
-    result = runner.invoke(
-        app,
-        ["Product", "--fields", "name:str", "--path", str(tmp_path)],
-    )
-    assert result.exit_code == 0
-
-    api_file = frontend / "api" / "product.ts"
-    hooks_file = frontend / "hooks" / "useProducts.ts"
-    assert api_file.exists(), "frontend/src/api/product.ts not created"
-    assert hooks_file.exists(), "frontend/src/hooks/useProducts.ts not created"
-
-    api_content = api_file.read_text()
-    assert "export" in api_content
-    assert "Product" in api_content
-
-    hooks_content = hooks_file.read_text()
-    assert "export" in hooks_content
-    assert "useProductList" in hooks_content
-
-
-# ---------------------------------------------------------------------------
-# Phase 21: Regression — model_dump() not dict() in generated controller
-# ---------------------------------------------------------------------------
-
-
-def test_crud_creates_controller_with_model_dump_not_dict(tmp_path: Path) -> None:
-    """Regression: generated controller must use .model_dump() not .dict()."""
-    _make_backend(tmp_path)
-
-    from typer.testing import CliRunner
-
-    from mattstack.commands.generate import crud as crud_cmd
-
-    app = typer.Typer()
-    app.command()(crud_cmd)
-    runner = CliRunner()
-
-    result = runner.invoke(
-        app,
-        ["Item", "--fields", "label:str", "--path", str(tmp_path)],
-    )
-    assert result.exit_code == 0
-
-    api_file = tmp_path / "backend" / "apps" / "core" / "api" / "item.py"
-    assert api_file.exists()
-    content = api_file.read_text()
-    assert "model_dump()" in content
-    assert ".dict(" not in content
+    assert sorted(p for p in root.rglob("*")) == before
+
+
+def test_fk_target_must_exist(tmp_path: Path, make_project: MakeProject) -> None:
+    root = make_project(tmp_path)
+    result = crud(root, "-f", "owner:fk:Missing")
+    assert result.exit_code == 1
+    assert not (root / "backend" / "core" / "models" / "product.py").exists()
+
+
+def test_endpoint_appends_to_existing_controller_under_its_prefix(
+    tmp_path: Path, make_project: MakeProject
+) -> None:
+    root = make_project(tmp_path)
+    assert crud(root, "-f", "title:str").exit_code == 0
+    result = runner.invoke(generate_app, ["endpoint", "/products/featured", "--path", str(root)])
+    assert result.exit_code == 0, result.output
+    source = (root / "backend" / "core" / "controllers" / "product.py").read_text()
+    ast.parse(source)
+    assert '@http_get("/featured"' in source
