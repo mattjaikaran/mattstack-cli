@@ -744,6 +744,10 @@ imports, Postgres migrations, and Redis cache access. Keep Next.js page generati
 Build and serve the Ninja production image with `DEBUG=False` and both production
 mode variables. Exclude dotenv secrets and the host virtual environment from its
 Docker context; verify their absence in the image. Serve `/api/docs` successfully.
+CI exposes a machine-dependent doctor test that assumes all tools exist. Replace
+that assumption with an isolated missing-tool regression. Run the actual CLI with
+an empty tool PATH: return failure for required Bun and keep Docker optional for
+a frontend-only project.
 
 ### Next work
 

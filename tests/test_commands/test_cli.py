@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
+import pytest
 from typer.testing import CliRunner
 
 from mattstack.cli import app
@@ -21,10 +25,16 @@ def test_info_command() -> None:
     assert "starter-fullstack" in result.output
 
 
-def test_doctor_command() -> None:
-    result = runner.invoke(app, ["doctor"])
-    assert result.exit_code == 0
-    assert "Python" in result.output or "python" in result.output.lower()
+def test_doctor_missing_required_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_path / "frontend").mkdir()
+    monkeypatch.setenv("PATH", "")
+    result = runner.invoke(app, ["doctor", "--path", str(tmp_path), "--json"])
+    assert result.exit_code == 1
+    diagnostics = json.loads(result.output)
+    assert diagnostics["ok"] is False
+    checks = {check["check"]: check for check in diagnostics["checks"]}
+    assert checks["bun"]["status"] == "fail"
+    assert checks["docker"]["status"] == "optional"
 
 
 def test_audit_bad_type() -> None:
