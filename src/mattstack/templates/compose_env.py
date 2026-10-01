@@ -36,7 +36,7 @@ def db_credentials(config: ProjectConfig, *, production: bool) -> tuple[str, str
 def db_service(config: ProjectConfig, *, production: bool) -> str:
     """Render the ``db`` service; dev publishes ${DB_PORT}, production does not."""
     name, user, password = db_credentials(config, production=production)
-    ports = "" if production else '\n    ports:\n      - "${DB_PORT:-5432}:5432"'
+    ports = "" if production else '\n    ports:\n      - "127.0.0.1:${DB_PORT:-5432}:5432"'
     restart = "\n    restart: unless-stopped" if production else ""
     # Check over TCP with the configured user and database. During first
     # boot the init scripts run against a socket-only server, so a socket
@@ -58,7 +58,7 @@ def db_service(config: ProjectConfig, *, production: bool) -> str:
 
 
 def redis_service(*, production: bool) -> str:
-    ports = "" if production else '\n    ports:\n      - "${REDIS_PORT:-6379}:6379"'
+    ports = "" if production else '\n    ports:\n      - "127.0.0.1:${REDIS_PORT:-6379}:6379"'
     restart = "\n    restart: unless-stopped" if production else ""
     return f"""\
   redis:
@@ -85,7 +85,7 @@ def backend_env(config: ProjectConfig, *, production: bool) -> dict[str, str]:
         env = {
             "NODE_ENV": "production" if production else "development",
             "PORT": str(config.backend_api_port),
-            "HOST": "0.0.0.0",
+            "HOST": "0.0.0.0",  # nosec B104 # Container listener; host publishing is separate.
             "DATABASE_URL": f"postgresql://{user}:{password}@db:5432/{name}",
             "JWT_SECRET": secret("JWT_SECRET", "change-me-jwt-secret-at-least-32-chars"),
             "JWT_REFRESH_SECRET": secret(
@@ -115,9 +115,12 @@ def backend_env(config: ProjectConfig, *, production: bool) -> dict[str, str]:
                 "DB_PORT": "5432",
             }
         )
-        if not config.is_django_matt and production:
-            env["NINJA_JWT_SIGNING_KEY"] = secret("NINJA_JWT_SIGNING_KEY", "")
-            env["CENTRIFUGO_TOKEN_SECRET"] = secret("CENTRIFUGO_TOKEN_SECRET", "")
+        if not config.is_django_matt:
+            # Ninja settings read ENVIRONMENT for logging and the S3 media branch.
+            env["ENVIRONMENT"] = "production" if production else "development"
+            if production:
+                env["NINJA_JWT_SIGNING_KEY"] = secret("NINJA_JWT_SIGNING_KEY", "")
+                env["CENTRIFUGO_TOKEN_SECRET"] = secret("CENTRIFUGO_TOKEN_SECRET", "")
     if config.use_redis:
         env["REDIS_URL"] = "redis://redis:6379/0"
     return env

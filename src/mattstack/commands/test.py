@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-import subprocess
+import subprocess  # nosec B404 # Required CLI subprocess support.
 import time
 from pathlib import Path
 
@@ -64,7 +64,7 @@ def _frontend_test_cmd(frontend_dir: Path, coverage: bool) -> list[str] | None:
 def _run_inherited(argv: list[str], cwd: Path) -> int:
     """Run ``argv`` with the terminal's stdio; report a missing executable."""
     try:
-        return subprocess.run(argv, cwd=cwd, text=True).returncode
+        return subprocess.run(argv, cwd=cwd, text=True).returncode  # nosec B603 # Argv; trust project tools and PATH.
     except FileNotFoundError:
         print_error(missing_command_message(argv[0]))
         return COMMAND_NOT_FOUND

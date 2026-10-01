@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import json
-import urllib.error
-import urllib.request
+import httpx
 
 from mattstack import __version__
 from mattstack.utils.console import console, is_quiet
@@ -12,14 +10,16 @@ from mattstack.utils.console import console, is_quiet
 
 def check_pypi_version(package: str = "mattstack") -> str | None:
     """Check PyPI for the latest version. Returns None on any failure."""
+    url = f"https://pypi.org/pypi/{package}/json"
     try:
-        url = f"https://pypi.org/pypi/{package}/json"
-        req = urllib.request.Request(url, headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=3) as resp:
-            data = json.loads(resp.read().decode())
-            return str(data.get("info", {}).get("version"))
-    except (urllib.error.URLError, json.JSONDecodeError, OSError, KeyError, TimeoutError):
+        resp = httpx.get(
+            url, headers={"Accept": "application/json"}, timeout=3, follow_redirects=True
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except (httpx.HTTPError, httpx.InvalidURL, ValueError):
         return None
+    return str(data.get("info", {}).get("version"))
 
 
 def _parse_version(v: str) -> tuple[int, ...]:

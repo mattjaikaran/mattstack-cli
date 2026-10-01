@@ -25,21 +25,29 @@ class FilePlan:
         if not init.exists() and init not in self.creates:
             self.creates[init] = ""
 
+    def text(self, path: Path) -> str:
+        """Content *path* will have once applied: planned, else on disk, else ""."""
+        if path in self.creates:
+            return self.creates[path]
+        if path in self.updates:
+            return self.updates[path]
+        return path.read_text(encoding="utf-8") if path.exists() else ""
+
+    def write(self, path: Path, content: str) -> None:
+        """Plan *content* for *path*: an update when it exists, else a create."""
+        if path in self.creates or not path.exists():
+            self.creates[path] = content
+        else:
+            self.updates[path] = content
+
     def append_import(self, init_file: Path, line: str) -> None:
         """Add *line* to a package `__init__.py` unless it is already there."""
-        if init_file in self.creates:
-            target, current = self.creates, self.creates[init_file]
-        elif init_file in self.updates:
-            target, current = self.updates, self.updates[init_file]
-        elif init_file.exists():
-            target, current = self.updates, init_file.read_text(encoding="utf-8")
-        else:
-            target, current = self.creates, ""
+        current = self.text(init_file)
         if line in current.splitlines():
             return
         if current and not current.endswith("\n"):
             current += "\n"
-        target[init_file] = current + line + "\n"
+        self.write(init_file, current + line + "\n")
 
     def update(self, path: Path, content: str) -> None:
         self.updates[path] = content

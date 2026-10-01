@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-import subprocess
+import subprocess  # nosec B404 # Required CLI subprocess support.
 import sys
 
 import typer
@@ -21,7 +21,7 @@ def run_completions(install: bool = False, show: bool = False) -> None:
             raise typer.Exit(code=1)
         print_info(f"Detected shell: {shell}")
         # Use typer's built-in completion generation
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603 # Argv; trust project tools and PATH.
             [sys.executable, "-m", "mattstack.cli", "--show-completion"],
             capture_output=True,
             text=True,
@@ -37,7 +37,7 @@ def run_completions(install: bool = False, show: bool = False) -> None:
             raise typer.Exit(code=1)
 
         print_info(f"Installing completions for {shell}...")
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603 # Argv; trust project tools and PATH.
             [sys.executable, "-m", "mattstack.cli", "--install-completion"],
             capture_output=True,
             text=True,

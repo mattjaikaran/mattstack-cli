@@ -16,6 +16,31 @@ from mattstack.templates.frontend_runtime import (
 )
 
 
+def generate_dockerignore() -> str:
+    """Keep secrets and host build artifacts outside the root build context."""
+    return """\
+**/.git
+**/.venv
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.coverage*
+**/htmlcov
+**/.next
+**/dist
+**/staticfiles
+**/.env
+**/.env.*
+**/.npmrc
+**/.pypirc
+**/.netrc
+**/.ssh
+"""
+
+
 def generate_backend_dockerfile(config: ProjectConfig) -> str:
     """Generate ``docker/backend/Dockerfile`` with development + production targets."""
     if config.is_nestjs_backend:
@@ -89,6 +114,10 @@ server {
 def _django_backend(config: ProjectConfig) -> str:
     port = config.backend_api_port
     build_packages = "build-essential libpq-dev" + (" git" if config.is_django_matt else "")
+    # Ninja settings also read ENVIRONMENT for logging and the S3 media branch.
+    production_env = "DJANGO_ENVIRONMENT=production" + (
+        "" if config.is_django_matt else " ENVIRONMENT=production"
+    )
     if config.is_django_matt:
         production_command = (
             f'CMD ["granian", "--interface", "asgi", "{config.wsgi_app}.asgi:application", '
@@ -131,7 +160,7 @@ EXPOSE {port}
 CMD ["python", "manage.py", "runserver", "0.0.0.0:{port}"]
 
 FROM base AS production
-ENV DJANGO_ENVIRONMENT=production DEBUG=false
+ENV {production_env} DEBUG=false
 COPY --from=builder /opt/venv /opt/venv
 COPY backend/ .
 # Use transient build keys for settings validation, never runtime credentials.

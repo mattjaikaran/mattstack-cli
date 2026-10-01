@@ -166,7 +166,7 @@ def _resolved_env(compose_text: str, service: str, env: dict[str, str]) -> dict[
 def _published(compose_text: str, service: str) -> list[tuple[str, ...]]:
     """Return (host default, container port) for each published port."""
     ports = yaml.safe_load(compose_text)["services"][service]["ports"]
-    return [tuple(_interpolate(p, {}).rsplit(":", 1)) for p in ports]
+    return [tuple(_interpolate(p, {}).rsplit(":", 2)[-2:]) for p in ports]
 
 
 def test_custom_credentials_reach_the_database_and_every_backend_service(
@@ -180,6 +180,13 @@ def test_custom_credentials_reach_the_database_and_every_backend_service(
         env = _resolved_env(compose, service, custom)
         assert (env["DB_NAME"], env["DB_USER"], env["DB_PASSWORD"]) == ("appdb", "app", "s3cret")
         assert env["DATABASE_URL"] == "postgres://app:s3cret@db:5432/appdb"
+
+
+def test_development_services_publish_only_on_loopback(tmp_path: Path) -> None:
+    services = yaml.safe_load(generate_docker_compose(_fullstack(tmp_path)))["services"]
+    for name in ("db", "redis", "api-dev", "frontend-dev"):
+        for port in services[name]["ports"]:
+            assert _interpolate(port, {}).rsplit(":", 2)[0] == "127.0.0.1", name
 
 
 @pytest.mark.parametrize(

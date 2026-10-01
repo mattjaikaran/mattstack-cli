@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import json
 import time
-import urllib.error
-import urllib.request
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+import httpx
 import typer
 from rich.markup import escape
 
@@ -41,15 +40,11 @@ def _check_port(port: int) -> tuple[str, str]:
 
 def _http_status(url: str) -> tuple[int | None, str]:
     """Return (HTTP status, error). Status is None when no HTTP response came back."""
-    req = urllib.request.Request(url, method="GET")  # noqa: S310 - localhost http only
     try:
-        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as resp:  # noqa: S310
-            return resp.status, ""
-    except urllib.error.HTTPError as exc:
-        return exc.code, ""
-    except (urllib.error.URLError, OSError) as exc:
-        reason = getattr(exc, "reason", exc)
-        return None, str(reason)
+        resp = httpx.get(url, timeout=HTTP_TIMEOUT, follow_redirects=True)
+    except (httpx.RequestError, httpx.InvalidURL) as exc:
+        return None, str(exc) or type(exc).__name__
+    return resp.status_code, ""
 
 
 def _check_backend_live(project: ResolvedProject) -> tuple[str, str]:

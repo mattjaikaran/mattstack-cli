@@ -6,6 +6,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from mattstack.parsers.frontend_layout import package_dependencies
+
 
 @dataclass
 class NextjsRoute:
@@ -139,11 +141,19 @@ def parse_nextjs_routes(app_dir: Path) -> list[NextjsRoute]:
 
 
 def find_nextjs_app_dirs(project_path: Path) -> list[Path]:
-    """Find Next.js app directories in a project."""
-    candidates = [
-        project_path / "frontend" / "app",
-        project_path / "frontend" / "src" / "app",
-        project_path / "app",
-        project_path / "src" / "app",
-    ]
-    return [d for d in candidates if d.is_dir()]
+    """Find the App Router directory of each package that depends on ``next``.
+
+    Vite and Rsbuild SPAs often keep components in ``src/app``; without the
+    ``next`` dependency those files are not Next.js pages or route handlers.
+    Next.js ignores ``src/app`` when ``app`` exists, so return only the first.
+    """
+    dirs: list[Path] = []
+    for package_root in (project_path / "frontend", project_path):
+        if "next" not in package_dependencies(package_root):
+            continue
+        app_dir = next(
+            (d for d in (package_root / "app", package_root / "src" / "app") if d.is_dir()), None
+        )
+        if app_dir is not None:
+            dirs.append(app_dir)
+    return dirs

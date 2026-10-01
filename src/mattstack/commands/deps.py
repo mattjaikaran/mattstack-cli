@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-import subprocess
+import subprocess  # nosec B404 # Required CLI subprocess support.
 import time
 from pathlib import Path
 from typing import Annotated
@@ -54,7 +54,7 @@ def _components(path: Path | None) -> tuple[Path | None, Path | None]:
 def _run(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str] | None:
     """Run ``cmd`` and capture output. Return None when the program is missing."""
     try:
-        return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+        return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)  # nosec B603 # Argv; trust project tools and PATH.
     except FileNotFoundError:
         print_warning(f"{cmd[0]} is not installed or not on PATH")
         return None

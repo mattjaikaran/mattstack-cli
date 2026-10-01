@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 import shutil
-import subprocess
+import subprocess  # nosec B404 # Required CLI subprocess support.
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -22,7 +22,7 @@ def docker_available() -> bool:
 def docker_compose_available() -> bool:
     """Check if docker compose (v2 plugin) is available."""
     try:
-        subprocess.run(
+        subprocess.run(  # nosec B603, B607 # Argv; trust project tools and PATH.
             ["docker", "compose", "version"],
             check=True,
             capture_output=True,
@@ -37,7 +37,7 @@ def docker_compose_available() -> bool:
 def docker_running() -> bool:
     """Check if the Docker daemon of the active context answers."""
     try:
-        subprocess.run(
+        subprocess.run(  # nosec B603, B607 # Argv; trust project tools and PATH.
             ["docker", "info"],
             check=True,
             capture_output=True,
@@ -116,7 +116,7 @@ def compose_ps(path: Path) -> tuple[list[ComposeContainer] | None, str]:
     explains why.
     """
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603, B607 # Argv; trust project tools and PATH.
             ["docker", "compose", "ps", "--all", "--format", "json"],
             cwd=path,
             capture_output=True,

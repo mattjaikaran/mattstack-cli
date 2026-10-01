@@ -149,7 +149,7 @@ def audit(
     ] = None,
     audit_type: Annotated[
         list[str] | None,
-        typer.Option("--type", "-t", help="Audit type: types, quality, endpoints, tests"),
+        typer.Option("--type", "-t", help="Audit types: repeat or comma-separate values"),
     ] = None,
     live: Annotated[
         bool,
@@ -217,7 +217,7 @@ def config_cmd(
             console.print("[dim]Create one with: mattstack config init[/dim]")
             console.print(f"[dim]Expected path: {USER_CONFIG_PATH}[/dim]")
         else:
-            import yaml as _yaml  # type: ignore[import-untyped]
+            import yaml as _yaml
 
             console.print(f"[bold cyan]Config:[/bold cyan] {USER_CONFIG_PATH}\n")
             console.print(_yaml.dump(config, default_flow_style=False))

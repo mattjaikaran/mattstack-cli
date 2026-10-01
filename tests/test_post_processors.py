@@ -421,6 +421,21 @@ def test_consolidate_backend_removes_standalone_files(tmp_path: Path) -> None:
     assert (config.backend_dir / "README.md").exists()
 
 
+def test_consolidate_backend_keeps_optional_django_app(tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    _populate_backend_standalone(config.backend_dir)
+    app = config.backend_dir / "files"
+    (app / "services").mkdir(parents=True)
+    (app / "apps.py").write_text("class FilesConfig: ...\n")
+    (app / "services" / "upload_service.py").write_text("x")
+
+    consolidate_backend(config)
+
+    assert (app / "apps.py").is_file()
+    assert (app / "services" / "upload_service.py").is_file()
+    assert not (config.backend_dir / "docker").exists()
+
+
 def test_consolidate_frontend_removes_standalone_files(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
     _populate_frontend_standalone(config.frontend_dir)

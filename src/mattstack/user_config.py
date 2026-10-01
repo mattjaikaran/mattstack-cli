@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import yaml  # type: ignore[import-untyped]
+import yaml
 
 USER_CONFIG_DIR = Path.home() / ".mattstack"
 USER_CONFIG_PATH = USER_CONFIG_DIR / "config.yaml"

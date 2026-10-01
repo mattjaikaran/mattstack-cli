@@ -5,7 +5,7 @@ from __future__ import annotations
 import contextlib
 import os
 import signal
-import subprocess
+import subprocess  # nosec B404 -- CLI executes trusted project tools; no shell.
 import threading
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -61,7 +61,7 @@ class _JobRunner:
                 return None
             # Own process group per step so cancel() also reaches descendants
             # (uv/bun wrappers spawn children that inherit the stdout pipe).
-            proc = subprocess.Popen(
+            proc = subprocess.Popen(  # nosec B603 -- Trusted argv and PATH; no shell.
                 list(argv),
                 cwd=cwd,
                 stdout=subprocess.PIPE,

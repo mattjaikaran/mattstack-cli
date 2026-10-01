@@ -80,9 +80,17 @@ def _relations_helper(name: str, fields: list[FieldSpec], *, is_async: bool) -> 
 
 
 def render_ninja_controller(name: str, fields: list[FieldSpec], layout: BackendLayout) -> str:
-    """Render a ninja-extra controller with paginated list and JWT-protected writes."""
+    """Render a ninja-extra controller with paginated list and JWT-protected writes.
+
+    ORM kwargs come from validated field attributes, not `model_dump()`: a
+    CamelCaseSchema dumps by alias, and `unitPrice=` is no model field. With
+    CamelCaseSchema, routes serialize by alias, because Ninja dumps the
+    response through its own wrapper model and never calls the schema's
+    `model_dump` override.
+    """
     snake, plural = to_snake(name), resource_path(name)
     auth = ", auth=JWTAuth()" if layout.has_jwt else ""
+    alias = ", by_alias=True" if layout.camel_schema_module else ""
     lines = [
         f'"""API controller for {name}."""',
         "",
@@ -104,7 +112,7 @@ def render_ninja_controller(name: str, fields: list[FieldSpec], layout: BackendL
         "",
         f'@api_controller("/{plural}", tags=["{name}"])',
         f"class {name}Controller:",
-        f'    @http_get("/", response=PaginatedResponseSchema[{name}ResponseSchema])',
+        f'    @http_get("/", response=PaginatedResponseSchema[{name}ResponseSchema]{alias})',
         "    @paginate(PageNumberPaginationExtra, page_size=20)",
         f"    def list_{plural}(self, search: str | None = None):",
         f'        """List {name} records, newest first."""',
@@ -112,25 +120,25 @@ def render_ninja_controller(name: str, fields: list[FieldSpec], layout: BackendL
         *_search(fields, "queryset", "        "),
         "        return queryset",
         "",
-        f'    @http_get("/{{{snake}_id}}", response={name}ResponseSchema)',
+        f'    @http_get("/{{{snake}_id}}", response={name}ResponseSchema{alias})',
         f"    def get_{snake}(self, {snake}_id: {KEY_BITS[layout.pk_key][0]}):",
         f'        """Return one {name}."""',
         f"        return get_object_or_404({name}, id={snake}_id)",
         "",
-        f'    @http_post("/", response={{201: {name}ResponseSchema}}{auth})',
+        f'    @http_post("/", response={{201: {name}ResponseSchema}}{alias}{auth})',
         f"    def create_{snake}(self, payload: {name}CreateSchema):",
         f'        """Create a {name}."""',
-        "        data = payload.model_dump()",
+        "        data = {field: getattr(payload, field) for field in type(payload).model_fields}",
         *(["        _require_relations(data)"] if _relations(fields) else []),
         f"        return 201, {name}.objects.create(**data)",
         "",
-        f'    @http_put("/{{{snake}_id}}", response={name}ResponseSchema{auth})',
+        f'    @http_put("/{{{snake}_id}}", response={name}ResponseSchema{alias}{auth})',
         f"    def update_{snake}(",
         f"        self, {snake}_id: {KEY_BITS[layout.pk_key][0]}, payload: {name}UpdateSchema",
         "    ):",
         '        """Update the fields sent in the payload."""',
         f"        obj = get_object_or_404({name}, id={snake}_id)",
-        "        data = payload.model_dump(exclude_unset=True)",
+        "        data = {field: getattr(payload, field) for field in payload.model_fields_set}",
         *(["        _require_relations(data)"] if _relations(fields) else []),
         "        for attr, value in data.items():",
         "            setattr(obj, attr, value)",

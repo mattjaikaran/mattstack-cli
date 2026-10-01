@@ -43,6 +43,8 @@ class FrontendLayout:
     camel_case_keys: bool  # transport converts keys to camelCase
     has_vitest: bool
     api_env_var: str | None = None  # browser env var holding the API base URL
+    pages_dir: Path | None = None  # React Router page components (src/pages)
+    app_entry: Path | None = None  # React Router module declaring JSX <Routes>
 
     @property
     def env_expression(self) -> str | None:
@@ -72,7 +74,8 @@ def _read_json(path: Path) -> dict[str, object]:
     return data if isinstance(data, dict) else {}
 
 
-def _dependencies(frontend_dir: Path) -> set[str]:
+def package_dependencies(frontend_dir: Path) -> set[str]:
+    """Return dependency and devDependency names from *frontend_dir*/package.json."""
     data = _read_json(frontend_dir / "package.json")
     deps: set[str] = set()
     for key in ("dependencies", "devDependencies"):
@@ -110,6 +113,14 @@ def _transport(src_dir: Path) -> tuple[Path | None, str | None, bool]:
     return None, None, False
 
 
+def _react_router_entry(src_dir: Path) -> Path | None:
+    for name in ("App.tsx", "App.jsx"):
+        path = src_dir / name
+        if path.is_file() and "<Routes" in path.read_text(encoding="utf-8", errors="replace"):
+            return path
+    return None
+
+
 def detect_frontend_layout(frontend_dir: Path, api_env_var: str | None = None) -> FrontendLayout:
     """Inspect *frontend_dir* without modifying it.
 
@@ -117,7 +128,7 @@ def detect_frontend_layout(frontend_dir: Path, api_env_var: str | None = None) -
     API base URL; it comes from project config, not from guessing the bundler.
     """
     frontend_dir = frontend_dir.resolve()
-    deps = _dependencies(frontend_dir)
+    deps = package_dependencies(frontend_dir)
     src_dir = frontend_dir / "src" if (frontend_dir / "src").is_dir() else frontend_dir
 
     if "next" in deps:
@@ -143,6 +154,8 @@ def detect_frontend_layout(frontend_dir: Path, api_env_var: str | None = None) -
         router = "unknown"
 
     transport_file, transport_export, camel = _transport(src_dir)
+    is_react_router = router == "react-router"
+    pages_dir = src_dir / "pages" if is_react_router and (src_dir / "pages").is_dir() else None
     return FrontendLayout(
         frontend_dir=frontend_dir,
         src_dir=src_dir,
@@ -156,4 +169,6 @@ def detect_frontend_layout(frontend_dir: Path, api_env_var: str | None = None) -
         camel_case_keys=camel,
         has_vitest="vitest" in deps and "@testing-library/react" in deps,
         api_env_var=api_env_var,
+        pages_dir=pages_dir,
+        app_entry=_react_router_entry(src_dir) if is_react_router else None,
     )

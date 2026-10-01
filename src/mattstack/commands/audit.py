@@ -68,7 +68,7 @@ def run_audit(
     types: list[AuditType] | None = None
     if audit_types:
         types = []
-        for t in audit_types:
+        for t in (item.strip() for value in audit_types for item in value.split(",")):
             try:
                 types.append(AuditType(t))
             except ValueError:

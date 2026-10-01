@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-import subprocess
+import subprocess  # nosec B404 # Required CLI subprocess support.
 import time
 from collections.abc import Sequence
 from pathlib import Path
@@ -74,7 +74,7 @@ def _run_steps(steps: Sequence[Sequence[str]], cwd: Path) -> subprocess.Complete
     results: list[subprocess.CompletedProcess[str]] = []
     for argv in steps:
         try:
-            results.append(subprocess.run(list(argv), cwd=cwd, text=True, capture_output=True))
+            results.append(subprocess.run(list(argv), cwd=cwd, text=True, capture_output=True))  # nosec B603 # Argv; trust project tools and PATH.
         except FileNotFoundError:
             message = missing_command_message(argv[0])
             results.append(subprocess.CompletedProcess(list(argv), COMMAND_NOT_FOUND, "", message))

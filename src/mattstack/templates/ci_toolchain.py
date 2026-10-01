@@ -42,7 +42,7 @@ def backend_test_env(backend: BackendFacts, db_host: str, redis_host: str) -> di
             {
                 "DB_NAME": "test_db",
                 "DB_USER": "postgres",
-                "DB_PASSWORD": "postgres",
+                "DB_PASSWORD": "postgres",  # nosec B105 # Isolated CI test database, not production.
                 "DB_HOST": db_host,
                 "DB_PORT": "5432",
             }

@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from mattstack.config import BackendFramework
+from mattstack.parsers.frontend_layout import FrontendLayout, detect_frontend_layout
+from mattstack.parsers.frontend_routes import find_ui_routes
 from mattstack.project import ResolvedProject, resolve_project
 from mattstack.utils.package_manager import detect_package_manager
 from mattstack.utils.process import command_available, get_command_version
@@ -50,7 +52,19 @@ def _detect_backend_stack(project: ResolvedProject) -> dict[str, Any]:
     return info
 
 
-def _detect_frontend_stack(project: ResolvedProject) -> dict[str, Any]:
+_ROUTER_NAMES = {"tanstack": "tanstack-router", "react-router": "react-router", "nextjs": "nextjs"}
+
+
+def _relative(path: Path | None, root: Path) -> str | None:
+    if path is None:
+        return None
+    try:
+        return path.relative_to(root).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def _detect_frontend_stack(project: ResolvedProject, layout: FrontendLayout) -> dict[str, Any]:
     pkg_json = project.frontend_dir / "package.json"
     if not pkg_json.is_file():
         return {}
@@ -59,6 +73,7 @@ def _detect_frontend_stack(project: ResolvedProject) -> dict[str, Any]:
     except (json.JSONDecodeError, OSError):
         return {}
     deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
+    root = project.root.resolve()
     pm = detect_package_manager(project.frontend_dir)
     framework = project.frontend_framework
     info: dict[str, Any] = {
@@ -66,16 +81,17 @@ def _detect_frontend_stack(project: ResolvedProject) -> dict[str, Any]:
         "package_manager": pm.value,
         "framework": framework.value if framework else None,
     }
-    if "next" in deps:
-        info["bundler"] = "next"
-    elif "@rsbuild/core" in deps:
-        info["bundler"] = "rsbuild"
-    elif "vite" in deps:
-        info["bundler"] = "vite"
+    if layout.bundler != "unknown":
+        info["bundler"] = layout.bundler
     if "react" in deps:
         info["ui_library"] = "react"
-    if "@tanstack/react-router" in deps:
-        info["router"] = "tanstack-router"
+    if layout.router in _ROUTER_NAMES:
+        info["router"] = _ROUTER_NAMES[layout.router]
+    route_source = layout.routes_dir or layout.app_entry or layout.app_dir
+    if route_source is not None:
+        info["route_source"] = _relative(route_source, root)
+    if layout.pages_dir is not None:
+        info["pages_dir"] = _relative(layout.pages_dir, root)
     if "tailwindcss" in deps or "@tailwindcss/vite" in deps:
         info["styling"] = "tailwind"
     info["port"] = project.frontend_port
@@ -83,6 +99,23 @@ def _detect_frontend_stack(project: ResolvedProject) -> dict[str, Any]:
     if scripts:
         info["scripts"] = list(scripts.keys())
     return info
+
+
+def _ui_routes(project: ResolvedProject, layout: FrontendLayout) -> list[dict[str, Any]]:
+    """Client-side routes the frontend renders; never server endpoints or auth."""
+    root = project.root.resolve()
+    return [
+        {
+            "router": _ROUTER_NAMES[route.router],
+            "path": route.path,
+            "kind": route.kind,
+            "file": _relative(route.file, root),
+            "route_id": route.route_id,
+            "element": route.element,
+            "layouts": list(route.layouts),
+        }
+        for route in find_ui_routes(layout)
+    ]
 
 
 def detect_env_vars(path: Path) -> list[str]:
@@ -137,7 +170,9 @@ def build_stack_context(path: Path) -> dict[str, Any]:
     if components["backend"]:
         ctx["backend"] = _detect_backend_stack(project)
     if components["frontend"]:
-        ctx["frontend"] = _detect_frontend_stack(project)
+        layout = detect_frontend_layout(project.frontend_dir)
+        ctx["frontend"] = _detect_frontend_stack(project, layout)
+        ctx["ui_routes"] = _ui_routes(project, layout)
     env_vars = detect_env_vars(root)
     if env_vars:
         ctx["env_vars"] = env_vars

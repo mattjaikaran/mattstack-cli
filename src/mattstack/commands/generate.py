@@ -20,28 +20,35 @@ from mattstack.commands.codegen.django_api import (
     render_endpoint_controller,
     render_endpoint_method,
 )
-from mattstack.commands.codegen.django_models import render_schemas
+from mattstack.commands.codegen.django_models import render_schemas, schema_class_names
 from mattstack.commands.codegen.fields import FieldSpecError, to_pascal, to_snake
+from mattstack.commands.codegen.package_exports import plan_exports
 from mattstack.commands.codegen.plan import FilePlan
 from mattstack.commands.codegen.react_basic import (
     render_component,
     render_component_test,
+    render_default_page,
     render_hook,
-    render_nextjs_page,
     render_tanstack_page,
 )
+from mattstack.commands.codegen.react_router import plan_react_router_page
+from mattstack.commands.codegen.tanstack_routes import plan_tanstack_route
 from mattstack.commands.generate_crud import (
     AppOption,
     DryRunOption,
     FieldsOption,
     ForceOption,
     PathOption,
+    RouteGroupOption,
     backend_context,
     crud,
     finish,
     model,
     parse_model_spec,
     resolve_dirs,
+    route_group_for,
+    router_next_steps,
+    ui_segment,
 )
 from mattstack.parsers.frontend_layout import detect_frontend_layout
 from mattstack.utils.console import console, print_error, print_info
@@ -216,42 +223,57 @@ def component(
 
 @generate_app.command("page")
 def page(
-    name: Annotated[str, typer.Argument(help="Page name (e.g. dashboard)")],
+    name: Annotated[str, typer.Argument(help="Page name (e.g. dashboard or user-settings)")],
     page_path: Annotated[
         str | None, typer.Option("--path", help="Directory relative to frontend/")
     ] = None,
     project_path: ProjectOption = None,
     dry_run: DryRunOption = False,
     force: ForceOption = False,
+    route_group: RouteGroupOption = None,
 ) -> None:
-    """Generate a TanStack Router or Next.js page."""
+    """Generate a TanStack Router, React Router, or Next.js page at a kebab-case URL."""
     start = time.monotonic()
-    snake, pascal = to_snake(name), to_pascal(name)
+    segment, pascal = ui_segment(name), to_pascal(name)
     try:
+        if not SEGMENT_RE.fullmatch(segment):
+            raise GenerateError(f"Invalid page name {name!r}: use letters, digits, and dashes.")
         root, frontend_dir = _frontend(project_path)
         layout = detect_frontend_layout(frontend_dir)
+        group = route_group_for(layout, route_group)
+        base = frontend_dir / page_path if page_path else None
         plan = FilePlan(root)
         if layout.router == "nextjs" and layout.app_dir is not None:
-            base = frontend_dir / page_path if page_path else layout.app_dir
-            plan.create(base / snake / "page.tsx", render_nextjs_page(pascal))
+            target = (base or layout.app_dir) / segment / "page.tsx"
+            plan.create(target, render_default_page(pascal))
         elif layout.router == "tanstack" and layout.routes_dir is not None:
-            base = frontend_dir / page_path if page_path else layout.routes_dir
-            target = (base / f"{snake}.tsx").resolve()
-            try:
-                route_id = (
-                    "/" + target.with_suffix("").relative_to(layout.routes_dir.resolve()).as_posix()
-                )
-            except ValueError as exc:
-                raise GenerateError(f"TanStack pages must live under {layout.routes_dir}") from exc
-            plan.create(target, render_tanstack_page(route_id, pascal))
+            plan_tanstack_route(
+                plan,
+                layout.routes_dir,
+                (base or layout.routes_dir) / f"{segment}.tsx",
+                lambda route_id: render_tanstack_page(route_id, pascal),
+            )
+        elif layout.router == "react-router":
+            pages_dir = base or layout.pages_dir or layout.src_dir / "pages"
+            plan_react_router_page(
+                plan,
+                layout,
+                pages_dir / f"{pascal}Page.tsx",
+                render_default_page(pascal),
+                f"/{segment}",
+                group,
+                replace_existing=force,
+            )
         else:
             raise GenerateError(
-                "Page generation supports TanStack Router and Next.js; "
+                "Page generation supports TanStack Router, React Router, and Next.js; "
                 f"this frontend uses {layout.router}."
             )
         finish(plan, dry_run=dry_run, force=force)
     except GenerateError as exc:
         raise _fail(exc) from exc
+    for step in router_next_steps(layout, group):
+        print_info(step)
     _done(start)
 
 
@@ -300,9 +322,10 @@ def schema(
         layout, parsed = backend_context(backend_dir, app, parsed)
         plan = FilePlan(root)
         plan.ensure_package(layout.schemas_dir)
-        plan.create(
-            layout.schemas_dir / f"{to_snake(pascal)}.py",
-            render_schemas(pascal, parsed, layout.framework, layout.pk_key),
+        snake = to_snake(pascal)
+        plan.create(layout.schemas_dir / f"{snake}.py", render_schemas(pascal, parsed, layout))
+        plan_exports(
+            plan, layout.schemas_dir / "__init__.py", f".{snake}", schema_class_names(pascal)
         )
         finish(plan, dry_run=dry_run, force=force)
     except (GenerateError, FieldSpecError) as exc:

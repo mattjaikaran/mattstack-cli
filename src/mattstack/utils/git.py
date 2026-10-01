@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import shutil
-import subprocess
+import subprocess  # nosec B404 # Required CLI subprocess support.
 from pathlib import Path
 
 from mattstack.utils.console import print_error
@@ -18,9 +18,9 @@ def clone_repo(url: str, destination: Path, branch: str | None = None, depth: in
     command = ["git", "clone", "--depth", str(depth)]
     if branch:
         command.extend(["--branch", branch])
-    command.extend([url, str(destination)])
+    command.extend(["--", url, str(destination)])
     try:
-        subprocess.run(
+        subprocess.run(  # nosec B603 # Argv; trust project tools and PATH.
             command,
             check=True,
             capture_output=True,
@@ -47,7 +47,7 @@ def remove_git_history(path: Path) -> bool:
 def init_repo(path: Path) -> bool:
     """Initialize a new git repo."""
     try:
-        subprocess.run(
+        subprocess.run(  # nosec B603, B607 # Argv; trust project tools and PATH.
             ["git", "init"],
             cwd=path,
             check=True,
@@ -66,14 +66,14 @@ def init_repo(path: Path) -> bool:
 def create_initial_commit(path: Path, message: str = "Initial commit") -> bool:
     """Stage all files and create initial commit."""
     try:
-        subprocess.run(
+        subprocess.run(  # nosec B603, B607 # Argv; trust project tools and PATH.
             ["git", "add", "."],
             cwd=path,
             check=True,
             capture_output=True,
             text=True,
         )
-        subprocess.run(
+        subprocess.run(  # nosec B603, B607 # Argv; trust project tools and PATH.
             ["git", "commit", "-m", message],
             cwd=path,
             check=True,
@@ -94,14 +94,14 @@ def get_git_user() -> tuple[str, str]:
     name = ""
     email = ""
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603, B607 # Argv; trust project tools and PATH.
             ["git", "config", "user.name"], capture_output=True, text=True, check=True
         )
         name = result.stdout.strip()
     except (subprocess.CalledProcessError, FileNotFoundError):
         pass
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603, B607 # Argv; trust project tools and PATH.
             ["git", "config", "user.email"], capture_output=True, text=True, check=True
         )
         email = result.stdout.strip()

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
+import subprocess  # nosec B404 # Required CLI subprocess support.
 import time
 from dataclasses import dataclass
 from functools import partial
@@ -157,13 +157,13 @@ def _compose_up(path: Path, services: list[str]) -> None:
     print_info(f"Starting Docker services: {', '.join(services)} (waiting for health)...")
     cmd = ["docker", "compose", "up", "-d", "--wait", *services]
     try:
-        result = subprocess.run(cmd, cwd=path, timeout=COMPOSE_UP_TIMEOUT)
+        result = subprocess.run(cmd, cwd=path, timeout=COMPOSE_UP_TIMEOUT)  # nosec B603 # Argv; trust project tools and PATH.
     except subprocess.TimeoutExpired:
         print_error(f"`{' '.join(cmd)}` did not finish within {COMPOSE_UP_TIMEOUT}s")
         raise typer.Exit(code=1) from None
     if result.returncode != 0:
         print_error(f"`{' '.join(cmd)}` failed (exit {result.returncode}). Recent logs:")
-        subprocess.run(["docker", "compose", "logs", "--tail", "40", *services], cwd=path)
+        subprocess.run(["docker", "compose", "logs", "--tail", "40", *services], cwd=path)  # nosec B603, B607 # Argv; trust project tools and PATH.
         raise typer.Exit(code=1)
     print_success(f"Docker services ready: {', '.join(services)}")
 
@@ -260,7 +260,7 @@ def _stop_containers(root: Path, services: list[str]) -> None:
     print_info(f"Stopping containers: {', '.join(services)}...")
     cmd = ["docker", "compose", "stop", *services]
     try:
-        result = subprocess.run(cmd, cwd=root, timeout=COMPOSE_STOP_TIMEOUT)
+        result = subprocess.run(cmd, cwd=root, timeout=COMPOSE_STOP_TIMEOUT)  # nosec B603 # Argv; trust project tools and PATH.
     except (subprocess.TimeoutExpired, OSError) as exc:
         print_error(f"`{' '.join(cmd)}` failed: {exc}")
         return

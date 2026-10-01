@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
-import subprocess
+import subprocess  # nosec B404 # Required CLI subprocess support.
 import tempfile
 from pathlib import Path
 from typing import Annotated
@@ -83,7 +83,7 @@ def sync_openapi(
             )
         with tempfile.TemporaryDirectory(prefix="mattstack-openapi-") as temporary:
             generated = Path(temporary) / "client"
-            result = subprocess.run(
+            result = subprocess.run(  # nosec B603 # Argv; trust project tools and PATH.
                 [str(binary), "-i", str(source.resolve()), "-o", str(generated)],
                 cwd=frontend,
                 env=project.env,

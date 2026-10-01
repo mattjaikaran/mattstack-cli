@@ -127,6 +127,13 @@ class ProjectConfig:
         # FastAPI uses Celery + Redis (same as Django)
         if self.backend_framework == BackendFramework.FASTAPI and self.use_celery:
             self.use_redis = True
+        # The django-ninja settings always use a Valkey/Redis cache, and the
+        # cache backs sessions, throttles, and readiness. Celery is optional.
+        if (
+            self.backend_framework == BackendFramework.DJANGO_NINJA
+            and self.project_type != ProjectType.FRONTEND_ONLY
+        ):
+            self.use_redis = True
         # Celery requires Redis
         if self.use_celery and not self.use_redis:
             self.use_redis = True

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess
+import subprocess  # nosec B404 # Required CLI subprocess support.
 from dataclasses import dataclass
 
 from mattstack.project import ResolvedProject
@@ -66,7 +66,7 @@ class DbTarget:
 def inspect_target(project: ResolvedProject) -> DbTarget | None:
     """Read the default database from Django's effective settings, or None."""
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603, B607 # Argv; trust project tools and PATH.
             ["uv", "run", "python", "manage.py", "shell", "-c", TARGET_SCRIPT],
             cwd=project.backend_dir,
             env=project.env,

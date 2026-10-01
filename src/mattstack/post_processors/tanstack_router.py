@@ -14,6 +14,7 @@ import re
 from pathlib import Path
 
 from mattstack.config import ProjectConfig
+from mattstack.parsers.frontend_routes import tanstack_route_id
 from mattstack.utils.console import print_info
 
 # Exact published versions with compatible peers. Devtools does not publish
@@ -76,6 +77,17 @@ def _align_manifest(manifest: Path) -> bool:
             changed = True
         if _DEVTOOLS in deps:
             changed |= _raise_to(deps, _DEVTOOLS, _DEVTOOLS_VERSION)
+    scripts = data.get("scripts")
+    if isinstance(scripts, dict) and isinstance(scripts.get("build"), str):
+        # The plugin must generate new route types before TypeScript checks them.
+        commands = [part.strip() for part in scripts["build"].split("&&")]
+        if (
+            len(commands) == 2
+            and commands[0].startswith("tsc ")
+            and commands[1].startswith("vite build")
+        ):
+            scripts["build"] = f"{commands[1]} && {commands[0]}"
+            changed = True
     if changed:
         manifest.write_text(json.dumps(data, indent=2) + "\n")
     return changed
@@ -102,17 +114,6 @@ def _migrate_devtools_imports(frontend_dir: Path) -> None:
         print_info(f"Migrated {migrated} file(s) to {_DEVTOOLS}")
 
 
-def _route_id(routes_dir: Path, path: Path) -> str | None:
-    """Return the TanStack route id the generator derives from a file path."""
-    relative = path.relative_to(routes_dir).with_suffix("")
-    parts = [segment for part in relative.parts for segment in part.split(".")]
-    if not all(re.fullmatch(r"[\w$-]+", part) for part in parts):
-        return None
-    if parts[-1] == "index":
-        return "/" + "/".join(parts[:-1]) + ("/" if len(parts) > 1 else "")
-    return "/" + "/".join(parts)
-
-
 def _fix_route_casts(routes_dir: Path) -> None:
     """Remove ``as any`` casts the newer router rejects in route ids.
 
@@ -127,7 +128,7 @@ def _fix_route_casts(routes_dir: Path) -> None:
     fixed = 0
     for path in sorted(routes_dir.rglob("*.ts*")):
         text = path.read_text()
-        route_id = _route_id(routes_dir, path)
+        route_id = tanstack_route_id(routes_dir, path)
 
         def replace_route(match: re.Match[str], value: str | None = route_id) -> str:
             return f"createFileRoute('{value or match.group(2)}')"

@@ -65,16 +65,26 @@ def render_model(name: str, fields: list[FieldSpec], layout: BackendLayout) -> s
     return "\n".join(lines)
 
 
-def render_schemas(name: str, fields: list[FieldSpec], framework: str, pk_key: str) -> str:
+SCHEMA_SUFFIXES = ("BaseSchema", "CreateSchema", "UpdateSchema", "ResponseSchema")
+
+
+def schema_class_names(name: str) -> list[str]:
+    """Classes `render_schemas` defines for *name*, in file order."""
+    return [f"{name}{suffix}" for suffix in SCHEMA_SUFFIXES]
+
+
+def render_schemas(name: str, fields: list[FieldSpec], layout: BackendLayout) -> str:
     """Render Base/Create/Update/Response schemas matching the model's wire format.
 
-    FK fields are `<name>_id` typed by the target's real primary key:
-    `Model.objects.create(**payload)` accepts the column name, and responses
-    read the raw id rather than a model object. Update fields may be omitted
-    but not sent as null: every generated column is NOT NULL, so a null is a
-    validation error instead of a silently dropped value.
+    FK fields are `<name>_id` typed by the target's real primary key, the
+    column name the controller passes to the ORM, and responses read the raw
+    id rather than a model object. Update fields may be omitted but not sent
+    as null: every generated column is NOT NULL, so a null is a validation
+    error instead of a silently dropped value. When the project defines
+    CamelCaseSchema, every schema inherits it, so its camelCase aliases set the
+    wire names; field names stay snake_case.
     """
-    id_type = FK_KEY_TYPES[pk_key][0]
+    id_type = FK_KEY_TYPES[layout.pk_key][0]
     types = {f.py_type for f in fields} | {id_type}
     stdlib: list[str] = []
     dt = sorted(types & {"date"} | {"datetime"})
@@ -89,9 +99,14 @@ def render_schemas(name: str, fields: list[FieldSpec], framework: str, pk_key: s
     decimals = [f.api_name for f in fields if f.type == "decimal"]
     if decimals:
         pydantic_names.append("field_serializer")
-    if framework == DJANGO_MATT:
+    first_party: list[str] = []
+    third_party: list[str]
+    if layout.framework == DJANGO_MATT:
         pydantic_names.insert(0, "BaseModel")
         base_class, third_party = "BaseModel", []
+    elif layout.camel_schema_module:
+        base_class, third_party = "CamelCaseSchema", []
+        first_party = ["", f"from {layout.camel_schema_module} import CamelCaseSchema"]
     else:
         base_class, third_party = "Schema", ["from ninja import Schema"]
     third_party.append(f"from pydantic import {', '.join(sorted(pydantic_names))}")
@@ -114,6 +129,7 @@ def render_schemas(name: str, fields: list[FieldSpec], framework: str, pk_key: s
         *stdlib,
         "",
         *third_party,
+        *first_party,
         "",
         "",
         f"class {name}BaseSchema({base_class}):",

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess
+import subprocess  # nosec B404 -- CLI executes trusted project tools; no shell.
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -343,7 +343,7 @@ def _advisory(advisory: dict[str, Any]) -> Advisory:
 
 def run_pm_command(cmd: PMCommand, *, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
     """Execute a package manager command, streaming output."""
-    return subprocess.run(
+    return subprocess.run(  # nosec B603 -- Trusted argv and PATH; no shell.
         cmd.full,
         cwd=cwd,
         text=True,

@@ -18,7 +18,7 @@ from mattstack.templates.frontend_runtime import (
 
 _DB = "${POSTGRES_DB}"
 _USER = "${POSTGRES_USER}"
-_PASSWORD = "${POSTGRES_PASSWORD}"
+_PASSWORD = "${POSTGRES_PASSWORD}"  # nosec B105 # Environment reference, not a credential.
 
 
 def generate_env_example(config: ProjectConfig) -> str:
@@ -38,7 +38,7 @@ def generate_env_example(config: ProjectConfig) -> str:
     lines.append("")
 
     if config.has_backend:
-        lines.extend(_database_lines(config, password="postgres"))
+        lines.extend(_database_lines(config, password="postgres"))  # nosec B106 # Local-only development database example.
         db_url = f"{_USER}:{_PASSWORD}@localhost:${{DB_PORT}}/{_DB}"
         redis = "redis://localhost:${REDIS_PORT}"
         if config.is_nestjs_backend:
@@ -76,6 +76,8 @@ def generate_env_example(config: ProjectConfig) -> str:
                 # leaves settings.DATABASES with an empty NAME.
                 # DB_PORT is already set above: the host reaches the published port.
                 lines.extend(_django_db_lines(host="localhost", port=None))
+                if not config.is_django_matt:
+                    lines.extend(["DJANGO_ENVIRONMENT=development", "ENVIRONMENT=development"])
                 lines.extend(
                     [
                         "ALLOWED_HOSTS=localhost,127.0.0.1",
@@ -115,7 +117,7 @@ def generate_env_production_example(config: ProjectConfig) -> str:
     ]
 
     if config.has_backend:
-        lines.extend(_database_lines(config, password="change-me-strong-password"))
+        lines.extend(_database_lines(config, password="change-me-strong-password"))  # nosec B106 # Placeholder; replace in production.
         db_url = f"{_USER}:{_PASSWORD}@db:5432/{_DB}"
         if config.is_nestjs_backend:
             lines.extend(
@@ -149,6 +151,7 @@ def generate_env_production_example(config: ProjectConfig) -> str:
                 if not config.is_django_matt:
                     lines.extend(
                         [
+                            "ENVIRONMENT=production",
                             "NINJA_JWT_SIGNING_KEY=change-me-distinct-jwt-signing-key",
                             "CENTRIFUGO_TOKEN_SECRET=change-me-distinct-realtime-secret",
                         ]

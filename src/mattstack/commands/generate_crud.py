@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from dataclasses import replace
 from pathlib import Path
 from typing import Annotated, NamedTuple
 
@@ -16,7 +17,12 @@ from mattstack.commands.codegen.backend_layout import (
     register_controller,
 )
 from mattstack.commands.codegen.django_api import render_controller, resource_path
-from mattstack.commands.codegen.django_models import render_admin, render_model, render_schemas
+from mattstack.commands.codegen.django_models import (
+    render_admin,
+    render_model,
+    render_schemas,
+    schema_class_names,
+)
 from mattstack.commands.codegen.fields import (
     FK_KEY_TYPES,
     FieldSpec,
@@ -27,6 +33,7 @@ from mattstack.commands.codegen.fields import (
     validate_model_name,
 )
 from mattstack.commands.codegen.model_pk import resolve_fields, with_model_key
+from mattstack.commands.codegen.package_exports import plan_exports
 from mattstack.commands.codegen.plan import FilePlan
 from mattstack.commands.codegen.react_crud import (
     render_list_component,
@@ -35,7 +42,13 @@ from mattstack.commands.codegen.react_crud import (
     render_ts_api_client,
     render_vitest,
 )
-from mattstack.parsers.frontend_layout import detect_frontend_layout
+from mattstack.commands.codegen.react_router import (
+    PROTECTED_NOTICE,
+    RouteGroup,
+    plan_react_router_page,
+)
+from mattstack.commands.codegen.tanstack_routes import TANSTACK_NEXT_STEPS, plan_tanstack_route
+from mattstack.parsers.frontend_layout import FrontendLayout, detect_frontend_layout
 from mattstack.utils.console import console, print_error, print_info, print_success, print_warning
 
 FieldsOption = Annotated[
@@ -54,6 +67,14 @@ PathOption = Annotated[Path | None, typer.Option("--path", "-p", help="Project r
 DryRunOption = Annotated[bool, typer.Option("--dry-run", help="Preview without creating files")]
 ForceOption = Annotated[
     bool, typer.Option("--force", help="Overwrite generated files that already exist")
+]
+RouteGroupOption = Annotated[
+    RouteGroup | None,
+    typer.Option(
+        "--route-group",
+        help="React Router only: register under public routes (default) or the "
+        "ProtectedRoute group (a client-side redirect, not authorization)",
+    ),
 ]
 NEXT_STEPS = "Next: mattstack db makemigrations && mattstack db migrate"
 
@@ -91,6 +112,26 @@ def finish(plan: FilePlan, *, dry_run: bool, force: bool) -> None:
     plan.apply(dry_run=dry_run)
 
 
+def ui_segment(name: str) -> str:
+    """Return the kebab-case URL segment for *name* (`ProductItem` -> `product-item`)."""
+    return to_snake(name).replace("_", "-")
+
+
+def route_group_for(layout: FrontendLayout, group: RouteGroup | None) -> RouteGroup:
+    """Validate `--route-group` against the router; default to public routes."""
+    if group is not None and layout.router != "react-router":
+        raise GenerateError(f"--route-group applies to React Router, not {layout.router}.")
+    return group or RouteGroup.public
+
+
+def router_next_steps(layout: FrontendLayout, group: RouteGroup) -> list[str]:
+    if layout.router == "tanstack":
+        return [TANSTACK_NEXT_STEPS]
+    if layout.router == "react-router" and group is RouteGroup.protected:
+        return [PROTECTED_NOTICE]
+    return []
+
+
 def parse_model_spec(
     name: str, fields: list[str] | None, *, allow_empty: bool
 ) -> tuple[str, list[FieldSpec]]:
@@ -123,17 +164,16 @@ def plan_backend(
 
     plan.ensure_package(layout.models_dir)
     plan.create(layout.models_dir / f"{snake}.py", render_model(name, fields, layout))
-    plan.append_import(layout.models_dir / "__init__.py", f"from .{snake} import {name}")
+    plan_exports(plan, layout.models_dir / "__init__.py", f".{snake}", [name])
 
     plan.ensure_package(layout.schemas_dir)
-    plan.create(
-        layout.schemas_dir / f"{snake}.py",
-        render_schemas(name, fields, layout.framework, layout.pk_key),
-    )
+    plan.create(layout.schemas_dir / f"{snake}.py", render_schemas(name, fields, layout))
+    plan_exports(plan, layout.schemas_dir / "__init__.py", f".{snake}", schema_class_names(name))
 
     controller_file = layout.controllers_dir / f"{snake}.py"
     plan.ensure_package(layout.controllers_dir)
     plan.create(controller_file, render_controller(name, fields, layout))
+    plan_exports(plan, layout.controllers_dir / "__init__.py", f".{snake}", [f"{name}Controller"])
 
     admin_source = render_admin(name, fields, layout)
     if layout.admin_package:
@@ -168,13 +208,23 @@ def plan_frontend(
     backend: BackendLayout,
     *,
     with_tests: bool,
-) -> list[str]:
-    """Add the API client, hooks, list component, route, and test; return warnings."""
+    route_group: RouteGroup | None = None,
+    replace_existing: bool = False,
+) -> tuple[list[str], list[str]]:
+    """Add the API client, hooks, list component, route, and test.
+
+    Return (warnings, router next steps). API paths stay snake_case like the
+    backend prefix; UI routes use kebab-case segments.
+    """
     frontend_dir = dirs.frontend_dir
     layout = detect_frontend_layout(frontend_dir, dirs.api_env_var)
+    if backend.camel_schema_module is not None:  # CamelCaseSchema serializes camelCase keys
+        layout = replace(layout, camel_case_keys=True)
+    group = route_group_for(layout, route_group)
     id_type = FK_KEY_TYPES[backend.pk_key][1]
     warnings: list[str] = []
-    src, snake, plural = layout.src_dir, to_snake(name), resource_path(name)
+    src, snake = layout.src_dir, to_snake(name)
+    ui_plural = f"{ui_segment(name)}s"
     client_file = src / "api" / f"{snake}.ts"
     hooks_file = src / "hooks" / f"use{name}s.ts"
     component_file = src / "components" / f"{name}List" / "index.tsx"
@@ -198,14 +248,28 @@ def plan_frontend(
     )
 
     if layout.router == "nextjs" and layout.app_dir is not None:
-        page = layout.app_dir / plural / "page.tsx"
-        plan.create(
-            page, render_list_page(name, layout.import_path(page, component_file), "nextjs")
-        )
+        page = layout.app_dir / ui_plural / "page.tsx"
+        plan.create(page, render_list_page(name, layout.import_path(page, component_file), None))
     elif layout.router == "tanstack" and layout.routes_dir is not None:
-        page = layout.routes_dir / f"{plural}.tsx"
-        plan.create(
-            page, render_list_page(name, layout.import_path(page, component_file), "tanstack")
+        page = layout.routes_dir / ui_plural / "index.tsx"
+        page_spec = layout.import_path(page, component_file)
+        plan_tanstack_route(
+            plan,
+            layout.routes_dir,
+            page,
+            lambda route_id: render_list_page(name, page_spec, route_id),
+        )
+    elif layout.router == "react-router":
+        page = (layout.pages_dir or src / "pages") / f"{name}sPage.tsx"
+        content = render_list_page(name, layout.import_path(page, component_file), None)
+        plan_react_router_page(
+            plan,
+            layout,
+            page,
+            content,
+            f"/{ui_plural}",
+            group,
+            replace_existing=replace_existing,
         )
     else:
         warnings.append(
@@ -222,7 +286,7 @@ def plan_frontend(
                 "No frontend test generated: vitest and @testing-library/react "
                 "are not dependencies."
             )
-    return warnings
+    return warnings, router_next_steps(layout, group)
 
 
 def model(
@@ -268,10 +332,12 @@ def crud(
     ] = False,
     dry_run: DryRunOption = False,
     force: ForceOption = False,
+    route_group: RouteGroupOption = None,
 ) -> None:
     """Scaffold a full-stack CRUD feature wired from model to list page."""
     start = time.monotonic()
     warnings: list[str] = []
+    next_steps: list[str] = []
     try:
         pascal, parsed = parse_model_spec(name, fields, allow_empty=False)
         dirs = resolve_dirs(path)
@@ -280,7 +346,18 @@ def crud(
         plan = FilePlan(root)
         plan_backend(plan, layout, pascal, parsed, with_tests=with_tests)
         if (dirs.frontend_dir / "package.json").is_file():
-            warnings = plan_frontend(plan, dirs, pascal, parsed, layout, with_tests=with_tests)
+            warnings, next_steps = plan_frontend(
+                plan,
+                dirs,
+                pascal,
+                parsed,
+                layout,
+                with_tests=with_tests,
+                route_group=route_group,
+                replace_existing=force,
+            )
+        elif route_group is not None:
+            raise GenerateError(f"--route-group needs a frontend; none at {dirs.frontend_dir}.")
         else:
             warnings.append(f"No frontend at {dirs.frontend_dir}; generated the backend only.")
         if dry_run:
@@ -297,4 +374,6 @@ def crud(
             f"registered in {layout.api_file.relative_to(root)}"
         )
     console.print(NEXT_STEPS, markup=False)
+    for step in next_steps:
+        print_info(step)
     console.print(f"[dim]Completed in {time.monotonic() - start:.2f}s[/dim]")

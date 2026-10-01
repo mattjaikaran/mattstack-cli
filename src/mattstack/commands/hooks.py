@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import subprocess
+import subprocess  # nosec B404 # Required CLI subprocess support.
 import time
 from pathlib import Path
 from typing import Annotated
@@ -57,7 +57,7 @@ def install(
 
     # Install pre-commit hooks
     print_info("Installing pre-commit hooks...")
-    result = subprocess.run(
+    result = subprocess.run(  # nosec B603, B607 # Argv; trust project tools and PATH.
         ["pre-commit", "install"],
         cwd=project,
         capture_output=True,
@@ -72,7 +72,7 @@ def install(
     config_text = config_file.read_text(encoding="utf-8")
     if "commitlint" in config_text or "commit-msg" in config_text:
         print_info("Installing commit-msg hook (commitlint detected)...")
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603, B607 # Argv; trust project tools and PATH.
             ["pre-commit", "install", "--hook-type", "commit-msg"],
             cwd=project,
             capture_output=True,
@@ -168,7 +168,7 @@ def run(
         raise typer.Exit(code=1)
 
     print_info("Running pre-commit on all files...")
-    result = subprocess.run(
+    result = subprocess.run(  # nosec B603, B607 # Argv; trust project tools and PATH.
         ["pre-commit", "run", "--all-files"],
         cwd=project,
         text=True,

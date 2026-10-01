@@ -77,15 +77,15 @@ def browser_env(config: ProjectConfig) -> dict[str, str]:
     if framework == FrontendFramework.REACT_VITE:
         env.update(
             {
-                "VITE_AUTH_TOKEN_KEY": "access_token",
-                "VITE_AUTH_REFRESH_TOKEN_KEY": "refresh_token",
+                "VITE_AUTH_TOKEN_KEY": "access_token",  # nosec B105 # Public key name, not a secret.
+                "VITE_AUTH_REFRESH_TOKEN_KEY": "refresh_token",  # nosec B105 # Public key name, not a secret.
             }
         )
         if config.is_django_backend:
             env.update(
                 {
                     "VITE_MODE": "django-spa",
-                    "VITE_DJANGO_CSRF_TOKEN_NAME": "csrftoken",
+                    "VITE_DJANGO_CSRF_TOKEN_NAME": "csrftoken",  # nosec B105 # Public key name, not a secret.
                     "VITE_DJANGO_STATIC_URL": "/static/",
                     "VITE_DJANGO_MEDIA_URL": "/media/",
                     "VITE_DJANGO_API_PREFIX": prefix,
@@ -94,15 +94,15 @@ def browser_env(config: ProjectConfig) -> dict[str, str]:
     elif framework == FrontendFramework.NEXTJS:
         env.update(
             {
-                "NEXT_PUBLIC_AUTH_TOKEN_KEY": "access_token",
-                "NEXT_PUBLIC_AUTH_REFRESH_TOKEN_KEY": "refresh_token",
+                "NEXT_PUBLIC_AUTH_TOKEN_KEY": "access_token",  # nosec B105 # Public key name, not a secret.
+                "NEXT_PUBLIC_AUTH_REFRESH_TOKEN_KEY": "refresh_token",  # nosec B105 # Public key name, not a secret.
             }
         )
         if config.is_django_backend:
             env.update(
                 {
                     "NEXT_PUBLIC_MODE": "django-spa",
-                    "NEXT_PUBLIC_DJANGO_CSRF_TOKEN_NAME": "csrftoken",
+                    "NEXT_PUBLIC_DJANGO_CSRF_TOKEN_NAME": "csrftoken",  # nosec B105 # Public key name, not a secret.
                     "NEXT_PUBLIC_DJANGO_STATIC_URL": "/static/",
                     "NEXT_PUBLIC_DJANGO_MEDIA_URL": "/media/",
                     "NEXT_PUBLIC_DJANGO_API_PREFIX": prefix,

@@ -10,6 +10,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from mattstack.config import ProjectConfig, get_repo_urls
+from mattstack.templates.dockerfiles import generate_dockerignore
 from mattstack.utils.console import (
     create_progress,
     print_error,
@@ -181,6 +182,7 @@ class BaseGenerator(ABC):
         from mattstack.templates.mattstack_yml import generate_mattstack_yml
 
         self.write_file("mattstack.yml", generate_mattstack_yml())
+        self.write_file(".dockerignore", generate_dockerignore())
         if not self.config.dry_run:
             save_project_config(self.config)
         return True

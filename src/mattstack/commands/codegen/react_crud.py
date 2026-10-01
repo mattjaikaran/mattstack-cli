@@ -179,8 +179,8 @@ export default {name}List;
 """
 
 
-def render_list_page(name: str, component_spec: str, router: str) -> str:
-    plural = resource_path(name)
+def render_list_page(name: str, component_spec: str, route_id: str | None) -> str:
+    """Render the list page: a TanStack file route for *route_id*, else a default export."""
     body = f"""function {name}sPage() {{
   return (
     <div className="container mx-auto p-4">
@@ -190,12 +190,12 @@ def render_list_page(name: str, component_spec: str, router: str) -> str:
   );
 }}
 """
-    if router == "nextjs":
+    if route_id is None:
         return f'{HEADER}import {{ {name}List }} from "{component_spec}";\n\nexport default {body}'
     return (
         f'{HEADER}import {{ createFileRoute }} from "@tanstack/react-router";\n\n'
         f'import {{ {name}List }} from "{component_spec}";\n\n'
-        f'export const Route = createFileRoute("/{plural}")({{\n'
+        f'export const Route = createFileRoute("{route_id}")({{\n'
         f"  component: {name}sPage,\n}});\n\n{body}"
     )
 

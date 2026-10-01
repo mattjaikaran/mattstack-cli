@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from xml.sax.saxutils import escape as xml_escape
-from xml.sax.saxutils import quoteattr
+from xml.sax.saxutils import escape as xml_escape  # nosec B406 # Serialize XML; never parse.
+from xml.sax.saxutils import quoteattr  # nosec B406 # Serialize XML; never parse.
 
 FORMATS = ("markdown", "json", "claude")
 

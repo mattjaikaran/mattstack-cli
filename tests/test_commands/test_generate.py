@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import ast
+import json
+import shutil
 from collections.abc import Callable
 from pathlib import Path
 
@@ -18,8 +20,50 @@ runner = CliRunner()
 MakeProject = Callable[..., Path]
 
 
-def crud(root: Path, *args: str) -> Result:
-    return runner.invoke(generate_app, ["crud", "Product", "--path", str(root), *args])
+def crud(root: Path, *args: str, name: str = "Product") -> Result:
+    return runner.invoke(generate_app, ["crud", name, "--path", str(root), *args])
+
+
+def page(root: Path, *args: str) -> Result:
+    return runner.invoke(generate_app, ["page", *args, "--project", str(root)])
+
+
+def snapshot(root: Path) -> dict[Path, bytes]:
+    return {p: p.read_bytes() for p in sorted(root.rglob("*")) if p.is_file()}
+
+
+APP = """\
+import { Routes, Route } from 'react-router-dom'
+import Layout from '@/components/Layout'
+import ProtectedRoute from '@/components/ProtectedRoute'
+import HomePage from '@/pages/HomePage'
+import NotFoundPage from '@/pages/NotFoundPage'
+
+export default function App() {
+  return (
+    <Routes>
+      <Route element={<Layout />}>
+        <Route path="/" element={<HomePage />} />
+        <Route element={<ProtectedRoute />}>
+          <Route path="/dashboard" element={<HomePage />} />
+        </Route>
+        <Route path="*" element={<NotFoundPage />} />
+      </Route>
+    </Routes>
+  )
+}
+"""
+
+
+def react_router_project(root: Path, app: str = APP) -> Path:
+    """Turn the TanStack fixture frontend into the react-vite-starter router shape."""
+    frontend = root / "frontend"
+    deps = {"vite": "6", "react-router-dom": "7", "@tanstack/react-query": "5", "axios": "1"}
+    (frontend / "package.json").write_text(json.dumps({"dependencies": deps}))
+    shutil.rmtree(frontend / "src" / "routes")
+    (frontend / "src" / "pages").mkdir()
+    (frontend / "src" / "App.tsx").write_text(app)
+    return root
 
 
 def test_repeated_and_quoted_field_flags_are_equivalent() -> None:
@@ -139,7 +183,83 @@ def test_crud_frontend_uses_shared_transport_and_string_decimals(
     assert "localhost" not in client
     assert '"/products/"' in client
     assert "price: string;" in client
-    assert (root / "frontend" / "src" / "routes" / "products.tsx").exists()
+    route = root / "frontend" / "src" / "routes" / "products" / "index.tsx"
+    assert 'createFileRoute("/products/")' in route.read_text()
+
+
+def test_tanstack_crud_refuses_a_section_hidden_by_a_flat_layout(
+    tmp_path: Path, make_project: MakeProject
+) -> None:
+    root = make_project(tmp_path)
+    (root / "frontend" / "src" / "routes" / "products.tsx").write_text(
+        'export const Route = createFileRoute("/products")({ component: Products })\n'
+    )
+    before = snapshot(root)
+    assert crud(root, "-f", "title:str").exit_code == 1
+    assert snapshot(root) == before
+
+
+def test_react_router_page_registers_once_inside_the_protected_group(
+    tmp_path: Path, make_project: MakeProject
+) -> None:
+    root = react_router_project(make_project(tmp_path))
+    app = root / "frontend" / "src" / "App.tsx"
+    assert page(root, "user-settings", "--route-group", "protected").exit_code == 0
+
+    text = app.read_text()
+    guard = text.index("<ProtectedRoute />}>")
+    route = text.index('<Route path="/user-settings" element={<UserSettingsPage />} />')
+    assert guard < route < text.index("</Route>", guard)
+    assert "import UserSettingsPage from '@/pages/UserSettingsPage'" in text
+    page_file = root / "frontend" / "src" / "pages" / "UserSettingsPage.tsx"
+    assert "export default function UserSettingsPage" in page_file.read_text()
+
+    before = snapshot(root)
+    assert page(root, "user-settings", "--route-group", "protected").exit_code == 1
+    assert page(root, "user-settings", "--force").exit_code == 1  # other group
+    assert snapshot(root) == before
+
+    app_text = app.read_text()
+    page_file.write_text("// user edits\n")
+    assert page(root, "user-settings", "--route-group", "protected", "--force").exit_code == 0
+    assert app.read_text() == app_text
+    assert "export default function UserSettingsPage" in page_file.read_text()
+
+
+@pytest.mark.parametrize(
+    ("app", "args", "exit_code"),
+    [
+        (APP.replace("<Routes>", "<Routes>{extra}"), (), 1),
+        (APP.replace("export default", "const r = useRoutes([])\nexport default"), (), 1),
+        (APP.replace("<Routes>", "<Routes>\n      <Route {...extra} />"), (), 1),
+        (APP, ("--dry-run",), 0),
+    ],
+    ids=["dynamic-routes", "use-routes", "spread-route", "dry-run"],
+)
+def test_react_router_page_leaves_project_unchanged(
+    tmp_path: Path, make_project: MakeProject, app: str, args: tuple[str, ...], exit_code: int
+) -> None:
+    root = react_router_project(make_project(tmp_path), app)
+    before = snapshot(root)
+    assert page(root, "settings", *args).exit_code == exit_code
+    assert snapshot(root) == before
+
+
+def test_react_router_crud_registers_a_kebab_public_route(
+    tmp_path: Path, make_project: MakeProject
+) -> None:
+    root = react_router_project(make_project(tmp_path))
+    assert crud(root, "-f", "title:str", name="ProductItem").exit_code == 0
+
+    src = root / "frontend" / "src"
+    assert (
+        "export default function ProductItemsPage"
+        in (src / "pages" / "ProductItemsPage.tsx").read_text()
+    )
+    text = (src / "App.tsx").read_text()
+    route = text.index('<Route path="/product-items" element={<ProductItemsPage />} />')
+    assert route < text.index("<ProtectedRoute />}>") < text.index('path="*"')
+    assert '"/product_items/"' in (src / "api" / "product_item.ts").read_text()
 
 
 def test_crud_refuses_to_overwrite_existing_files(

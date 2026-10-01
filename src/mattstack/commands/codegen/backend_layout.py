@@ -45,6 +45,8 @@ class BackendLayout:
     # Primary key type of generated models ("uuid" | "int" | "str"); set by
     # model_pk.with_model_key once the base model's key is verified.
     pk_key: str = "uuid"
+    # Ninja-extra only: module defining CamelCaseSchema, the project's schema base.
+    camel_schema_module: str | None = None
 
     @property
     def models_dir(self) -> Path:
@@ -174,6 +176,16 @@ def _base_model_module(backend_dir: Path) -> str | None:
     return None
 
 
+def _camel_schema_module(backend_dir: Path) -> str | None:
+    """Module defining the boilerplate's CamelCaseSchema, the base of its API schemas."""
+    patterns = ["*/schemas/base_schema.py", "*/*/schemas/base_schema.py"]
+    for path in find_files(backend_dir, patterns):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if re.search(r"^class CamelCaseSchema\b", text, re.MULTILINE):
+            return _dotted(backend_dir, path.with_suffix(""))
+    return None
+
+
 def _check_packages(app_dir: Path) -> Path:
     for package in ("models", "schemas"):
         if (app_dir / f"{package}.py").exists():
@@ -214,10 +226,12 @@ def detect_backend_layout(backend_dir: Path, app: str | None) -> BackendLayout:
     controllers_dir = _check_packages(app_dir)
     label = app_label(app_dir)
     manifest = _manifest_text(backend_dir)
+    camel_module = None
     if framework == DJANGO_MATT:
         has_jwt = bool(re.search(r"django-matt\[[^\]]*\bauth\b", manifest))
     else:
         has_jwt = "django-ninja-jwt" in manifest
+        camel_module = _camel_schema_module(backend_dir)
     return BackendLayout(
         backend_dir=backend_dir,
         framework=framework,
@@ -231,6 +245,7 @@ def detect_backend_layout(backend_dir: Path, app: str | None) -> BackendLayout:
         mount_prefix=find_mount_prefix(backend_dir, api_file, api_var),
         has_jwt=has_jwt,
         has_unfold="django-unfold" in manifest,
+        camel_schema_module=camel_module,
     )
 
 

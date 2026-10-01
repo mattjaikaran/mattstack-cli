@@ -73,7 +73,7 @@ def _api_dev_service(config: ProjectConfig) -> str:
       target: development
     command: {command}
     ports:
-      - "${{API_PORT:-{port}}}:{port}"
+      - "127.0.0.1:${{API_PORT:-{port}}}:{port}"
     volumes:
 {volumes}
 {service_environment(extra)}
@@ -112,7 +112,7 @@ def _frontend_dev_service(config: ProjectConfig) -> str:
         "      dockerfile: docker/frontend/Dockerfile.dev",
         f"    command: {command}",
         "    ports:",
-        f'      - "${{FRONTEND_PORT:-{FRONTEND_PORT}}}:{FRONTEND_PORT}"',
+        f'      - "127.0.0.1:${{FRONTEND_PORT:-{FRONTEND_PORT}}}:{FRONTEND_PORT}"',
         "    volumes:",
         *(f"      - {volume}" for volume in volumes),
     ]

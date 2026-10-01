@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import fnmatch
 import os
-import subprocess
+import subprocess  # nosec B404 # Required CLI subprocess support.
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -73,7 +73,7 @@ class GitError(RuntimeError):
 
 def _git(args: list[str], cwd: Path) -> str:
     try:
-        proc = subprocess.run(
+        proc = subprocess.run(  # nosec B603, B607 # Argv; trust project tools and PATH.
             ["git", *args],
             cwd=cwd,
             capture_output=True,

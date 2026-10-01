@@ -40,6 +40,8 @@ def setup_frontend_monorepo(config: ProjectConfig) -> None:
 
     if config.frontend_framework == FrontendFramework.REACT_VITE:
         align_tanstack_router(config)
+    if config.frontend_framework in RSBUILD_FRAMEWORKS:
+        _align_rsbuild_typescript(config.frontend_dir)
 
     if config.is_nextjs:
         _inline_next_public_env(config)
@@ -53,6 +55,26 @@ def setup_frontend_monorepo(config: ProjectConfig) -> None:
         print_info("Configured frontend .env for the API proxy")
         if config.frontend_framework in VITE_FRAMEWORKS:
             _seed_generated_types(config)
+
+
+def _align_rsbuild_typescript(frontend_dir: Path) -> None:
+    """Expose ES2023 APIs used by the Rsbuild boilerplate's array helpers."""
+    path = frontend_dir / "tsconfig.json"
+    if not path.is_file():
+        return
+    data = json.loads(path.read_text())
+    compiler = data.get("compilerOptions", {})
+    libraries = compiler.get("lib", [])
+    if not isinstance(libraries, list):
+        return
+    changed = False
+    for index, library in enumerate(libraries):
+        if isinstance(library, str) and re.fullmatch(r"ES20(?:1\d|2[0-2])", library, re.I):
+            libraries[index] = "ES2023"
+            changed = True
+    if changed:
+        path.write_text(json.dumps(data, indent=2) + "\n")
+        print_info("Aligned Rsbuild TypeScript libraries with ES2023 array helpers")
 
 
 def _configure_react_doctor(config: ProjectConfig) -> None:

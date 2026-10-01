@@ -84,6 +84,30 @@ class TestDetectFrontendStack:
         proj = _make_fullstack(tmp_path / "app")
         assert build_stack_context(proj)["backend"]["framework"] == BackendFramework.DJANGO_NINJA
 
+    def test_spa_with_src_app_is_not_reported_as_nextjs(self, tmp_path: Path) -> None:
+        proj = _make_fullstack(tmp_path / "app")
+        frontend = proj / "frontend"
+        (frontend / "package.json").write_text(
+            json.dumps(
+                {
+                    "dependencies": {"react": "^19", "@tanstack/react-router": "^1"},
+                    "devDependencies": {"vite": "^6"},
+                }
+            )
+        )
+        (frontend / "src" / "app" / "dashboard").mkdir(parents=True)
+        (frontend / "src" / "app" / "dashboard" / "page.tsx").write_text("export default 1\n")
+        (frontend / "src" / "routes").mkdir()
+        (frontend / "src" / "routes" / "about.tsx").write_text(
+            "export const Route = createFileRoute('/about')({ component: About })\n"
+        )
+        ctx = build_stack_context(proj)
+        assert ctx["frontend"]["router"] == "tanstack-router"
+        assert ctx["frontend"]["route_source"] == "frontend/src/routes"
+        assert [(r["router"], r["path"]) for r in ctx["ui_routes"]] == [
+            ("tanstack-router", "/about")
+        ]
+
     def test_no_frontend(self, tmp_path: Path) -> None:
         assert "frontend" not in build_stack_context(tmp_path)
 

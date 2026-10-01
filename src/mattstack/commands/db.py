@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import shutil
-import subprocess
+import subprocess  # nosec B404 # Required CLI subprocess support.
 import sys
 import time
 from pathlib import Path
@@ -81,7 +81,7 @@ def _run(
     print_info(f"Running: {' '.join(cmd)}")
     start = time.monotonic()
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603 # Argv; trust project tools and PATH.
             cmd,
             cwd=cwd or project.backend_dir,
             env=project.env,
@@ -155,7 +155,7 @@ def _authorize_destructive(
         print_error(f"Refusing to {action} without confirmation: no TTY. Re-run with --yes")
         raise typer.Exit(code=1)
 
-    import questionary  # type: ignore[import-not-found]
+    import questionary
 
     if not questionary.confirm(f"Delete all data in {label}?", default=False).ask():
         print_info("Aborted")

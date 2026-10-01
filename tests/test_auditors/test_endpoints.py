@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
-import urllib.error
+import socket
+import threading
+from collections.abc import Iterator
+from dataclasses import dataclass, field
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from unittest.mock import patch
 
-from mattstack.auditors.base import AuditConfig, Severity
+import pytest
+
+from mattstack.auditors.base import AuditConfig, AuditFinding, Severity
 from mattstack.auditors.endpoints import EndpointAuditor
 
 
@@ -89,12 +94,6 @@ def test_trailing_slash_warning(tmp_path: Path) -> None:
     assert len(slash_findings) >= 1
 
 
-def test_configurable_base_url(tmp_path: Path) -> None:
-    """Verify base_url is configurable."""
-    config = _make_config(tmp_path, base_url="http://localhost:9000")
-    assert config.base_url == "http://localhost:9000"
-
-
 # ---------------------------------------------------------------------------
 # _live_probe tests
 # ---------------------------------------------------------------------------
@@ -121,70 +120,91 @@ _PARAM_ROUTE_FILE = (
 )
 
 
-def test_live_probe_500_error(tmp_path: Path) -> None:
-    """Live probe reports ERROR when server returns 500."""
-    (tmp_path / "api.py").write_text(_GET_ROUTE_FILE)
-    config = _make_config(tmp_path, live=True)
-    auditor = EndpointAuditor(config)
+@dataclass
+class _ProbeServer:
+    url: str
+    status: int = 200
+    hits: list[str] = field(default_factory=list)
 
-    err = urllib.error.HTTPError("http://localhost:8000/health", 500, "Server Error", {}, None)
-    with patch("urllib.request.urlopen", side_effect=err):
-        findings = auditor.run()
 
-    probe_findings = [f for f in findings if "returned 500" in f.message]
+@pytest.fixture
+def probe_server() -> Iterator[_ProbeServer]:
+    """Real local HTTP server that answers every GET with a configurable status."""
+    state = _ProbeServer(url="")
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            state.hits.append(self.path)
+            self.send_response(state.status)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, format: str, *args: object) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    state.url = f"http://127.0.0.1:{server.server_address[1]}"
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    yield state
+    server.shutdown()
+    server.server_close()
+
+
+def _probe(tmp_path: Path, route_file: str, base_url: str) -> list[AuditFinding]:
+    (tmp_path / "api.py").write_text(route_file)
+    return EndpointAuditor(_make_config(tmp_path, live=True, base_url=base_url)).run()
+
+
+@pytest.mark.parametrize(
+    ("status", "severity"), [(500, Severity.ERROR), (503, Severity.ERROR), (404, Severity.WARNING)]
+)
+def test_live_probe_reports_error_statuses(
+    tmp_path: Path, probe_server: _ProbeServer, status: int, severity: Severity
+) -> None:
+    probe_server.status = status
+    findings = _probe(tmp_path, _GET_ROUTE_FILE, probe_server.url)
+
+    probe_findings = [f for f in findings if f"returned {status}" in f.message]
     assert len(probe_findings) == 1
-    assert probe_findings[0].severity == Severity.ERROR
+    assert probe_findings[0].severity == severity
+    assert probe_server.hits == ["/health"]
 
 
-def test_live_probe_404(tmp_path: Path) -> None:
-    """Live probe reports WARNING when server returns 404."""
-    (tmp_path / "api.py").write_text(_GET_ROUTE_FILE)
-    config = _make_config(tmp_path, live=True)
-    auditor = EndpointAuditor(config)
+def test_live_probe_quiet_on_success(tmp_path: Path, probe_server: _ProbeServer) -> None:
+    findings = _probe(tmp_path, _GET_ROUTE_FILE, probe_server.url)
 
-    err = urllib.error.HTTPError("http://localhost:8000/health", 404, "Not Found", {}, None)
-    with patch("urllib.request.urlopen", side_effect=err):
-        findings = auditor.run()
-
-    probe_findings = [f for f in findings if "returned 404" in f.message]
-    assert len(probe_findings) == 1
-    assert probe_findings[0].severity == Severity.WARNING
+    assert not [f for f in findings if "Live probe" in f.message]
+    assert probe_server.hits == ["/health"]
 
 
 def test_live_probe_server_unreachable(tmp_path: Path) -> None:
-    """Live probe reports INFO when server is not reachable."""
-    (tmp_path / "api.py").write_text(_GET_ROUTE_FILE)
-    config = _make_config(tmp_path, live=True)
-    auditor = EndpointAuditor(config)
-
-    err = urllib.error.URLError("Connection refused")
-    with patch("urllib.request.urlopen", side_effect=err):
-        findings = auditor.run()
+    """Live probe reports INFO when nothing listens on the base URL."""
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    findings = _probe(tmp_path, _GET_ROUTE_FILE, f"http://127.0.0.1:{port}")
 
     probe_findings = [f for f in findings if "Could not reach" in f.message]
     assert len(probe_findings) == 1
     assert probe_findings[0].severity == Severity.INFO
 
 
-def test_live_probe_skips_non_get(tmp_path: Path) -> None:
-    """Live probe skips non-GET routes (only probes GET for safety)."""
-    (tmp_path / "api.py").write_text(_POST_ROUTE_FILE)
-    config = _make_config(tmp_path, live=True)
-    auditor = EndpointAuditor(config)
+@pytest.mark.parametrize("base_url", ["file:///etc/passwd", "ftp://127.0.0.1", "localhost:8000"])
+def test_live_probe_rejects_non_http_base_url(tmp_path: Path, base_url: str) -> None:
+    findings = _probe(tmp_path, _GET_ROUTE_FILE, base_url)
 
-    with patch("urllib.request.urlopen") as mock_urlopen:
-        auditor.run()
-
-    mock_urlopen.assert_not_called()
+    invalid = [f for f in findings if "Invalid base URL" in f.message]
+    assert len(invalid) == 1
+    assert invalid[0].severity == Severity.WARNING
+    assert not [f for f in findings if "Live probe" in f.message]
 
 
-def test_live_probe_skips_parameterized(tmp_path: Path) -> None:
-    """Live probe skips parameterized routes like /users/{id}."""
-    (tmp_path / "api.py").write_text(_PARAM_ROUTE_FILE)
-    config = _make_config(tmp_path, live=True)
-    auditor = EndpointAuditor(config)
+@pytest.mark.parametrize("route_file", [_POST_ROUTE_FILE, _PARAM_ROUTE_FILE])
+def test_live_probe_skips_non_get_and_parameterized(
+    tmp_path: Path, probe_server: _ProbeServer, route_file: str
+) -> None:
+    """Live probe only sends GETs to concrete paths."""
+    _probe(tmp_path, route_file, probe_server.url)
 
-    with patch("urllib.request.urlopen") as mock_urlopen:
-        auditor.run()
-
-    mock_urlopen.assert_not_called()
+    assert probe_server.hits == []

@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-import questionary  # type: ignore
+import questionary
 import typer
 from rich.panel import Panel
 from rich.table import Table
@@ -264,7 +264,8 @@ def _run_interactive(
         backend_framework=backend_framework,
         include_ios=include_ios,
         use_celery=use_celery,
-        use_redis=use_celery,  # Redis follows Celery
+        # ProjectConfig keeps Redis for backends that need it without Celery.
+        use_redis=use_celery,
         author_name=default_author,
         author_email=default_email,
     )

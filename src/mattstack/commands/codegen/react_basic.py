@@ -54,7 +54,8 @@ def render_tanstack_page(route_path: str, pascal: str) -> str:
     )
 
 
-def render_nextjs_page(pascal: str) -> str:
+def render_default_page(pascal: str) -> str:
+    """Render a default-export page for Next.js `page.tsx` or React Router `src/pages`."""
     return "export default " + _page_body(pascal)
 
 

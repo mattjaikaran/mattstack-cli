@@ -7,7 +7,7 @@ import os
 import shutil
 import signal
 import socket
-import subprocess
+import subprocess  # nosec B404 -- CLI executes trusted project tools; no shell.
 import sys
 import threading
 import time
@@ -48,7 +48,7 @@ def get_command_version(
     if args is None:
         args = [name, "--version"]
     try:
-        result = subprocess.run(  # noqa: S603 - argv list, no shell
+        result = subprocess.run(  # nosec B603 -- Trusted argv and PATH; no shell.
             args, capture_output=True, text=True, check=True, timeout=timeout
         )
         return result.stdout.strip()
@@ -105,7 +105,7 @@ class Supervisor:
         else:  # pragma: no cover - Windows only
             flags = subprocess.CREATE_NEW_PROCESS_GROUP  # type: ignore[attr-defined]
             kwargs["creationflags"] = flags
-        managed.proc = subprocess.Popen(  # noqa: S603 - argv list, no shell
+        managed.proc = subprocess.Popen(  # nosec B603 -- Trusted argv and PATH; no shell.
             cmd,
             cwd=cwd,
             env=env,
@@ -123,7 +123,7 @@ class Supervisor:
         return managed
 
     def _pump(self, managed: ManagedProcess) -> None:
-        assert managed.proc is not None and managed.proc.stdout is not None
+        assert managed.proc is not None and managed.proc.stdout is not None  # nosec B101 -- PIPE invariant; not authorization.
         for line in managed.proc.stdout:
             self._sink(managed.name, line.rstrip("\n"))
 

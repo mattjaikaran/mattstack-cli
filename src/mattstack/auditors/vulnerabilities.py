@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import json
 import re
-import subprocess
+import subprocess  # nosec B404 # Required CLI subprocess support.
 from pathlib import Path
 from typing import Any
-from urllib.error import URLError
-from urllib.request import Request, urlopen
+
+import httpx
 
 from mattstack.auditors.base import AuditFinding, AuditType, BaseAuditor, Severity
 from mattstack.parsers.dependencies import (
@@ -43,8 +43,11 @@ class VulnerabilityAuditor(BaseAuditor):
             return
 
         # Fallback: check via OSV API
-        for dep in parsed.dependencies:
-            self._check_osv(dep.name, dep.version_constraint, "PyPI", manifest, dep.line)
+        with httpx.Client(timeout=10) as client:
+            for dep in parsed.dependencies:
+                self._check_osv(
+                    client, dep.name, dep.version_constraint, "PyPI", manifest, dep.line
+                )
 
     def _check_node_vulns(self, manifest: Path) -> None:
         """Check Node deps via npm audit, fallback to OSV API."""
@@ -57,13 +60,14 @@ class VulnerabilityAuditor(BaseAuditor):
             return
 
         # Fallback: check via OSV API
-        for dep in parsed.dependencies:
-            self._check_osv(dep.name, dep.version_constraint, "npm", manifest, dep.line)
+        with httpx.Client(timeout=10) as client:
+            for dep in parsed.dependencies:
+                self._check_osv(client, dep.name, dep.version_constraint, "npm", manifest, dep.line)
 
     def _try_pip_audit(self, manifest: Path) -> bool:
         """Run pip-audit if available. Returns True if it ran successfully."""
         try:
-            result = subprocess.run(
+            result = subprocess.run(  # nosec B603, B607 # Argv; trust project tools and PATH.
                 ["pip-audit", "--format=json", "--desc", "-r", str(manifest)],
                 capture_output=True,
                 text=True,
@@ -99,7 +103,7 @@ class VulnerabilityAuditor(BaseAuditor):
     def _try_npm_audit(self, manifest: Path) -> bool:
         """Run npm audit if available. Returns True if it ran successfully."""
         try:
-            result = subprocess.run(
+            result = subprocess.run(  # nosec B603, B607 # Argv; trust project tools and PATH.
                 ["npm", "audit", "--json"],
                 capture_output=True,
                 text=True,
@@ -133,6 +137,7 @@ class VulnerabilityAuditor(BaseAuditor):
 
     def _check_osv(
         self,
+        client: httpx.Client,
         package_name: str,
         version: str,
         ecosystem: str,
@@ -145,25 +150,17 @@ class VulnerabilityAuditor(BaseAuditor):
         if not clean_version:
             return
 
-        payload = json.dumps(
-            {
-                "package": {"name": package_name, "ecosystem": ecosystem},
-                "version": clean_version,
-            }
-        ).encode()
-
-        req = Request(
-            "https://api.osv.dev/v1/query",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
+        payload = {
+            "package": {"name": package_name, "ecosystem": ecosystem},
+            "version": clean_version,
+        }
 
         try:
-            with urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read())
-        except (URLError, json.JSONDecodeError, TimeoutError, OSError):
-            return  # Silently skip on network errors
+            resp = client.post("https://api.osv.dev/v1/query", json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+        except (httpx.HTTPError, ValueError):
+            return  # Silently skip on network, HTTP status, and malformed JSON errors
 
         vulns = data.get("vulns", [])
         for vuln in vulns:

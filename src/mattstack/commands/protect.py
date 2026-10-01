@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import json
-import subprocess
+import subprocess  # nosec B404 # Required CLI subprocess support.
 from pathlib import Path
 from typing import Any
 
 import typer
-import yaml  # type: ignore[import-untyped]
+import yaml
 
 from mattstack.config_file import load_config
 from mattstack.utils.console import print_error, print_info, print_success, print_warning
@@ -129,7 +129,7 @@ def _dump_pre_commit(path: Path, data: Any, dry_run: bool) -> None:
 def _repo_slug(path: Path, gh_bin: str = "gh") -> str | None:
     """Resolve the GitHub owner/repo slug via ``gh repo view``."""
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603 # Argv; trust project tools and PATH.
             [gh_bin, "repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
             cwd=path,
             capture_output=True,
@@ -151,7 +151,7 @@ def _apply_ruleset(slug: str, payload: dict[str, Any], gh_bin: str = "gh") -> bo
 
     endpoint = f"repos/{owner}/{repo}/rulesets"
     try:
-        subprocess.run(
+        subprocess.run(  # nosec B603 # Argv; trust project tools and PATH.
             [gh_bin, "api", endpoint, "--method", "POST", "--input", "-"],
             input=json.dumps(payload),
             capture_output=True,
