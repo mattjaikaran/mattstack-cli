@@ -25,7 +25,11 @@ from mattstack.parsers.utils import find_files
 
 CLASS_RE = re.compile(r"^class\s+(\w+)\s*\(([^)]*)\)\s*:", re.MULTILINE)
 ALIAS_RE = re.compile(r"^(\w+)\s*=\s*(\w+)\s*$", re.MULTILINE)
-FIELD_START_RE = re.compile(r"^ {4}(\w+)\s*=\s*(?:models\.)?(\w+)\(", re.MULTILINE)
+# `name = models.X(`, annotated `name: models.X[...] = models.X(`, or a
+# parenthesized value `name: ... = (\n        models.X(`.
+FIELD_START_RE = re.compile(
+    r"^ {4}(\w+)\s*(?::[^=\n]+)?=\s*\(?\s*(?:models\.)?(\w+)\(", re.MULTILINE
+)
 AUTH_USER_RE = re.compile(r"""^AUTH_USER_MODEL\s*=\s*['"](\w+)\.(\w+)['"]""", re.MULTILINE)
 DEFAULT_AUTO_RE = re.compile(r"""DEFAULT_AUTO_FIELD\s*=\s*['"]([\w.]+)['"]""")
 MODEL_PATTERNS = ["*/models.py", "*/*/models.py", "*/models/*.py", "*/*/models/*.py"]
@@ -185,18 +189,21 @@ def resolve_fk_target(
     return FKTarget(reference, pk)
 
 
-def with_model_key(layout: BackendLayout) -> BackendLayout:
-    """Return *layout* with the primary key type generated models will have."""
+def with_model_key(layout: BackendLayout, base_class: str = "AbstractBaseModel") -> BackendLayout:
+    """Return *layout* with the primary key type generated models will have.
+
+    *base_class* is the abstract model in `layout.base_model_module` that
+    generated models inherit.
+    """
     if layout.base_model_module is None:
         return replace(layout, pk_key="uuid")  # generated models declare a UUID id
     index = _ModelIndex(layout.backend_dir)
     module_path = layout.backend_dir.joinpath(*layout.base_model_module.split("."))
-    entry = index.lookup("AbstractBaseModel", module_path.with_suffix(".py"))
+    entry = index.lookup(base_class, module_path.with_suffix(".py"))
     pk = index.pk_type(entry) if entry else None
     if pk is None:
         raise GenerateError(
-            "Cannot determine the primary key type of "
-            f"{layout.base_model_module}.AbstractBaseModel."
+            f"Cannot determine the primary key type of {layout.base_model_module}.{base_class}."
         )
     return replace(layout, pk_key=pk)
 

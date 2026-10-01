@@ -5,7 +5,14 @@ from __future__ import annotations
 import json
 import tomllib
 
-from mattstack.config import ProjectConfig
+from mattstack.config import BackendFramework, ProjectConfig
+from mattstack.runtime_profiles import (
+    REALTIME_PROFILE,
+    task_backend_extra,
+    task_processes,
+    task_profile,
+    uv_run,
+)
 from mattstack.templates.frontend_commands import frontend_commands
 from mattstack.templates.frontend_runtime import FRONTEND_PORT
 
@@ -71,13 +78,15 @@ def _backend_install(config: ProjectConfig) -> str:
     """
     if config.is_nestjs_backend:
         return "bun install"
+    task_extra = task_backend_extra(config)
+    command = f"uv sync --extra {task_extra}" if task_extra else "uv sync"
     pyproject = config.backend_dir / "pyproject.toml"
     try:
         data = tomllib.loads(pyproject.read_text())
     except (OSError, tomllib.TOMLDecodeError):
-        return "uv sync"
+        return command
     extras = data.get("project", {}).get("optional-dependencies", {})
-    return "uv sync --extra dev" if "dev" in extras else "uv sync"
+    return f"{command} --extra dev" if "dev" in extras else command
 
 
 def _setup_fullstack(config: ProjectConfig) -> str:
@@ -114,13 +123,18 @@ setup: ## Install frontend dependencies and refresh the lockfile
 
 
 def _docker_targets(config: ProjectConfig) -> str:
-    return """
-.PHONY: up up-celery down logs restart
+    profiles = [task_profile(config), REALTIME_PROFILE if config.use_realtime else None]
+    targets = "".join(
+        f"\n\nup-{profile}: ## Start all services + the {profile} profile"
+        f"\n\tdocker compose --profile {profile} up -d"
+        for profile in profiles
+        if profile
+    )
+    phony = " ".join(f"up-{profile}" for profile in profiles if profile)
+    return f"""
+.PHONY: up {phony} down logs restart
 up: ## Start all services (Docker)
-\tdocker compose up -d
-
-up-celery: ## Start all services + Celery workers
-\tdocker compose --profile celery up -d
+\tdocker compose up -d{targets}
 
 down: ## Stop all services
 \tdocker compose down
@@ -132,12 +146,31 @@ restart: ## Restart all services
 \tdocker compose restart"""
 
 
+def _task_targets(config: ProjectConfig) -> str:
+    """Host targets for the queue's consumers; .PHONY only names emitted recipes."""
+    lines: list[str] = []
+    for process in task_processes(config, production=False):
+        target = "backend-beat" if process.role == "scheduler" else "backend-worker"
+        lines.append(
+            f"\n\n.PHONY: {target}"
+            f"\n{target}: ## Run {process.service} (TASK_BACKEND={config.task_backend.value})"
+            f"\n\t$(LOAD_ENV) cd backend && {uv_run(config)} {process.command}"
+        )
+    return "".join(lines)
+
+
 def _backend_targets(config: ProjectConfig) -> str:
     if config.is_nestjs_backend:
         return _nestjs_backend_targets(config)
     if config.is_fastapi_backend:
         return _fastapi_backend_targets(config)
     return _django_backend_targets(config)
+
+
+def _quality_run(config: ProjectConfig) -> str:
+    """Return ``uv run`` with Ninja's ``dev`` extra, so pytest/ruff are the locked ones."""
+    dev = config.backend_framework == BackendFramework.DJANGO_NINJA
+    return "uv run --extra dev" if dev else "uv run"
 
 
 def _django_backend_targets(config: ProjectConfig) -> str:
@@ -149,13 +182,13 @@ backend-setup: ## Install backend deps
 \tcd backend && {_backend_install(config)}
 
 backend-dev: ## Run Django dev server on API_PORT
-\t$(LOAD_ENV) cd backend && uv run python manage.py runserver "$${{API_PORT:-{port}}}"
+\t$(LOAD_ENV) cd backend && {uv_run(config)} python manage.py runserver "$${{API_PORT:-{port}}}"
 
 backend-test: ## Run backend tests
-\t$(LOAD_ENV) cd backend && uv run pytest -v
+\t$(LOAD_ENV) cd backend && {_quality_run(config)} pytest -v
 
 backend-lint: ## Lint backend
-\tcd backend && uv run ruff check .
+\tcd backend && {_quality_run(config)} ruff check .
 
 backend-migrate: ## Run Django migrations
 \t$(LOAD_ENV) cd backend && uv run python manage.py migrate
@@ -167,14 +200,14 @@ backend-shell: ## Django shell
 \t$(LOAD_ENV) cd backend && uv run python manage.py shell
 
 backend-superuser: ## Create Django superuser
-\t$(LOAD_ENV) cd backend && uv run python manage.py createsuperuser"""
+\t$(LOAD_ENV) cd backend && uv run python manage.py createsuperuser{_task_targets(config)}"""
 
 
 def _fastapi_backend_targets(config: ProjectConfig) -> str:
     port = config.backend_api_port
     return f"""
 .PHONY: backend-setup backend-dev backend-test backend-lint
-.PHONY: backend-migrate backend-shell backend-worker backend-beat
+.PHONY: backend-migrate backend-shell
 backend-setup: ## Install backend deps
 \tcd backend && {_backend_install(config)}
 
@@ -195,13 +228,7 @@ backend-makemigrations: ## Create a new Alembic migration
 \t$(LOAD_ENV) cd backend && uv run alembic revision --autogenerate -m "$(MSG)"
 
 backend-shell: ## Open Python shell
-\t$(LOAD_ENV) cd backend && uv run python
-
-backend-worker: ## Run Celery worker
-\t$(LOAD_ENV) cd backend && uv run celery -A app.workers.celery_app worker --loglevel=info
-
-backend-beat: ## Run Celery beat scheduler
-\t$(LOAD_ENV) cd backend && uv run celery -A app.workers.celery_app beat --loglevel=info"""
+\t$(LOAD_ENV) cd backend && uv run python{_task_targets(config)}"""
 
 
 def _nestjs_backend_targets(config: ProjectConfig) -> str:
@@ -314,10 +341,11 @@ def _combined_targets(config: ProjectConfig) -> str:
             "format": "cd backend && bun run format",
         }
     else:
+        run = _quality_run(config)
         backend = {
-            "test": "$(LOAD_ENV) cd backend && uv run pytest -v",
-            "lint": "cd backend && uv run ruff check . && uv run ruff format --check .",
-            "format": "cd backend && uv run ruff format .",
+            "test": f"$(LOAD_ENV) cd backend && {run} pytest -v",
+            "lint": f"cd backend && {run} ruff check . && {run} ruff format --check .",
+            "format": f"cd backend && {run} ruff format .",
         }
     sync_types = (
         ""

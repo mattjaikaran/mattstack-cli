@@ -751,19 +751,69 @@ a frontend-only project.
 
 ### Next work
 
-- [ ] [Resource ownership, service layers, and model lifecycle (#6)](https://github.com/mattjaikaran/mattstack-cli/issues/6):
-      define explicit scope and verify cross-user isolation and soft-delete behavior.
-- [ ] [Task backends (#7)](https://github.com/mattjaikaran/mattstack-cli/issues/7):
-      select a real worker/backend independently from Celery and never drop jobs silently.
-- [ ] [Realtime profile (#8)](https://github.com/mattjaikaran/mattstack-cli/issues/8):
-      make Centrifugo opt-in and verify token issuance and publish/subscribe.
+- [x] [Resource ownership, service layers, and model lifecycle (#6)](https://github.com/mattjaikaran/mattstack-cli/issues/6):
+      real two-user JWT/HTTP proof covers owner binding, cross-user 404, Decimal writes,
+      global reads/writes, timestamp updates, and soft-delete retention/deleted_by.
+- [x] [Task backends (#7)](https://github.com/mattjaikaran/mattstack-cli/issues/7):
+      all five workers consume real queued jobs; none rejects dispatch without enqueueing.
+- [x] [Realtime profile (#8)](https://github.com/mattjaikaran/mattstack-cli/issues/8):
+      authenticated websocket subscribe/publish/history works; forged and cross-user tokens fail.
 - [ ] [Deployment contracts (#9)](https://github.com/mattjaikaran/mattstack-cli/issues/9):
-      require production secrets/modes and use actual Dockerfile paths for every provider.
-- [ ] [Advanced routing (#10)](https://github.com/mattjaikaran/mattstack-cli/issues/10):
-      support custom TanStack configuration and React Router data/lazy route modules.
-- [ ] [Frontend source drift (#11)](https://github.com/mattjaikaran/mattstack-cli/issues/11):
-      fix stale generated trees, missing links, ignored route components, and b2b source mapping.
-- [ ] [Backend quality tooling (#12)](https://github.com/mattjaikaran/mattstack-cli/issues/12):
-      reconcile component hooks/rules with root consolidation without merging PR #1.
-- [ ] [OpenAPI and optional S3 setup (#13)](https://github.com/mattjaikaran/mattstack-cli/issues/13):
-      discover documented schema exports and document explicit storage prerequisites.
+      local production TLS/startup/admin/static and provider schema checks pass.
+      Keep open: live provider deployment/Flycast/IAM checks need authorized accounts.
+- [x] [Advanced routing (#10)](https://github.com/mattjaikaran/mattstack-cli/issues/10):
+      custom TanStack tokens/groups/dynamic routes, guards/pending/errors, React Router
+      data/lazy transitions, and grouped Next.js CRUD build and navigate.
+- [x] [Frontend source drift (#11)](https://github.com/mattjaikaran/mattstack-cli/issues/11):
+      owning-source routes/components are corrected; B2B mapping stays explicit.
+      Changed source builds/typechecks pass; source pages load in the browser.
+- [x] [Backend quality tooling (#12)](https://github.com/mattjaikaran/mattstack-cli/issues/12):
+      root hook installation and prerequisite refusals are exercised; the real
+      generated pre-push entry runs backend quick gates and 245 tests successfully.
+      Nonblocking cross-stack findings remain visible as warnings. PR #1 stays untouched.
+- [x] [OpenAPI and optional S3 setup (#13)](https://github.com/mattjaikaran/mattstack-cli/issues/13):
+      real schema export generates a compiling local Hey API client; actual Django S3
+      storage uploads and independent reads succeed through production Compose.
+
+### Source limits found during follow-up proof
+
+- React Vite's convention gate still reports 13 pre-existing findings outside the
+  route-source fixes: auth casts/redirects, inline navigation, form state, and
+  DataTable length. Its build, typecheck, and dependency checks pass.
+- Kibo auth has a pre-existing source contract gap: its login form does not call
+  the detected store login, initialization is absent, and transport/store token
+  keys differ. Browser routing proof uses controlled API fixtures and source
+  store state; it does not prove real Kibo login integration.
+- React Vite Starter post-login navigation can return to `/login`
+  ([INFERENCE] auth state timing). Keep this separate from generator routing proof.
+- Next.js's existing `app/todos` logs `location is not defined` during prerender.
+  Grouped generated CRUD builds and serves. Kibo's existing full eslint scan has
+  five errors; do not report all source gates green.
+- Ninja's cross-stack scanner reports 75 project findings in the exercised
+  consolidated fixture. Fixes remove its path traceback and dependency-tree
+  scanning. The source gauntlet reports these as nonblocking warnings, not
+  passed gates; JSON preserves the distinction.
+- Preserve the user's stale starter route-tree backup at
+  `/Users/mattjaikaran/dev/mattstack-source-backups/issue-11/react-vite-starter/src/routeTree.gen.ts`.
+- Review intentionally global public GETs in Ninja's `PUBLIC_OPERATIONS` before
+  pushing. Generation prints exact paths and the security-test file; it never
+  adds an automatic security waiver.
+
+### Final follow-up checks
+
+- CLI `make gauntlet-quick`: all eight gates pass, including strict mypy,
+  all-severity Bandit, architecture, the 400-line limit, tests, and installation.
+- Generated backend quality hook: all blocking gates pass after normal migration
+  formatting and explicit review of the fixture's global public reads.
+- Preserve backend-only/fullstack success and dry-run regression coverage.
+  Apply the TLS health patch only to targets that require TLS; a missing
+  production settings file on an HTTPS target fails with its exact path.
+- Local verification commands include provider-controlled TLS mode. The real
+  container preflight rejects missing TLS mode and accepts the corrected override.
+- Kibo's pinned local React Doctor runs with no telemetry or supply-chain check:
+  zero errors and nine warnings. Keep those warnings; do not call this all-clear.
+- Backend `check --deploy` uses the proof's test settings and prints five security
+  warnings. Do not treat this gate as production security approval. The separate
+  production-image smoke verifies TLS redirects, host checks, HSTS, and health.
+- Keep owning-source fixes local until you publish them. Fresh GitHub clones do
+  not contain unpublished frontend pins, source routes, or canonical gate fixes.

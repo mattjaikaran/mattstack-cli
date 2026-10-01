@@ -20,7 +20,13 @@ from pathlib import Path
 import pytest
 import yaml
 
-from mattstack.config import BackendFramework, FrontendFramework, ProjectConfig, ProjectType
+from mattstack.config import (
+    BackendFramework,
+    FrontendFramework,
+    ProjectConfig,
+    ProjectType,
+    TaskBackend,
+)
 from mattstack.templates.docker_compose import generate_docker_compose
 from mattstack.templates.docker_compose_prod import generate_docker_compose_prod
 from mattstack.templates.root_env import generate_env_example, generate_env_production_example
@@ -35,7 +41,7 @@ def _fullstack(tmp_path: Path) -> ProjectConfig:
         path=tmp_path / "todoapp",
         project_type=ProjectType.FULLSTACK,
         frontend_framework=FrontendFramework.REACT_VITE,
-        use_celery=True,
+        task_backend=TaskBackend.CELERY,
         use_redis=True,
         init_git=False,
     )

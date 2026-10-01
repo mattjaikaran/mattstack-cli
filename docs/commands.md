@@ -22,11 +22,30 @@ mattstack init my-app --dry-run            # Preview without writing
 | `-c, --config` | Path to YAML config file |
 | `--ios` | Include iOS client |
 | `--dry-run` | Preview without writing files |
+| `--task-backend` | Ninja: `celery`, `huey`, `django_q`, `django_rq`, `dramatiq`, or `none` |
+| `--realtime / --no-realtime` | Opt in to Ninja's Centrifugo profile; default off |
+| `--media-storage` | Ninja production media: `local` (default) or `s3` |
 
 For unattended use, provide a name and preset, or a YAML config file.
 Do not combine `--config` with a name or preset. Dry runs do not change files,
 including files in an existing project. Initialization failures return nonzero.
 Generated projects persist nonsecret stack metadata in `mattstack.yml`.
+
+Use `backend.task_backend`, `backend.realtime`, and `backend.media_storage`
+in scaffold YAML. CLI flags override these values. FastAPI and django-matt
+support Celery or `none`; NestJS runs its own Bull queues. `none` does not start
+a worker, and Ninja rejects enqueue attempts instead of dropping jobs.
+
+Run `make setup` before you run quality commands. Start the selected queue with
+`make backend-worker` or its Compose profile. Only Celery provides
+`make backend-beat`. Missing worker targets fail instead of reporting success.
+Apply migrations with the selected `TASK_BACKEND`, including django-q tables.
+
+For realtime, run `make up-realtime`. Keep the generated `.env` secrets private;
+the example has empty placeholders. Request authenticated connection and channel
+tokens from your API. The profile does not enable the Centrifugo admin UI.
+For S3, set the bucket, region, access key, and secret in `.env.production`.
+Development media stays local. Do not store credentials in `mattstack.yml`.
 
 ### `mattstack add`
 
@@ -76,9 +95,26 @@ and preserve its camelCase wire keys. ORM writes use validated Python field
 names. Generation preserves existing package exports and rejects dynamic
 `__all__` definitions before writing.
 
-Generated resources remain global unless you implement an explicit ownership
-policy. A User foreign key does not establish authorization. Track ownership,
-service layers, and model lifecycle support in [issue #6](https://github.com/mattjaikaran/mattstack-cli/issues/6).
+Choose a resource policy explicitly:
+
+```bash
+mattstack generate crud Note --app todos \
+  --fields "title:str unit_price:decimal owner:fk:User" \
+  --scope owned --owner-field owner --lifecycle soft-delete \
+  --with-service --with-tests
+```
+
+`--scope global` is the default. A User foreign key alone grants no ownership.
+Global reads are public. Writes require the configured JWT provider; without
+one, writes are public and generation prints a warning. Owned resources require
+JWT on every route. Creation binds the authenticated user, excludes the owner
+from input schemas, and returns 404 for another user's reads or mutations.
+
+Use `--lifecycle base`, `timestamped`, or `soft-delete` with the source backend's
+supported base classes. Soft deletion keeps the database row and excludes it
+from active queries. Use `--with-service` to move database operations into a
+registered service. The same policy flags apply to `generate model`.
+Generation rejects missing ownership prerequisites before it writes files.
 
 ### `mattstack generate endpoint`
 
@@ -108,25 +144,31 @@ Generated Vite builds run the router plugin before TypeScript checks new route
 IDs. Rsbuild boilerplates use ES2023 library types for their array helpers.
 Use a supported Node.js runtime; the exercised runtime is Node.js 22.
 
-React Router support covers the scanned `BrowserRouter` and JSX `<Routes>`
-structure. Generation creates a default-export page and registers it in
-`App.tsx`. Choose its group explicitly when you need a client-side guard:
+TanStack generation reads the active plugin configuration or `tsr.config.json`,
+including custom route directories, tree files, and index and route tokens.
+Use a router-native path for groups, pathless layouts, and parameters:
 
 ```bash
-mattstack generate page Reports --route-group protected
-mattstack generate crud Product -f "title:str" --route-group public
+mattstack generate page Reports --route '/(app)/_authed/reports/$reportId' --guard --error
+mattstack generate crud Note --app todos -f "title:str" --guard --pending --error
 ```
 
-The default group is public. `protected` provides a client redirect, not server
-authorization. Ambiguous, computed, spread, or data-router registrations stop
-generation without writes. A duplicate URL also stops generation; `--force`
-can regenerate a page only when its existing import, component, and group
-match exactly.
+`--guard` uses the detected auth store and login route. It redirects the browser;
+it does not authorize API access. `--pending` requires a real CRUD loader and
+query-client router context; a plain page has no loader and refuses this flag.
+Computed configuration and conflicting routes stop generation before writes.
 
-Next.js App Router pages remain supported. Use `--path` to choose an existing
-route group. UI route inventory appears in `mattstack context`; it does not
-represent backend endpoints or prove authorization. Track advanced router
-configuration in [issue #10](https://github.com/mattjaikaran/mattstack-cli/issues/10).
+React Router supports static JSX, data-router declarations, and `useRoutes`
+arrays, including supported imported arrays. Choose `--route-group public` or
+`protected` for group registration. Use `--lazy` and `--error` for data routers;
+lazy registration requires a real data router. Ambiguous or computed
+registrations stop generation without writes. Duplicate URLs also stop
+generation; `--force` requires a matching existing registration.
+
+Next.js App Router generation preserves existing layouts and route groups.
+Use `--app-group '(dashboard)'` for CRUD or a native `--route` for pages.
+Generation rejects URL collisions across groups. UI route inventory in
+`mattstack context` is not a backend endpoint or authorization report.
 
 ### `mattstack generate hook`
 
@@ -213,13 +255,16 @@ Generate an SDK with a locally installed, pinned `@hey-api/openapi-ts`.
 This command does not fetch a tool automatically.
 
 ```bash
-mattstack sync openapi --schema openapi.json
-mattstack sync openapi --schema openapi.json --check
+mattstack sync openapi             # Discover Ninja's backend/docs/openapi/openapi.json
+mattstack sync openapi --schema openapi.json --check  # Explicit override
 ```
 
 Use `--check` to detect drift without replacing output. The ownership manifest
 protects edited or unmanaged files. Use `--force` only for intentional replacement.
 Keep output inside your frontend. See [optional tools](ecosystem.md).
+For a missing Ninja export, run the command printed by the CLI from your backend
+directory, then retry. No schema export or optional tool download happens
+implicitly. Set a schema path for other backend layouts.
 
 ---
 
@@ -341,7 +386,14 @@ mattstack health --live --json   # Probe services and emit JSON
 
 ### `mattstack hooks install`
 
-Install pre-commit hooks (ruff + biome/prettier).
+Install the hook stages declared by your root configuration and verify their
+files. Ninja installs commit-time Ruff and a pre-push `just gauntlet-quick`
+with locked backend dev tools. Install `uv`, `just`, and frontend `bun` as
+required. Missing prerequisites fail before hooks are written.
+
+Keep canonical backend guidance and quality scripts. Run `mattstack rules sync`
+to update harness adapters without replacing the component's rules or emitting
+duplicate Claude guidance.
 
 ### `mattstack hooks status`
 

@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from mattstack.config import DeploymentTarget
 from mattstack.generators.base import BaseGenerator
 from mattstack.post_processors.customizer import customize_frontend
 from mattstack.post_processors.frontend_config import setup_frontend_monorepo
 from mattstack.templates.cursorrules import generate_cursorrules
+from mattstack.templates.deploy_files import deployment_files
 from mattstack.templates.pre_commit_config import generate_pre_commit_config
 from mattstack.templates.root_gitignore import generate_gitignore
 from mattstack.templates.root_makefile import generate_makefile
@@ -43,15 +43,8 @@ class FrontendOnlyGenerator(BaseGenerator):
             self.write_file("README.md", generate_readme(self.config))
             self.write_file(".cursorrules", generate_cursorrules(self.config))
             self.write_file(".gitignore", generate_gitignore(self.config))
-
-            if self.config.deployment == DeploymentTarget.FLY_IO:
-                from mattstack.templates.deploy_fly import generate_fly_toml
-
-                self.write_file("fly.toml", generate_fly_toml(self.config))
-            elif self.config.deployment == DeploymentTarget.CLOUDFLARE:
-                from mattstack.templates.deploy_cloudflare import generate_wrangler_toml
-
-                self.write_file("wrangler.toml", generate_wrangler_toml(self.config))
+            for relative, content in deployment_files(self.config).items():
+                self.write_file(relative, content)
 
             return True
         except OSError as e:

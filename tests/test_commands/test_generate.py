@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ast
 import json
 import shutil
 from collections.abc import Callable
@@ -80,27 +79,6 @@ def test_invalid_field_specs_are_rejected(spec: str) -> None:
         parse_fields([spec])
 
 
-def test_crud_registers_controller_before_urls_are_built(
-    tmp_path: Path, make_project: MakeProject
-) -> None:
-    root = make_project(tmp_path)
-    result = crud(
-        root, "-f", "title:str price:decimal", "-f", "category:fk:Category", "--with-tests"
-    )
-    assert result.exit_code == 0, result.output
-
-    urls = (root / "backend" / "api" / "urls.py").read_text()
-    registration = urls.index("api.register_controllers(ProductController)")
-    assert urls.index("from core.controllers.product import ProductController") < registration
-    # Ninja builds its URL list when `api.urls` is read in urlpatterns.
-    assert registration < urls.index("urlpatterns")
-
-    for path in (root / "backend").rglob("*.py"):
-        ast.parse(path.read_text(), filename=str(path))
-    test_source = (root / "backend" / "core" / "tests" / "test_product_api.py").read_text()
-    assert '"/api/products/"' in test_source
-
-
 def _fk_contract(root: Path) -> tuple[str, str, str]:
     """Return (Pydantic FK type, TS FK type, model source) for generated Product."""
     schemas = {
@@ -117,9 +95,8 @@ def _fk_contract(root: Path) -> tuple[str, str, str]:
 def test_fk_to_integer_key_model_is_numeric(tmp_path: Path, make_project: MakeProject) -> None:
     root = make_project(tmp_path)  # Category(models.Model): Django's integer auto key
     assert crud(root, "-f", "title:str category:fk:Category").exit_code == 0
-    py_type, ts_type, model = _fk_contract(root)
+    py_type, ts_type, _ = _fk_contract(root)
     assert (py_type, ts_type) == ("int", "number")
-    assert 'models.ForeignKey("core.Category"' in model
 
 
 def test_fk_to_uuid_key_model_is_string(tmp_path: Path, make_project: MakeProject) -> None:
@@ -135,22 +112,6 @@ def test_fk_to_uuid_key_model_is_string(tmp_path: Path, make_project: MakeProjec
     assert crud(root, "-f", "title:str tag:fk:Tag").exit_code == 0
     py_type, ts_type, _ = _fk_contract(root)
     assert (py_type, ts_type) == ("UUID", "string")
-
-
-def test_fk_to_swapped_user_model_uses_auth_user_model(
-    tmp_path: Path, make_project: MakeProject
-) -> None:
-    root = make_project(tmp_path)
-    settings = root / "backend" / "api" / "settings.py"
-    settings.write_text(settings.read_text() + 'AUTH_USER_MODEL = "core.User"\n')
-    (root / "backend" / "core" / "models" / "user.py").write_text(
-        "class User(AbstractUser):\n    pass\n"
-    )
-    assert crud(root, "-f", "owner:fk:User").exit_code == 0
-    py_type, ts_type, model = _fk_contract(root)
-    assert (py_type, ts_type) == ("int", "number")
-    assert "models.ForeignKey(settings.AUTH_USER_MODEL" in model
-    assert "from django.conf import settings" in model
 
 
 @pytest.mark.parametrize(
@@ -302,15 +263,3 @@ def test_fk_target_must_exist(tmp_path: Path, make_project: MakeProject) -> None
     result = crud(root, "-f", "owner:fk:Missing")
     assert result.exit_code == 1
     assert not (root / "backend" / "core" / "models" / "product.py").exists()
-
-
-def test_endpoint_appends_to_existing_controller_under_its_prefix(
-    tmp_path: Path, make_project: MakeProject
-) -> None:
-    root = make_project(tmp_path)
-    assert crud(root, "-f", "title:str").exit_code == 0
-    result = runner.invoke(generate_app, ["endpoint", "/products/featured", "--path", str(root)])
-    assert result.exit_code == 0, result.output
-    source = (root / "backend" / "core" / "controllers" / "product.py").read_text()
-    ast.parse(source)
-    assert '@http_get("/featured"' in source

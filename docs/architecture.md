@@ -1,6 +1,6 @@
 # mattstack architecture
 
-## File Map
+## File map
 
 ```
 src/mattstack/
@@ -13,6 +13,7 @@ src/mattstack/
 ├── stack.py            # Shared command-facing stack resolution
 ├── stack_detection.py  # Framework and component detection
 ├── presets.py          # Named stack configurations
+├── runtime_profiles.py # Task workers, realtime, storage prerequisites and context
 │
 ├── commands/
 │   ├── init.py         # 3 modes: config-file → preset → interactive wizard
@@ -50,7 +51,7 @@ src/mattstack/
 └── utils/              # Console, Git, Docker, process supervision, jobs, package managers
 ```
 
-## Backend Frameworks
+## Backend frameworks
 
 | Key | Enum | Language | Package Manager | Port (monorepo) |
 |-----|------|----------|-----------------|-----------------|
@@ -59,9 +60,13 @@ src/mattstack/
 | `fastapi` | `BackendFramework.FASTAPI` | Python | `uv` | 8000 |
 | `nestjs` | `BackendFramework.NESTJS` | TypeScript/Node.js | `bun` | 4000 |
 
-NestJS uses Bull (Redis-based) for queues — `use_celery` is always `False` for NestJS projects. FastAPI uses Celery + Redis (same as Django backends).
+Use `ProjectConfig.task_backend` as the runtime selection. Ninja supports
+Celery, Huey, django-q, django-rq, Dramatiq, and disabled dispatch. FastAPI and
+django-matt support Celery or no worker. NestJS uses Bull internally.
+`use_celery` is a derived property, not a constructor argument. Preserve only
+nonsecret runtime choices in project metadata.
 
-## Frontend Frameworks
+## Frontend frameworks
 
 | Key | Enum | Bundler | Router | Dev port |
 |-----|------|---------|--------|----------|
@@ -71,15 +76,22 @@ NestJS uses Bull (Redis-based) for queues — `use_celery` is always `False` for
 | `react-rsbuild-kibo` | `REACT_RSBUILD_KIBO` | Rsbuild | TanStack Router | 3000 |
 | `nextjs` | `NEXTJS` | Next.js | App Router | 3000 |
 
-Use `FrontendLayout` for dependency, bundler, router, alias, and transport
-detection. Keep UI route inventory in `parsers/frontend_routes.py`; use
-`tanstack_route_id()` for generation and source alignment. Do not treat SPA
-pages or client guards as backend endpoints or authorization. Next.js API
-discovery requires a package that declares `next`.
+Use `FrontendLayout` for router, bundler, alias, auth/transport, and styling
+detection. Keep UI inventory in `parsers/frontend_routes.py` and TanStack
+configuration in `parsers/tanstack_config.py`. Reuse the configured route tokens
+in generation and source alignment. Never report a page or browser guard as
+a backend endpoint or authorization control.
 
-Keep React Router registration inside `FilePlan` so validation finishes before
-any write. Support the scanned JSX structure and refuse ambiguous mutations.
-Preserve existing package exports through the backend export planner.
+Plan backend and frontend writes in one `FilePlan`; validate both before
+committing any file. `resource_policy.py` resolves ownership and lifecycle.
+`crud_backend.py` and `crud_frontend.py` plan their respective artifacts.
+`page_routes.py` selects router-native page planning. Static React Router data,
+JSX, and `useRoutes` registrations are supported; refuse computed mutations.
+Preserve package exports through the backend export planner.
+
+Keep canonical component guidance and gate scripts during consolidation.
+Generate root hooks that run the backend's locked dev tools and real quick
+gauntlet. Do not replace these tools with the unmerged PR #1 implementation.
 
 ## Development tools and security gate
 

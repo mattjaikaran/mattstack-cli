@@ -25,11 +25,13 @@ TEMPLATE_CONFIG = """\
 #     project_type: fullstack
 #     variant: starter
 #     frontend_framework: react-vite
+#     task_backend: huey    # celery | huey | django_q | django_rq | dramatiq | none
+#     use_realtime: false   # Centrifugo profile (django-ninja only)
 
 # Default settings
 # defaults:
 #   deployment: docker
-#   use_celery: true
+#   task_backend: celery
 #   use_redis: true
 #   init_git: true
 #   package_manager: bun    # bun | npm | yarn | pnpm

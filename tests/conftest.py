@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from mattstack.config import ProjectConfig, ProjectType, Variant
+from mattstack.config import ProjectConfig, ProjectType, TaskBackend, Variant
 
 
 @pytest.fixture
@@ -51,6 +51,6 @@ def frontend_only_config(tmp_path: Path) -> ProjectConfig:
         path=tmp_path / "test-frontend",
         project_type=ProjectType.FRONTEND_ONLY,
         variant=Variant.STARTER,
-        use_celery=False,
+        task_backend=TaskBackend.NONE,
         use_redis=False,
     )

@@ -24,13 +24,13 @@ from mattstack.config import (
     normalize_name,
 )
 from mattstack.config_file import load_project_section, write_project_section
+from mattstack.runtime_profiles import apply_runtime_metadata, runtime_kwargs
 from mattstack.stack_detection import (
     PYTHON_MANIFESTS,
     api_prefix_from_urls,
     detect_backend_framework,
     detect_frontend_framework,
     has_backend_manifest,
-    mentions_package,
     python_manifest_text,
     read_text,
     settings_module_from_manage,
@@ -105,7 +105,7 @@ def find_project_root(path: Path) -> Path:
 
 
 class EnvFileError(ValueError):
-    """The root .env has a malformed or unresolvable ``${...}`` reference."""
+    """The root .env or mattstack.yml project metadata is malformed or unresolvable."""
 
 
 def _unquote(raw: str) -> tuple[str, bool]:
@@ -287,8 +287,6 @@ def resolve_project(path: Path) -> ResolvedProject:
 
     services = compose_services(root)
     manifest = python_manifest_text(backend_dir) if has_backend else ""
-    use_celery = _bool(backend_meta.get("celery"), mentions_package(manifest, "celery"))
-    use_redis = _bool(backend_meta.get("redis"), "redis" in services or use_celery)
     ios_dir = root / "ios"
     detected_ios = ios_dir.is_dir() and any(ios_dir.glob("*.xcodeproj"))
     raw_name = meta.get("name")
@@ -308,20 +306,22 @@ def resolve_project(path: Path) -> ResolvedProject:
             api_prefix_from_urls(backend_dir, settings_module) if has_backend else None
         ) or DEFAULT_API_PREFIX
     mode = meta.get("execution_mode")
-    config = ProjectConfig(
-        name=normalize_name(name) or normalize_name(root.name) or "project",
-        path=root,
-        project_type=project_type,
-        variant=_enum(Variant, meta.get("variant")) or Variant.STARTER,
-        frontend_framework=frontend_fw or FrontendFramework.REACT_VITE,
-        backend_framework=backend_fw or BackendFramework.DJANGO_NINJA,
-        include_ios=_bool(meta.get("ios"), detected_ios),
-        use_celery=use_celery,
-        use_redis=use_redis,
-        deployment=_enum(DeploymentTarget, meta.get("deployment")) or DeploymentTarget.DOCKER,
-        init_git=False,
-        api_prefix=prefix,
-    )
+    try:
+        config = ProjectConfig(
+            name=normalize_name(name) or normalize_name(root.name) or "project",
+            path=root,
+            project_type=project_type,
+            variant=_enum(Variant, meta.get("variant")) or Variant.STARTER,
+            frontend_framework=frontend_fw or FrontendFramework.REACT_VITE,
+            backend_framework=backend_fw or BackendFramework.DJANGO_NINJA,
+            include_ios=_bool(meta.get("ios"), detected_ios),
+            deployment=_enum(DeploymentTarget, meta.get("deployment")) or DeploymentTarget.DOCKER,
+            init_git=False,
+            api_prefix=prefix,
+            **runtime_kwargs(backend_meta, backend_fw, env, manifest, services),
+        )
+    except ValueError as error:
+        raise EnvFileError(f"{error}. Fix mattstack.yml or .env, then rerun") from None
     return ResolvedProject(
         root=root,
         backend_dir=backend_dir,
@@ -369,11 +369,11 @@ def save_project_config(config: ProjectConfig) -> None:
             {
                 "framework": config.backend_framework.value,
                 "dir": "backend",
-                "celery": config.use_celery,
                 "redis": config.use_redis,
                 "api_prefix": config.api_prefix,
             }
         )
+        apply_runtime_metadata(backend, config)
         if config.is_django_backend:
             backend.setdefault("settings_module", f"{config.wsgi_app}.settings")
         section["backend"] = backend

@@ -188,6 +188,65 @@ def test_tanstack_router_alignment_never_downgrades(tmp_path: Path) -> None:
     assert data["dependencies"]["@tanstack/react-router"] == "1.170.0"
 
 
+def test_aligned_react_vite_source_is_left_unchanged(tmp_path: Path) -> None:
+    """A boilerplate already on the router line keeps its manifest and build order."""
+    config = _make_config(tmp_path)
+    package = json.dumps(
+        {
+            "scripts": {"build": "vite build && tsc -b"},
+            "dependencies": {
+                "@tanstack/react-router": "1.169.2",
+                "@tanstack/react-router-devtools": "1.166.13",
+            },
+            "devDependencies": {"@tanstack/router-plugin": "1.167.34"},
+        }
+    )
+    root = "import { TanStackRouterDevtools } from '@tanstack/react-router-devtools';\n"
+    _frontend(config, {"package.json": package, "src/routes/__root.tsx": root})
+    setup_frontend_monorepo(config)
+
+    assert (config.frontend_dir / "package.json").read_text() == package
+    assert (config.frontend_dir / "src/routes/__root.tsx").read_text() == root
+
+
+_CUSTOM_ROUTES_VITE = (
+    "import { tanstackRouter } from '@tanstack/router-plugin/vite'\n"
+    "export default defineConfig({\n"
+    "  plugins: [tanstackRouter({ routesDirectory: './app/pages', indexToken: 'home' })],\n"
+    "})\n"
+)
+
+
+def test_route_casts_follow_the_configured_routes_directory(tmp_path: Path) -> None:
+    """Casts are fixed where the plugin generates routes, with its index token."""
+    config = _make_config(tmp_path)
+    _frontend(
+        config,
+        {
+            "vite.config.ts": _CUSTOM_ROUTES_VITE,
+            "app/pages/reports/home.tsx": "createFileRoute('/reports' as any)({})\n",
+        },
+    )
+    setup_frontend_monorepo(config)
+
+    page = config.frontend_dir / "app/pages/reports/home.tsx"
+    assert page.read_text() == "createFileRoute('/reports/')({})\n"
+
+
+def test_route_casts_stay_when_the_plugin_config_cannot_be_read(tmp_path: Path) -> None:
+    """A computed routesDirectory is never replaced by the src/routes default."""
+    config = _make_config(tmp_path)
+    vite = (
+        "import { tanstackRouter } from '@tanstack/router-plugin/vite'\n"
+        "export default defineConfig({ plugins: [tanstackRouter({ routesDirectory: dir })] })\n"
+    )
+    cast = "createFileRoute('/dashboard' as any)({})\n"
+    _frontend(config, {"vite.config.ts": vite, "src/routes/dashboard/index.tsx": cast})
+    setup_frontend_monorepo(config)
+
+    assert (config.frontend_dir / "src/routes/dashboard/index.tsx").read_text() == cast
+
+
 def test_react_router_starter_is_left_on_react_router(tmp_path: Path) -> None:
     """react-vite-starter uses react-router-dom by design."""
     config = _make_config(tmp_path, frontend_framework=FrontendFramework.REACT_VITE_STARTER)
@@ -412,6 +471,12 @@ def test_consolidate_backend_removes_standalone_files(tmp_path: Path) -> None:
         assert not (config.backend_dir / f).exists(), f"{f} should be removed"
     for d in ["cli", "docker", "deploy", "nginx", "env", "media", "files", ".claude"]:
         assert not (config.backend_dir / d).exists(), f"{d}/ should be removed"
+    # Canonical agent guidance stays: the gauntlet's cross-stack rules check
+    # and scripts/export_rules.py read .omp/, and AGENTS.md names .agents/.
+    for d in [".omp", ".agents"]:
+        assert (config.backend_dir / d).is_dir(), f"{d}/ should be kept"
+    for d in [".cursor", ".windsurf", ".kiro", ".continue"]:
+        assert not (config.backend_dir / d).exists(), f"{d}/ adapter should be removed"
     assert (config.backend_dir / "pyproject.toml").exists()
     assert (config.backend_dir / "manage.py").exists()
     assert (config.backend_dir / "api").exists()
@@ -434,6 +499,87 @@ def test_consolidate_backend_keeps_optional_django_app(tmp_path: Path) -> None:
     assert (app / "apps.py").is_file()
     assert (app / "services" / "upload_service.py").is_file()
     assert not (config.backend_dir / "docker").exists()
+
+
+_PUBLISHED_THROTTLE_TESTS = """\
+import json
+from pathlib import Path
+
+import pytest
+import yaml
+from django.conf import settings
+from ninja_extra.conf import settings as ninja_extra_settings
+
+
+class TestTrustedProxyChain:
+    def test_one_proxy(self, monkeypatch):
+        monkeypatch.setattr(ninja_extra_settings, "NUM_PROXIES", 1)
+
+
+def test_prod_django_behind_nginx_trusts_one_proxy():
+    \"\"\"django-prod sits behind nginx.
+
+    With a count of 0, every client shared nginx's throttle bucket.
+    \"\"\"
+    compose = yaml.safe_load(
+        (Path(settings.BASE_DIR) / "docker-compose.yml").read_text()
+    )
+    assert compose
+
+
+# =============================================================================
+
+
+@pytest.mark.parametrize("wait", [1])
+def test_retry_body(wait):
+    assert json.dumps({"retry_after": wait})
+"""
+
+
+def test_consolidate_backend_drops_only_compose_source_test(tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    _populate_backend_standalone(config.backend_dir)
+    tests = config.backend_dir / "core" / "tests" / "test_throttling.py"
+    tests.parent.mkdir(parents=True)
+    tests.write_text(_PUBLISHED_THROTTLE_TESTS)
+
+    consolidate_backend(config)
+
+    result = tests.read_text()
+    compile(result, str(tests), "exec")
+    assert "test_prod_django_behind_nginx_trusts_one_proxy" not in result
+    assert "docker-compose.yml" not in result
+    for kept in ("def test_one_proxy", "def test_retry_body", "# ====", "import json\n"):
+        assert kept in result
+    # `ninja_extra_settings.` is not a use of Django's `settings`.
+    assert "from ninja_extra.conf import settings as ninja_extra_settings\n" in result
+    for orphan in ("from pathlib import Path\n", "import yaml\n", "from django.conf import"):
+        assert orphan not in result
+    # Two blank lines still separate the class from the next block.
+    assert '"NUM_PROXIES", 1)\n\n\n# ===' in result
+
+    consolidate_backend(config)
+    assert tests.read_text() == result
+
+
+def test_consolidate_backend_keeps_imports_other_tests_use(tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    tests = config.backend_dir / "core" / "tests" / "test_throttling.py"
+    tests.parent.mkdir(parents=True)
+    source = _PUBLISHED_THROTTLE_TESTS + (
+        "\n\ndef test_debug_setting():\n"
+        "    assert settings.DEBUG is False\n"
+        "    assert Path(settings.BASE_DIR).is_dir()\n"
+    )
+    tests.write_text(source)
+
+    consolidate_backend(config)
+
+    result = tests.read_text()
+    assert "test_prod_django_behind_nginx_trusts_one_proxy" not in result
+    assert "from pathlib import Path\n" in result
+    assert "from django.conf import settings\n" in result
+    assert "import yaml\n" not in result
 
 
 def test_consolidate_frontend_removes_standalone_files(tmp_path: Path) -> None:
@@ -459,6 +605,7 @@ def test_consolidate_frontend_removes_standalone_files(tmp_path: Path) -> None:
         assert not (config.frontend_dir / f).exists(), f"{f} should be removed"
     for d in ["nginx", "docs", "dist", ".claude"]:
         assert not (config.frontend_dir / d).exists(), f"{d}/ should be removed"
+    assert (config.frontend_dir / ".omp").is_dir()
     assert (config.frontend_dir / "package.json").exists()
     assert (config.frontend_dir / "src").exists()
     assert (config.frontend_dir / "vite.config.ts").exists()

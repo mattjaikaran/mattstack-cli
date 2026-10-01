@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from mattstack.config import DeploymentTarget
 from mattstack.generators.base import BaseGenerator
 from mattstack.post_processors.b2b import print_b2b_instructions
 from mattstack.post_processors.consolidate import consolidate_backend, consolidate_frontend
 from mattstack.post_processors.customizer import customize_backend, customize_frontend
 from mattstack.post_processors.frontend_config import setup_frontend_monorepo
+from mattstack.templates.backend_entrypoint import generate_backend_entrypoint
 from mattstack.templates.cursorrules import generate_cursorrules
+from mattstack.templates.deploy_files import deployment_files
 from mattstack.templates.docker_compose import generate_docker_compose
 from mattstack.templates.docker_compose_override import generate_docker_compose_override
 from mattstack.templates.docker_compose_prod import generate_docker_compose_prod
@@ -22,7 +23,11 @@ from mattstack.templates.dockerfiles import (
 )
 from mattstack.templates.pre_commit_config import generate_pre_commit_config
 from mattstack.templates.root_claude_md import generate_claude_md
-from mattstack.templates.root_env import generate_env_example, generate_env_production_example
+from mattstack.templates.root_env import (
+    generate_env_example,
+    generate_env_file,
+    generate_env_production_example,
+)
 from mattstack.templates.root_gitignore import generate_gitignore
 from mattstack.templates.root_makefile import generate_makefile
 from mattstack.templates.root_readme import generate_readme
@@ -39,6 +44,7 @@ class FullstackGenerator(BaseGenerator):
             ("Cloning backend", self._step_clone_backend),
             ("Cloning frontend", self._step_clone_frontend),
             ("Consolidating monorepo", self._step_consolidate),
+            ("Checking task and realtime runtime", self.prepare_runtime),
             ("Creating root files", self._step_create_root_files),
             ("Writing pre-commit config", self._write_pre_commit_config),
             ("Customizing backend", self._step_customize_backend),
@@ -85,7 +91,7 @@ class FullstackGenerator(BaseGenerator):
                 generate_docker_compose_override(self.config),
             )
             self.write_file(".env.example", generate_env_example(self.config))
-            self.write_file(".env", generate_env_example(self.config))
+            self.write_file(".env", generate_env_file(self.config))
             self.write_file(".env.production.example", generate_env_production_example(self.config))
             self.write_file(".env.production", generate_env_production_example(self.config))
             self.write_file("README.md", generate_readme(self.config))
@@ -98,6 +104,9 @@ class FullstackGenerator(BaseGenerator):
                 self.write_file(
                     "docker/backend/Dockerfile", generate_backend_dockerfile(self.config)
                 )
+                self.write_file(
+                    "docker/backend/entrypoint.sh", generate_backend_entrypoint(self.config)
+                )
             if self.config.has_frontend:
                 self.write_file(
                     "docker/frontend/Dockerfile", generate_frontend_dockerfile(self.config)
@@ -106,84 +115,12 @@ class FullstackGenerator(BaseGenerator):
                     "docker/frontend/Dockerfile.dev", generate_frontend_dev_dockerfile(self.config)
                 )
                 if not self.config.is_nextjs:
-                    self.write_file("docker/frontend/nginx.conf", generate_frontend_nginx_conf())
+                    self.write_file(
+                        "docker/frontend/nginx.conf", generate_frontend_nginx_conf(self.config)
+                    )
 
-            # Deployment configs
-            if self.config.deployment == DeploymentTarget.RAILWAY:
-                from mattstack.templates.deploy_railway import (
-                    generate_railway_json,
-                    generate_railway_toml,
-                )
-
-                self.write_file("railway.json", generate_railway_json(self.config))
-                self.write_file("railway.toml", generate_railway_toml(self.config))
-            elif self.config.deployment == DeploymentTarget.RENDER:
-                from mattstack.templates.deploy_render import generate_render_yaml
-
-                self.write_file("render.yaml", generate_render_yaml(self.config))
-            elif self.config.deployment == DeploymentTarget.FLY_IO:
-                from mattstack.templates.deploy_fly import generate_fly_toml
-
-                self.write_file("fly.toml", generate_fly_toml(self.config))
-            elif self.config.deployment == DeploymentTarget.AWS:
-                from mattstack.templates.deploy_aws import (
-                    generate_copilot_manifest,
-                    generate_ecs_task_definition,
-                )
-
-                self.write_file(
-                    "ecs-task-definition.json",
-                    generate_ecs_task_definition(self.config),
-                )
-                self.write_file(
-                    "copilot/api/manifest.yml",
-                    generate_copilot_manifest(self.config),
-                )
-            elif self.config.deployment == DeploymentTarget.GCP:
-                from mattstack.templates.deploy_gcp import (
-                    generate_app_engine_yaml,
-                    generate_cloud_run_yaml,
-                )
-
-                self.write_file("service.yaml", generate_cloud_run_yaml(self.config))
-                self.write_file("app.yaml", generate_app_engine_yaml(self.config))
-            elif self.config.deployment == DeploymentTarget.HETZNER:
-                from mattstack.templates.deploy_hetzner import (
-                    generate_caddyfile,
-                    generate_hetzner_compose,
-                )
-
-                self.write_file(
-                    "docker-compose.prod.yml",
-                    generate_hetzner_compose(self.config),
-                )
-                self.write_file("Caddyfile", generate_caddyfile(self.config))
-            elif self.config.deployment == DeploymentTarget.SELF_HOSTED:
-                from mattstack.templates.deploy_self_hosted import (
-                    generate_nginx_conf,
-                    generate_self_hosted_compose,
-                    generate_systemd_service,
-                )
-
-                self.write_file(
-                    "docker-compose.prod.yml",
-                    generate_self_hosted_compose(self.config),
-                )
-                self.write_file("nginx.conf", generate_nginx_conf(self.config))
-                self.write_file(
-                    f"{self.config.name}.service",
-                    generate_systemd_service(self.config),
-                )
-            elif self.config.deployment == DeploymentTarget.CLOUDFLARE:
-                from mattstack.templates.deploy_cloudflare import generate_wrangler_toml
-
-                self.write_file("wrangler.toml", generate_wrangler_toml(self.config))
-            elif self.config.deployment == DeploymentTarget.DIGITAL_OCEAN:
-                from mattstack.templates.deploy_digitalocean import (
-                    generate_do_app_spec,
-                )
-
-                self.write_file(".do/app.yaml", generate_do_app_spec(self.config))
+            for relative, content in deployment_files(self.config).items():
+                self.write_file(relative, content)
             return True
         except OSError as e:
             print_error(f"Failed to create root files: {e}")

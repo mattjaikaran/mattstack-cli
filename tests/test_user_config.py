@@ -144,3 +144,29 @@ def test_user_preset_invalid_values_skipped(tmp_path: Path) -> None:
 
         presets = get_all_presets()
         assert "bad-preset" not in presets  # should be skipped
+
+
+def test_user_preset_task_backend_and_actionable_skip(tmp_path: Path) -> None:
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        "presets:\n"
+        "  queue-app:\n    task_backend: huey\n    use_realtime: true\n"
+        "  legacy-app:\n    use_celery: false\n"
+        "  bad-app:\n    backend_framework: fastapi\n    task_backend: dramatiq\n"
+    )
+    with (
+        patch("mattstack.user_config.USER_CONFIG_PATH", config_file),
+        patch("mattstack.presets.print_warning") as warn,
+    ):
+        from mattstack.config import TaskBackend
+        from mattstack.presets import get_all_presets
+
+        presets = get_all_presets()
+
+    queue = presets["queue-app"].to_config("queue-app", tmp_path / "q")
+    assert (queue.task_backend, queue.use_realtime) == (TaskBackend.HUEY, True)
+    legacy = presets["legacy-app"].to_config("legacy-app", tmp_path / "l")
+    assert legacy.task_backend == TaskBackend.NONE
+    assert "bad-app" not in presets
+    message = warn.call_args[0][0]
+    assert "bad-app" in message and str(config_file) in message and "celery, none" in message

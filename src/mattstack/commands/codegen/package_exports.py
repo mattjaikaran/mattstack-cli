@@ -10,8 +10,8 @@ from pathlib import Path
 
 from mattstack.commands.codegen.backend_layout import GenerateError
 from mattstack.commands.codegen.plan import FilePlan
+from mattstack.commands.codegen.py_lines import LINE_LIMIT, from_import, insert_import
 
-LINE_LIMIT = 88
 NAME_LITERAL_RE = re.compile(r"""^(['"])([A-Za-z_]\w*)\1$""")
 NON_CODE = frozenset({tokenize.COMMENT, tokenize.NL})
 
@@ -19,6 +19,7 @@ NON_CODE = frozenset({tokenize.COMMENT, tokenize.NL})
 @dataclass(frozen=True)
 class _AllLiteral:
     start: int  # offset of the line holding `__all__ =`
+    open: int  # offset of the opening bracket
     close: int  # offset of the closing bracket
     names: tuple[str, ...]
     tuple_literal: bool
@@ -95,6 +96,7 @@ def _parse_all(text: str, tokens: list[tokenize.TokenInfo], path: Path) -> _AllL
     close_row, close_col = code[position].start
     return _AllLiteral(
         start=offsets[target.start[0]],
+        open=offsets[opener.start[0]] + opener.start[1],
         close=offsets[close_row] + close_col,
         names=tuple(names),
         tuple_literal=closer == ")",
@@ -123,6 +125,15 @@ def _extend_all(text: str, literal: _AllLiteral, names: list[str]) -> str:
         insert = ", ".join(items) + ("," if literal.tuple_literal and len(items) == 1 else "")
     else:
         insert = (" " if literal.last_item_comma else ", ") + ", ".join(items)
+    line_start = text.rfind("\n", 0, literal.open) + 1
+    line_end = text.find("\n", literal.close)
+    line_end = len(text) if line_end == -1 else line_end
+    one_line = "\n" not in text[literal.open : literal.close]
+    if one_line and line_end - line_start + len(insert) > LINE_LIMIT:
+        every = _quoted([*literal.names, *names], literal.quote)
+        exploded = "".join(f"    {item},\n" for item in every)
+        opener, closer = text[literal.open], text[literal.close]
+        return text[: literal.open] + f"{opener}\n{exploded}{closer}" + text[literal.close + 1 :]
     return text[: literal.close] + insert + text[literal.close :]
 
 
@@ -135,35 +146,16 @@ def _render_all(names: list[str]) -> str:
 
 
 def _render_import(module: str, names: list[str]) -> str:
-    one_line = f"from {module} import {', '.join(names)}"
-    if len(one_line) <= LINE_LIMIT:
-        return one_line + "\n"
-    return f"from {module} import (\n" + "".join(f"    {name},\n" for name in names) + ")\n"
-
-
-def _import_end(tokens: list[tokenize.TokenInfo], text: str, before: int) -> int | None:
-    """Offset just past the last top-level import statement that starts before *before*."""
-    offsets = _offsets(text)
-    end: int | None = None
-    in_import = False
-    for token in tokens:
-        offset = offsets[token.start[0]] + token.start[1]
-        if offset >= before:
-            break
-        if token.type == tokenize.NAME and token.start[1] == 0:
-            in_import = token.string in ("from", "import")
-        elif token.type == tokenize.NEWLINE and in_import:
-            end = offsets[token.end[0]] + token.end[1]
-            in_import = False
-    return end
+    return "\n".join(from_import(module, names)) + "\n"
 
 
 def export_names(text: str, path: Path, module: str, names: list[str]) -> str:
     """Return *text* importing *names* from *module* and listing them in `__all__`.
 
     Existing imports, exports, and comments stay as they are; names already
-    imported or exported are not added twice. A blank file gains `__all__`;
-    a non-blank file without one keeps exporting everything it defines.
+    imported or exported are not added twice. The import goes where isort
+    sorts it. A blank file gains `__all__`; a non-blank file without one
+    keeps exporting everything it defines.
     Raises GenerateError when `__all__` is anything but one top-level literal
     list or tuple of strings.
     """
@@ -175,18 +167,18 @@ def export_names(text: str, path: Path, module: str, names: list[str]) -> str:
     defined = {t.string for t in tokens if t.type == tokenize.NAME}
     missing = [name for name in wanted if name not in defined]
     block = _render_import(module, missing) if missing else ""
-    if literal is None:
-        return text + ("\n" if block and not text.endswith("\n") else "") + block
-    # Edit back to front: `__all__` follows the import block, so offsets hold.
-    new_exports = [name for name in wanted if name not in literal.names]
-    if new_exports:
-        text = _extend_all(text, literal, new_exports)
+    if literal is not None:
+        new_exports = [name for name in wanted if name not in literal.names]
+        if new_exports:
+            text = _extend_all(text, literal, new_exports)
     if not block:
         return text
-    end = _import_end(tokens, text, literal.start)
-    if end is None:
-        return text[: literal.start] + block + "\n" + text[literal.start :]
-    return text[:end] + block + text[end:]
+    inserted = insert_import(text, block)
+    if inserted is not None:
+        return inserted
+    if literal is None:
+        return text + ("\n" if not text.endswith("\n") else "") + block
+    return text[: literal.start] + block + "\n" + text[literal.start :]
 
 
 def plan_exports(plan: FilePlan, init_file: Path, module: str, names: list[str]) -> None:

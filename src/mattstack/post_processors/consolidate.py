@@ -2,13 +2,29 @@
 
 When a boilerplate is cloned into ``backend/`` or ``frontend/`` it carries its own
 standalone-project root files (``Makefile``, ``docker-compose*.yml``, ``.env*``,
-``Dockerfile``, ``README``, agent configs, deployment dirs). In a generated monorepo
+``Dockerfile``, agent adapters, deployment dirs). In a generated monorepo
 those live once at the project root, so this module removes the per-subdirectory
 copies. Removal is defensive: missing paths are tolerated.
+
+Agent guidance follows one rule: canonical, component-scoped sources stay, and
+per-harness adapters go. ``AGENTS.md``, ``SKILLS.md``, ``.agents/skills/``,
+``.omp/`` (rules, ``APPEND_SYSTEM.md``, skills), and ``.context/`` stay in the
+component: the Ninja gauntlet's cross-stack rules check and
+``scripts/export_rules.py`` read ``.omp/``, and ``AGENTS.md`` points at the
+rest. ``CLAUDE.md``, ``.cursorrules``, and the ``.claude/``, ``.cursor/``,
+``.windsurf/``, ``.kiro/``, and ``.continue/`` adapters go: they copy the
+canonical sources, and the generated root ``CLAUDE.md`` and ``.cursorrules``
+replace them.
+
+Removing the backend Compose file also orphans one published Ninja test,
+``test_prod_django_behind_nginx_trusts_one_proxy``, which only read
+``backend/docker-compose.yml`` as text. Consolidation deletes that function
+and the imports only it used; the throttle behaviour tests stay.
 """
 
 from __future__ import annotations
 
+import re
 import shutil
 from pathlib import Path
 
@@ -52,13 +68,11 @@ _FRONTEND_GLOBS: list[str] = [
     "nginx.conf",
 ]
 
-# Editor/agent directories removed from either side.
+# Per-harness adapters and editor settings, removed from either side.
 _EDITOR_DIRS: list[str] = [
     ".claude",
     ".cursor",
     ".vscode",
-    ".omp",
-    ".agents",
     ".continue",
     ".kiro",
     ".windsurf",
@@ -83,10 +97,33 @@ _FRONTEND_DIRS: list[str] = [
     "dist",
 ]
 
+# The published Ninja boilerplate tests its own docker-compose.yml as source
+# text. Match only that top-level function: its def line, indented or blank
+# body lines, and the blank lines that separate it from the next block.
+_THROTTLE_TESTS = Path("core/tests/test_throttling.py")
+_COMPOSE_WIRING_TEST = re.compile(
+    r"^def test_prod_django_behind_nginx_trusts_one_proxy\(\):\n(?:[ \t]+[^\n]*\n|\n)*",
+    re.MULTILINE,
+)
+# Imports used only by that test, each with the usage that keeps it.
+_COMPOSE_WIRING_IMPORTS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("from pathlib import Path\n", re.compile(r"\bPath\b")),
+    ("import yaml\n", re.compile(r"\byaml\.")),
+    ("from django.conf import settings\n", re.compile(r"(?<![\w.])settings\.")),
+)
+
 
 def consolidate_backend(config: ProjectConfig) -> None:
     """Remove standalone-project files from the cloned backend directory."""
-    _consolidate(config.backend_dir, _BACKEND_GLOBS, _BACKEND_DIRS)
+    dirs = [name for name in _BACKEND_DIRS if not (config.use_realtime and name == "deploy")]
+    _consolidate(config.backend_dir, _BACKEND_GLOBS, dirs)
+    _remove_compose_wiring_test(config.backend_dir / _THROTTLE_TESTS)
+    if config.use_realtime:
+        deploy = config.backend_dir / "deploy"
+        if deploy.is_dir() and not _is_django_app(deploy):
+            for path in deploy.iterdir():
+                if path.name != "centrifugo":
+                    _remove(path)
 
 
 def consolidate_frontend(config: ProjectConfig) -> None:
@@ -106,6 +143,21 @@ def _consolidate(root: Path, globs: list[str], dirs: list[str]) -> None:
         if _is_django_app(path):
             continue
         _remove(path)
+
+
+def _remove_compose_wiring_test(path: Path) -> None:
+    """Delete the test that reads the removed backend docker-compose.yml."""
+    if not path.is_file():
+        return
+    content = path.read_text()
+    updated = _COMPOSE_WIRING_TEST.sub("", content, count=1)
+    if updated == content:
+        return
+    for line, usage in _COMPOSE_WIRING_IMPORTS:
+        rest = updated.replace(line, "", 1)
+        if line in updated and not usage.search(rest):
+            updated = rest
+    path.write_text(updated)
 
 
 def _is_django_app(path: Path) -> bool:

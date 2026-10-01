@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from mattstack.config import FrontendFramework, ProjectConfig, ProjectType
+from mattstack.config import FrontendFramework, ProjectConfig, ProjectType, TaskBackend
 from mattstack.templates.frontend_commands import frontend_commands
 from mattstack.templates.root_makefile import generate_makefile
 
@@ -17,7 +17,7 @@ def _config(tmp_path: Path, framework: FrontendFramework) -> ProjectConfig:
         path=tmp_path / "test-app",
         project_type=ProjectType.FULLSTACK,
         frontend_framework=framework,
-        use_celery=False,
+        task_backend=TaskBackend.NONE,
         use_redis=False,
         init_git=False,
     )

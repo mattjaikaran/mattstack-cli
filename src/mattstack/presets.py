@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
+from typing import Any
 
 from mattstack.config import (
     BackendFramework,
     FrontendFramework,
     ProjectConfig,
     ProjectType,
+    TaskBackend,
     Variant,
 )
+from mattstack.utils.console import print_warning
 
 # NestJS is a Node.js/TypeScript backend — no Celery (uses Bull queues internally)
 
@@ -27,9 +31,14 @@ class Preset:
     frontend_framework: FrontendFramework = FrontendFramework.REACT_VITE
     backend_framework: BackendFramework = BackendFramework.DJANGO_NINJA
     include_ios: bool = False
+    # Legacy switch: True keeps the backend's default queue, False disables it.
     use_celery: bool = True
+    # An explicit backend wins over ``use_celery``.
+    task_backend: TaskBackend | None = None
+    use_realtime: bool = False
 
     def to_config(self, project_name: str, path: Path) -> ProjectConfig:
+        legacy = TaskBackend.CELERY if self.use_celery else TaskBackend.NONE
         return ProjectConfig(
             name=project_name,
             path=path,
@@ -38,10 +47,21 @@ class Preset:
             frontend_framework=self.frontend_framework,
             backend_framework=self.backend_framework,
             include_ios=self.include_ios,
-            use_celery=self.use_celery,
+            task_backend=self.task_backend or legacy,
+            use_realtime=self.use_realtime,
         )
 
 
+# B2B presets name their frontend source and router explicitly. They clone
+# react-vite-boilerplate (TanStack Router), the same source as the starter
+# presets; the B2B variant adds backend org/team/RBAC features only. The
+# react-vite-b2b boilerplate (React Router, org switcher UI) is not a mattstack
+# source because no backend serves its contract: it reads `access_token` and
+# `refresh_token` and expects GET /organizations to return a bare array plus
+# /teams and /invitations routes. django-ninja issues `token`/`refresh`, NestJS
+# issues `accessToken` without a teams route, FastAPI returns a paginated
+# `items` list without teams or invitations, and django-matt has no orgs.
+# Never swap a preset's or user's router by variant.
 PRESETS: dict[str, Preset] = {
     "starter-fullstack": Preset(
         name="starter-fullstack",
@@ -51,9 +71,10 @@ PRESETS: dict[str, Preset] = {
     ),
     "b2b-fullstack": Preset(
         name="b2b-fullstack",
-        description="B2B fullstack with orgs/teams/roles (Django + React Vite)",
+        description=("B2B fullstack with orgs/teams/roles (Django + React Vite + TanStack Router)"),
         project_type=ProjectType.FULLSTACK,
         variant=Variant.B2B,
+        frontend_framework=FrontendFramework.REACT_VITE,
     ),
     "starter-api": Preset(
         name="starter-api",
@@ -143,10 +164,13 @@ PRESETS: dict[str, Preset] = {
     ),
     "matt-b2b-fullstack": Preset(
         name="matt-b2b-fullstack",
-        description="B2B fullstack monorepo (django-matt + React Vite, orgs/teams/roles)",
+        description=(
+            "B2B fullstack monorepo (django-matt + React Vite + TanStack Router, orgs/teams/roles)"
+        ),
         project_type=ProjectType.FULLSTACK,
         variant=Variant.B2B,
         backend_framework=BackendFramework.DJANGO_MATT,
+        frontend_framework=FrontendFramework.REACT_VITE,
     ),
     # FastAPI (Python/async) presets
     "fastapi-api": Preset(
@@ -166,7 +190,9 @@ PRESETS: dict[str, Preset] = {
     ),
     "fastapi-b2b-fullstack": Preset(
         name="fastapi-b2b-fullstack",
-        description="B2B fullstack monorepo (FastAPI + React Vite, orgs/teams/roles)",
+        description=(
+            "B2B fullstack monorepo (FastAPI + React Vite + TanStack Router, orgs/teams/roles)"
+        ),
         project_type=ProjectType.FULLSTACK,
         variant=Variant.B2B,
         backend_framework=BackendFramework.FASTAPI,
@@ -260,29 +286,59 @@ def list_presets() -> list[Preset]:
     return list(PRESETS.values())
 
 
+def _choice(enum_type: type[StrEnum], data: dict[str, object], key: str, default: str) -> Any:
+    value = data.get(key, default)
+    try:
+        if not isinstance(value, str):
+            raise ValueError
+        return enum_type(value)
+    except ValueError:
+        valid = ", ".join(item.value for item in enum_type)
+        raise ValueError(f"{key}: '{value}' is invalid. Valid: {valid}") from None
+
+
+def _flag(data: dict[str, object], key: str, default: bool) -> bool:
+    value = data.get(key, default)
+    if not isinstance(value, bool):
+        raise ValueError(f"{key}: '{value}' is invalid. Use true or false")
+    return value
+
+
+def _user_preset(name: str, data: dict[str, object]) -> Preset:
+    """Build a user preset; raise ValueError naming the invalid field."""
+    raw_backend = data.get("task_backend")
+    preset = Preset(
+        name=name,
+        description=str(data.get("description", f"Custom preset: {name}")),
+        project_type=_choice(ProjectType, data, "project_type", "fullstack"),
+        variant=_choice(Variant, data, "variant", "starter"),
+        frontend_framework=_choice(FrontendFramework, data, "frontend_framework", "react-vite"),
+        backend_framework=_choice(BackendFramework, data, "backend_framework", "django-ninja"),
+        include_ios=_flag(data, "include_ios", False),
+        use_celery=_flag(data, "use_celery", True),
+        task_backend=(
+            None if raw_backend is None else _choice(TaskBackend, data, "task_backend", "")
+        ),
+        use_realtime=_flag(data, "use_realtime", False),
+    )
+    preset.to_config(name, Path(name))  # Reject unsupported combinations now.
+    return preset
+
+
 def get_all_presets() -> dict[str, Preset]:
-    """Get all presets including user-defined ones."""
-    from mattstack.user_config import get_user_presets
+    """Get all presets including user-defined ones; warn about invalid ones."""
+    from mattstack.user_config import USER_CONFIG_PATH, get_user_presets
 
     all_presets = dict(PRESETS)
-    user_presets = get_user_presets()
-    for name, data in user_presets.items():
-        if isinstance(data, dict):
-            try:
-                all_presets[name] = Preset(
-                    name=name,
-                    description=data.get("description", f"Custom preset: {name}"),
-                    project_type=ProjectType(data.get("project_type", "fullstack")),
-                    variant=Variant(data.get("variant", "starter")),
-                    frontend_framework=FrontendFramework(
-                        data.get("frontend_framework", "react-vite")
-                    ),
-                    backend_framework=BackendFramework(
-                        data.get("backend_framework", "django-ninja")
-                    ),
-                    include_ios=data.get("include_ios", False),
-                    use_celery=data.get("use_celery", True),
-                )
-            except (ValueError, KeyError):
-                continue  # Skip invalid presets
+    for name, data in get_user_presets().items():
+        if not isinstance(data, dict):
+            print_warning(f"Skipped user preset '{name}' in {USER_CONFIG_PATH}: not a mapping")
+            continue
+        try:
+            all_presets[name] = _user_preset(name, data)
+        except ValueError as error:
+            print_warning(
+                f"Skipped user preset '{name}' in {USER_CONFIG_PATH}: {error}. "
+                f"Fix the preset, then run: mattstack info"
+            )
     return all_presets

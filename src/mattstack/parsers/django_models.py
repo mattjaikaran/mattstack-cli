@@ -30,9 +30,11 @@ CLASS_RE = re.compile(
     re.MULTILINE,
 )
 
-# field_name = models.CharField(...) or field_name = CharField(...)
+# field_name = models.CharField(...), field_name = CharField(...), annotated
+# field_name: models.CharField[str, str] = models.CharField(...), or the value
+# parenthesized on the following lines.
 FIELD_RE = re.compile(
-    r"^\s{4}(\w+)\s*=\s*(?:models\.)?(\w+Field|ForeignKey|OneToOneField|ManyToManyField|AutoField|BigAutoField|UUIDField|SlugField|EmailField|URLField|IPAddressField|BinaryField|FileField|ImageField|JSONField|ArrayField)\s*\(([^)]*)\)",
+    r"^\s{4}(\w+)\s*(?::[^=\n]+)?=\s*\(?\s*(?:models\.)?(\w+Field|ForeignKey|OneToOneField|ManyToManyField|AutoField|BigAutoField|UUIDField|SlugField|EmailField|URLField|IPAddressField|BinaryField|FileField|ImageField|JSONField|ArrayField)\s*\(([^)]*)\)",
     re.MULTILINE,
 )
 

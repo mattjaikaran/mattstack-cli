@@ -20,8 +20,10 @@ from mattstack.config import (
     BackendFramework,
     FrontendFramework,
     ProjectConfig,
+    TaskBackend,
     get_repo_urls,
 )
+from mattstack.post_processors.task_runtime import prepare_runtime
 from mattstack.project import save_project_config
 from mattstack.stack import ProjectStack, load_stack, unknown_framework_message
 from mattstack.utils.console import (
@@ -68,9 +70,11 @@ def _build_config(stack: ProjectStack, adding: str, framework: str | None) -> Pr
         return replace(config, frontend_framework=chosen)
     if adding == "backend":
         backend = BackendFramework(framework) if framework else BackendFramework.DJANGO_NINJA
-        # A new backend gets its boilerplate's defaults; ProjectConfig turns
-        # Celery off again for NestJS.
-        return replace(config, backend_framework=backend, use_celery=True, use_redis=True)
+        # A new backend gets its boilerplate's defaults; ProjectConfig maps
+        # Celery to none for NestJS, which runs Bull inside the API.
+        return replace(
+            config, backend_framework=backend, task_backend=TaskBackend.CELERY, use_redis=True
+        )
     return config
 
 
@@ -267,6 +271,11 @@ def run_add(
         (
             f"Customizing {component}",
             lambda: _customize_component(component, config, dry_run=dry_run),
+        ),
+        # Regenerated root files carry TASK_BACKEND; the backend must accept it.
+        (
+            "Checking task and realtime runtime",
+            lambda: prepare_runtime(config, dry_run=dry_run, existing_project=True),
         ),
         (
             "Updating root files",

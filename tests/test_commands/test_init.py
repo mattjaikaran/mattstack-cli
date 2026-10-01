@@ -14,7 +14,7 @@ from mattstack.commands.init import (
     _run_interactive,
     run_init,
 )
-from mattstack.config import FrontendFramework, ProjectConfig, ProjectType, Variant
+from mattstack.config import FrontendFramework, ProjectConfig, ProjectType, TaskBackend, Variant
 
 
 def test_preset_creates_config(tmp_path: Path) -> None:
@@ -121,7 +121,8 @@ def _mock_questionary_for_wizard(
     backend_framework: str | None = "django-ninja",
     framework: str | None = "react-vite",
     ios: bool | None = False,
-    celery: bool | None = True,
+    task_backend: str | None = "celery",
+    realtime: bool | None = False,
     confirm: bool | None = True,
 ) -> None:
     """Configure a mock questionary object for _run_interactive.
@@ -132,9 +133,10 @@ def _mock_questionary_for_wizard(
     3. select() — variant
     4. select() — backend framework (only for fullstack / backend-only)
     5. select() — frontend framework (only for fullstack / frontend-only)
-    6. confirm() — include iOS (only for fullstack)
-    7. confirm() — include Celery (only for fullstack / backend-only)
-    8. confirm() — "Generate project?" final confirmation
+    6. select() — task backend (fullstack / backend-only with several choices)
+    7. confirm() — include iOS (only for fullstack)
+    8. confirm() — add Centrifugo realtime (django-ninja backends only)
+    9. confirm() — "Generate project?" final confirmation
 
     We use side_effect lists on the .ask() return to handle the ordering.
     """
@@ -147,14 +149,16 @@ def _mock_questionary_for_wizard(
         select_answers.append(backend_framework)
     if framework is not None:
         select_answers.append(framework)
+    if task_backend is not None and project_type in ("fullstack", "backend-only"):
+        select_answers.append(task_backend)
     mock_q.select.return_value.ask.side_effect = select_answers
 
     # confirm().ask() — 1-3 calls depending on project type
     confirm_answers: list[bool | None] = []
     if project_type == "fullstack":
         confirm_answers.append(ios if ios is not None else False)
-    if project_type in ("fullstack", "backend-only"):
-        confirm_answers.append(celery if celery is not None else True)
+    if project_type in ("fullstack", "backend-only") and backend_framework == "django-ninja":
+        confirm_answers.append(realtime if realtime is not None else False)
     if confirm is not None:
         confirm_answers.append(confirm)
     mock_q.confirm.return_value.ask.side_effect = confirm_answers
@@ -181,7 +185,7 @@ def test_wizard_creates_fullstack(tmp_path: Path) -> None:
             variant="starter",
             framework="react-vite",
             ios=False,
-            celery=True,
+            task_backend="celery",
             confirm=True,
         )
 
@@ -194,7 +198,8 @@ def test_wizard_creates_fullstack(tmp_path: Path) -> None:
         assert config.variant == Variant.STARTER
         assert config.frontend_framework == FrontendFramework.REACT_VITE
         assert config.include_ios is False
-        assert config.use_celery is True
+        assert config.task_backend == TaskBackend.CELERY
+        assert config.use_realtime is False
         assert config.author_name == "Test Author"
         assert config.author_email == "test@test.com"
 
@@ -217,7 +222,8 @@ def test_wizard_creates_backend_only(tmp_path: Path) -> None:
             variant="starter",
             framework=None,  # no framework prompt for backend-only
             ios=None,  # no iOS prompt for backend-only
-            celery=True,
+            task_backend="dramatiq",
+            realtime=True,
             confirm=True,
         )
 
@@ -228,7 +234,8 @@ def test_wizard_creates_backend_only(tmp_path: Path) -> None:
         assert config.name == "backend-app"
         assert config.project_type == ProjectType.BACKEND_ONLY
         assert config.variant == Variant.STARTER
-        assert config.use_celery is True
+        assert config.task_backend == TaskBackend.DRAMATIQ
+        assert config.use_realtime is True
 
 
 def test_wizard_cancel_on_name(tmp_path: Path) -> None:
@@ -266,7 +273,7 @@ def test_wizard_cancel_on_confirm(tmp_path: Path) -> None:
             variant="starter",
             framework="react-vite",
             ios=False,
-            celery=True,
+            task_backend="celery",
             confirm=False,
         )
 
@@ -287,9 +294,9 @@ def test_wizard_default_name_skips_prompt(tmp_path: Path) -> None:
     ):
         mock_gen.return_value = True
         # Only need select + confirm answers since name prompt is skipped
-        select_answers: list[str] = ["fullstack", "starter", "django-ninja", "react-vite"]
+        select_answers: list[str] = ["fullstack", "starter", "django-ninja", "react-vite", "celery"]
         mock_q.select.return_value.ask.side_effect = select_answers
-        mock_q.confirm.return_value.ask.side_effect = [False, True, True]  # ios, celery, confirm
+        mock_q.confirm.return_value.ask.side_effect = [False, False, True]  # ios, realtime, confirm
         mock_q.Choice = lambda title, value: value  # noqa: ARG005
 
         _run_interactive(tmp_path, default_name="prenamed")
@@ -443,3 +450,43 @@ def test_yaml_config_path_resolution(tmp_path: Path) -> None:
 
         config: ProjectConfig = mock_gen.call_args[0][0]
         assert config.path == custom_output / "path-test"
+
+
+def test_runtime_flags_override_preset_and_config_file(tmp_path: Path) -> None:
+    """--task-backend/--realtime win over a preset and over backend.celery in YAML."""
+    cfg_file = tmp_path / "config.yaml"
+    cfg_file.write_text("name: flag-app\ntype: backend-only\nbackend:\n  celery: false\n")
+    with patch("mattstack.commands.init._generate") as mock_gen:
+        run_init(
+            name="preset-app",
+            preset="kibo-fullstack",  # legacy use_celery=False
+            output_dir=tmp_path,
+            task_backend="django_q",
+            realtime=True,
+        )
+        run_init(config_file=str(cfg_file), output_dir=tmp_path, task_backend="huey")
+    from_preset, from_file = (call[0][0] for call in mock_gen.call_args_list)
+    assert (from_preset.task_backend, from_preset.use_realtime) == (TaskBackend.DJANGO_Q, True)
+    assert from_file.task_backend == TaskBackend.HUEY
+
+
+@pytest.mark.parametrize(
+    ("preset", "flags"),
+    [
+        ("starter-fullstack", {"task_backend": "rabbitmq"}),
+        ("starter-fullstack", {"media_storage": "gcs"}),
+        ("nestjs-api", {"task_backend": "celery"}),  # NestJS runs Bull, never Celery
+        ("fastapi-api", {"task_backend": "huey"}),
+        ("fastapi-api", {"realtime": True}),
+    ],
+)
+def test_unsupported_runtime_flags_exit_2(
+    tmp_path: Path, preset: str, flags: dict[str, object]
+) -> None:
+    with (
+        patch("mattstack.commands.init._generate") as mock_gen,
+        pytest.raises(click.exceptions.Exit) as exc,
+    ):
+        run_init(name="bad-app", preset=preset, output_dir=tmp_path, **flags)  # type: ignore[arg-type]
+    assert exc.value.exit_code == 2
+    mock_gen.assert_not_called()

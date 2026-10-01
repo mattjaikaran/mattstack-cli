@@ -8,7 +8,13 @@ from pathlib import Path
 import pytest
 import yaml  # type: ignore[import-untyped]
 
-from mattstack.config import BackendFramework, FrontendFramework, ProjectConfig, ProjectType
+from mattstack.config import (
+    BackendFramework,
+    FrontendFramework,
+    ProjectConfig,
+    ProjectType,
+    TaskBackend,
+)
 from mattstack.config_file import load_config
 from mattstack.project import (
     EnvFileError,
@@ -191,6 +197,55 @@ class TestResolveProject:
         (tmp_path / ".env").write_text("DB_PASSWORD=hunter2\n")
         assert "hunter2" not in repr(resolve_project(tmp_path))
 
+    @pytest.mark.parametrize(
+        ("backend_yaml", "env", "deps", "expected"),
+        [
+            # The persisted choice wins over .env and the legacy flag.
+            ("    task_backend: huey\n    celery: true\n", "TASK_BACKEND=dramatiq\n", "", "huey"),
+            # Ninja's TASK_BACKEND is what Django loads, so it beats legacy celery.
+            ("    celery: false\n", "TASK_BACKEND=django_rq\n", "", "django_rq"),
+            # Legacy celery: false keeps its meaning: no worker.
+            ("    celery: false\n", "", '", "celery>=5', "none"),
+            ("    celery: true\n", "", "", "celery"),
+            # Without metadata, a celery dependency means Celery.
+            ("", "", '", "celery>=5', "celery"),
+            ("", "", "", "none"),
+        ],
+    )
+    def test_task_backend_precedence(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        backend_yaml: str,
+        env: str,
+        deps: str,
+        expected: str,
+    ) -> None:
+        monkeypatch.delenv("TASK_BACKEND", raising=False)
+        _django_backend(tmp_path / "backend", deps=f"django-ninja>=1.0{deps}")
+        (tmp_path / "mattstack.yml").write_text(
+            f"project:\n  backend:\n    framework: django-ninja\n{backend_yaml}"
+        )
+        (tmp_path / ".env").write_text(env)
+        assert resolve_project(tmp_path).config.task_backend == TaskBackend(expected)
+
+    @pytest.mark.parametrize(
+        ("backend_yaml", "message"),
+        [
+            ("    task_backend: rabbit\n", "project.backend.task_backend is 'rabbit'"),
+            ("    realtime: yes-please\n", "project.backend.realtime is 'yes-please'"),
+            ("    framework: fastapi\n    task_backend: huey\n", "--task-backend with one of"),
+        ],
+    )
+    def test_invalid_runtime_metadata_names_the_key(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, backend_yaml: str, message: str
+    ) -> None:
+        monkeypatch.delenv("TASK_BACKEND", raising=False)
+        _django_backend(tmp_path / "backend")
+        (tmp_path / "mattstack.yml").write_text(f"project:\n  backend:\n{backend_yaml}")
+        with pytest.raises(EnvFileError, match=message):
+            resolve_project(tmp_path)
+
 
 class TestSaveProjectConfig:
     def _config(self, root: Path) -> ProjectConfig:
@@ -199,7 +254,7 @@ class TestSaveProjectConfig:
             path=root,
             backend_framework=BackendFramework.FASTAPI,
             frontend_framework=FrontendFramework.REACT_RSBUILD,
-            use_celery=False,
+            task_backend=TaskBackend.NONE,
             use_redis=False,
         )
 
@@ -224,7 +279,7 @@ class TestSaveProjectConfig:
         assert project.backend_framework == BackendFramework.FASTAPI
         assert project.frontend_framework == FrontendFramework.REACT_RSBUILD
         assert project.config.name == "shop"
-        assert project.config.use_celery is False
+        assert project.config.task_backend == TaskBackend.NONE
         assert project.config.use_redis is False
 
     def test_keeps_user_tuned_values(self, tmp_path: Path) -> None:

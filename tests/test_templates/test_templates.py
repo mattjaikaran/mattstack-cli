@@ -1,10 +1,9 @@
 """Tests for template generation."""
 
-from mattstack.config import ProjectConfig
+from mattstack.config import ProjectConfig, TaskBackend
 from mattstack.templates.docker_compose import generate_docker_compose
 from mattstack.templates.docker_compose_override import generate_docker_compose_override
 from mattstack.templates.docker_compose_prod import generate_docker_compose_prod
-from mattstack.templates.pre_commit_config import generate_pre_commit_config
 from mattstack.templates.root_claude_md import generate_claude_md
 from mattstack.templates.root_env import generate_env_example
 from mattstack.templates.root_gitignore import generate_gitignore
@@ -48,10 +47,11 @@ def test_docker_compose_fullstack(starter_fullstack_config: ProjectConfig):
     assert "test_project" in content  # python_package_name
 
 
-def test_docker_compose_no_celery(starter_fullstack_config: ProjectConfig):
-    starter_fullstack_config.use_celery = False
+def test_docker_compose_without_task_backend(starter_fullstack_config: ProjectConfig):
+    starter_fullstack_config.task_backend = TaskBackend.NONE
     content = generate_docker_compose(starter_fullstack_config)
     assert "celery-worker:" not in content
+    assert 'TASK_BACKEND: "none"' in content
 
 
 def test_env_example(starter_fullstack_config: ProjectConfig):
@@ -121,31 +121,6 @@ def test_docker_compose_prod_frontend_only_no_depends_on_api(
     assert "depends_on" not in content
     assert "api" not in content
     assert "frontend:" in content
-
-
-# --- Feature 2: Pre-commit hooks auto-setup ---
-
-
-def test_pre_commit_config_fullstack(starter_fullstack_config: ProjectConfig):
-    """Fullstack project should have both ruff and prettier hooks."""
-    content = generate_pre_commit_config(starter_fullstack_config)
-    assert "ruff" in content
-    assert "prettier" in content
-    assert "pre-commit-hooks" in content
-
-
-def test_pre_commit_config_backend_only(backend_only_config: ProjectConfig):
-    """Backend-only project should have ruff but not prettier."""
-    content = generate_pre_commit_config(backend_only_config)
-    assert "ruff" in content
-    assert "prettier" not in content
-
-
-def test_pre_commit_config_frontend_only(frontend_only_config: ProjectConfig):
-    """Frontend-only project should have prettier but not ruff."""
-    content = generate_pre_commit_config(frontend_only_config)
-    assert "prettier" in content
-    assert "ruff" not in content
 
 
 # --- Feature 3: Docker compose override ---

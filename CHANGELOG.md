@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add project-aware JSON diagnostics and optional, privacy-aware frontend tool guidance.
 - Add UI route inventory for TanStack Router, React Router JSX routes, and Next.js pages.
 - Generate and register React Router pages and CRUD routes with explicit public/protected groups.
+- Generate explicit owned/global resources, optional services, and timestamped or soft-delete models.
+- Select Ninja Celery, Huey, django-q, django-rq, Dramatiq, or explicitly disabled dispatch.
+- Add opt-in Centrifugo and production S3 profiles with nonsecret context metadata.
+- Generate native grouped/dynamic TanStack routes, React Router data/lazy routes, and grouped Next.js CRUD.
 
 ### Changed
 
@@ -21,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keep parallel lint and test failure behavior consistent, including format checks.
 - Preserve existing add, upgrade, and workflow files unless replacement is explicit.
 - Keep regression coverage focused on safety and API contracts; remove redundant test additions.
+- Preserve canonical backend rules and gate scripts; install all declared hook stages with prerequisite checks.
+- Discover Ninja's documented OpenAPI export while preserving explicit schema overrides and local-only SDK tools.
+- Keep B2B frontend/router selection explicit; do not substitute an incompatible B2B API source.
 
 ### Fixed
 
@@ -32,6 +39,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Align generated controllers, primary keys, request aliases, pagination, and TypeScript clients.
 - Validate model storage limits before writes; return not-found errors for missing foreign keys.
 - Serialize generated Decimal responses consistently and reject invalid explicit null updates.
+- Keep requested Centrifugo configuration during component deployment-directory cleanup.
+- Reject nonexistent queue Make targets instead of reporting a successful no-op.
+- Keep renamed editable projects and frontend workspaces consistent with existing text lockfiles.
+- Render FastAPI JSON-list environment settings and container-local Celery URLs correctly.
+- Report dependency lock updates when aligning older React Doctor source pins.
+- Limit TLS health-route migration to HTTPS targets and fail with the exact settings path when prerequisites are missing.
+- Preserve TLS mode in deployment verification commands and distinguish provider mode from operator secrets.
+- Use the backend's locked development tools in commit and pre-push quality hooks; name missing prerequisites.
 - Configure active frontend plugins and aliases; use a published, compatible TanStack devtools package.
 - Use the reachable Django Matt starter and migrate its imports to `DjangoMattAPI`.
 - Detect Django Matt's settings package and use its installed Granian server in production.
@@ -47,6 +62,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keep Ninja cache services independent from Celery and select both production environment modes.
 - Preserve Django apps during consolidation and accept comma-separated audit filters.
 - Exclude dotenv secrets and host dependencies from root Docker build contexts.
+- Remove the published Ninja throttle test that read the deleted `backend/docker-compose.yml` as text during consolidation; keep the throttle behavior tests.
+- Emit generated Django code that passes Ruff format, isort, and mypy without a formatter run: typed model fields, explicit admin exports, and sorted imports.
 
 ## [0.7.0] - 2026-08-12
 

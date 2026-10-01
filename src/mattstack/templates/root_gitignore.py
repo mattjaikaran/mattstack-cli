@@ -50,10 +50,17 @@ build/
 venv/
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+.hypothesis/
 .coverage
+.coverage.*
+coverage.xml
 htmlcov/
 *.egg
-db.sqlite3"""
+db.sqlite3
+# Backend gauntlet output (`just gauntlet-quick`, `just gauntlet-ci`)
+test_db.sqlite3
+gauntlet-report.json"""
 
 
 def _node() -> str:

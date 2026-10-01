@@ -8,7 +8,15 @@ it, so the API and the Celery workers cannot disagree with the database.
 
 from __future__ import annotations
 
-from mattstack.config import ProjectConfig
+import json
+
+from mattstack.config import MediaStorage, ProjectConfig
+from mattstack.runtime_profiles import (
+    CENTRIFUGO_CONTAINER_PORT,
+    CENTRIFUGO_SERVICE,
+    REALTIME_SECRETS,
+    task_backend_env,
+)
 from mattstack.templates.frontend_runtime import FRONTEND_PORT
 
 ANCHOR = "backend-env"
@@ -101,8 +109,33 @@ def backend_env(config: ProjectConfig, *, production: bool) -> dict[str, str]:
     env = {
         "DEBUG": "false" if production else "true",
         "DATABASE_URL": f"{scheme}://{user}:{password}@db:5432/{name}",
-        "SECRET_KEY": secret("SECRET_KEY", "change-me-in-production"),
+        "SECRET_KEY": secret(
+            "SECRET_KEY",
+            "change-me-dev-secret-key-at-least-32-characters"
+            if config.is_fastapi_backend
+            else "change-me-in-production",
+        ),
     }
+    if config.is_fastapi_backend:
+        env.update(
+            {
+                "APP_ENV": "production" if production else "development",
+                "APP_DEBUG": "false" if production else "true",
+                "JWT_SECRET_KEY": secret(
+                    "JWT_SECRET_KEY", "change-me-dev-jwt-key-at-least-32-characters"
+                ),
+                "CORS_ORIGINS": (
+                    required("CORS_ORIGINS", env_file)
+                    if production
+                    else "${CORS_ORIGINS:-" + json.dumps([frontend_origin]) + "}"
+                ),
+                "ALLOWED_HOSTS": "${ALLOWED_HOSTS:-" + json.dumps(["localhost", "127.0.0.1"]) + "}",
+            }
+        )
+        if production:
+            env.update(
+                {key: required(key, env_file) for key in ("WEBAUTHN_RP_ID", "WEBAUTHN_ORIGIN")}
+            )
     if config.is_django_backend:
         # The Django settings read discrete DB_* variables, not DATABASE_URL.
         env.update(
@@ -123,6 +156,30 @@ def backend_env(config: ProjectConfig, *, production: bool) -> dict[str, str]:
                 env["CENTRIFUGO_TOKEN_SECRET"] = secret("CENTRIFUGO_TOKEN_SECRET", "")
     if config.use_redis:
         env["REDIS_URL"] = "redis://redis:6379/0"
+        if config.is_fastapi_backend and config.use_celery:
+            env["CELERY_BROKER_URL"] = "redis://redis:6379/1"
+            env["CELERY_RESULT_BACKEND"] = "redis://redis:6379/2"
+    env.update(task_backend_env(config))
+    env.update(_optional_service_env(config, production=production))
+    return env
+
+
+def _optional_service_env(config: ProjectConfig, *, production: bool) -> dict[str, str]:
+    """Return Centrifugo and S3 keys for the opt-in realtime and media choices.
+
+    Realtime secrets have no default anywhere: Compose refuses to start until
+    the env file sets them, so Django and Centrifugo cannot disagree.
+    """
+    env_file = ".env.production" if production else ".env"
+    env: dict[str, str] = {}
+    if config.use_realtime:
+        env["CENTRIFUGO_URL"] = f"http://{CENTRIFUGO_SERVICE}:{CENTRIFUGO_CONTAINER_PORT}"
+        env.update({key: required(key, env_file) for key in REALTIME_SECRETS})
+    if production and config.media_storage == MediaStorage.S3:
+        # Ninja enables S3 media only in production; static files stay local.
+        for key in ("AWS_STORAGE_BUCKET_NAME", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY"):
+            env[key] = required(key, env_file)
+        env["AWS_S3_REGION_NAME"] = "${AWS_S3_REGION_NAME:-us-east-1}"
     return env
 
 
@@ -133,7 +190,7 @@ def render_anchor(env: dict[str, str]) -> str:
 
 def render_mapping(env: dict[str, str], *, indent: int) -> str:
     pad = " " * indent
-    return "\n".join(f'{pad}{key}: "{value}"' for key, value in env.items())
+    return "\n".join(f"{pad}{key}: {json.dumps(value)}" for key, value in env.items())
 
 
 def service_environment(extra: dict[str, str]) -> str:

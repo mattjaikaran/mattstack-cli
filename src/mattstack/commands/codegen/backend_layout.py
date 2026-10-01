@@ -11,6 +11,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from mattstack.commands.codegen.py_lines import insert_import
 from mattstack.parsers.utils import find_files
 
 
@@ -57,8 +58,19 @@ class BackendLayout:
         return self.app_dir / "schemas"
 
     @property
+    def services_dir(self) -> Path:
+        return self.app_dir / "services"
+
+    @property
     def admin_package(self) -> bool:
         return (self.app_dir / "admin").is_dir() or not (self.app_dir / "admin.py").exists()
+
+    @property
+    def first_party_packages(self) -> frozenset[str]:
+        """Top-level project packages: isort's first-party section."""
+        return frozenset(
+            p.parent.name for p in self.backend_dir.glob("*/__init__.py") if p.parent.is_dir()
+        )
 
     def module_of(self, path: Path) -> str:
         return ".".join(path.relative_to(self.backend_dir).with_suffix("").parts)
@@ -249,32 +261,23 @@ def detect_backend_layout(backend_dir: Path, app: str | None) -> BackendLayout:
     )
 
 
-def _import_insert_index(lines: list[str]) -> int:
-    index = 0
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        if line.startswith(("import ", "from ")):
-            if "(" in line and ")" not in line:
-                while i < len(lines) and ")" not in lines[i]:
-                    i += 1
-            index = i + 1
-        i += 1
-    return index
-
-
-def register_controller(text: str, api_var: str, import_line: str, controller: str) -> str:
+def register_controller(
+    text: str,
+    api_var: str,
+    import_line: str,
+    controller: str,
+    first_party: frozenset[str],
+) -> str:
     """Return *text* with *controller* imported and registered on *api_var*.
 
-    The registration goes after the last existing `register_controllers(...)`
-    call, or before `urlpatterns`: Ninja builds its URL list when `api.urls`
-    is read, so a later registration would never be routed.
+    The import joins *first_party*'s isort section. The registration goes
+    after the last existing `register_controllers(...)` call, or before
+    `urlpatterns`: Ninja builds its URL list when `api.urls` is read, so a
+    later registration would never be routed.
     """
     if re.search(rf"\b{re.escape(controller)}\b", text) and import_line in text:
         return text
-    lines = text.split("\n")
-    lines.insert(_import_insert_index(lines), import_line)
-    text = "\n".join(lines)
+    text = insert_import(text, import_line, first_party) or f"{import_line}\n{text}"
     call = f"{api_var}.register_controllers({controller})"
     calls = list(
         re.finditer(rf"^{re.escape(api_var)}\.register_controllers\s*\(", text, re.MULTILINE)

@@ -1,4 +1,4 @@
-# mattstack Ecosystem Guide
+# mattstack ecosystem guide
 
 mattstack is designed to be extensible. You can bring your own boilerplate repos, define custom presets, and write audit plugins.
 
@@ -31,7 +31,7 @@ presets:
     frontend_framework: react-vite
 ```
 
-## Custom Presets
+## Custom presets
 
 Define presets in `~/.mattstack/config.yaml`:
 
@@ -41,7 +41,7 @@ presets:
     description: "Internal API template"
     project_type: backend-only
     variant: starter
-    use_celery: false
+    task_backend: none
 
   my-fullstack:
     description: "Our standard fullstack"
@@ -49,19 +49,27 @@ presets:
     variant: b2b
     frontend_framework: react-vite
     include_ios: true
-    use_celery: true
+    task_backend: celery
 ```
 
-### Preset Fields
+### Preset fields
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `description` | string | auto | Human-readable description |
 | `project_type` | string | fullstack | `fullstack`, `backend-only`, `frontend-only` |
 | `variant` | string | starter | `starter`, `b2b` |
-| `frontend_framework` | string | react-vite | `react-vite`, `react-vite-starter` |
+| `frontend_framework` | string | react-vite | Explicit frontend and router selection |
 | `include_ios` | bool | false | Include iOS client |
-| `use_celery` | bool | true | Include Celery background tasks |
+| `task_backend` | string | celery | Ninja: all six backends; other Python backends: celery/none |
+| `use_realtime` | bool | false | Opt-in Ninja Centrifugo profile |
+
+Legacy `use_celery` input translates to the task selection; an explicit
+`task_backend` wins. Keep the selected frontend and router. B2B presets use
+the same explicit TanStack source as their starter counterpart and add backend
+features. They do not select `react-vite-b2b`: its organization/team/invitation
+and auth API contracts differ from the supported backends. Do not substitute
+that React Router source silently.
 
 ## Default Settings
 
@@ -70,7 +78,7 @@ Set project defaults so you don't have to specify them every time:
 ```yaml
 defaults:
   deployment: railway
-  use_celery: true
+  task_backend: celery
   use_redis: true
   init_git: true
 ```
@@ -101,10 +109,16 @@ and Orval.
 
 ```bash
 mattstack client add @hey-api/openapi-ts@0.99.0 --dev --exact
-# Export your running backend's schema to openapi.json.
+# Ninja: export the schema from the backend directory.
+# uv run python manage.py export_openapi_schema --api api.urls.api --output docs/openapi/openapi.json
 mattstack sync openapi
 mattstack sync openapi --check
 ```
+
+For Ninja, `sync openapi` discovers `backend/docs/openapi/openapi.json`.
+An explicit `--schema` overrides discovery. Other backends use `openapi.json`
+unless you supply a path. A missing export fails with the export and rerun
+commands; the CLI does not fetch your schema or install Hey API implicitly.
 
 Use Node 22.18 or later. `sync openapi` runs only your installed local tool.
 It does not fetch packages. It rejects edited or unmanaged output unless

@@ -6,14 +6,16 @@ redirect, not authorization, so the inventory reports wrappers by name only.
 
 Sources, all read with regular expressions:
 
-- TanStack Router: files under ``routes_dir`` that call ``createFileRoute`` or
-  ``createLazyFileRoute``. Generated route trees and ``-``-prefixed files are
-  skipped.
-- React Router: static JSX ``<Route>`` elements in the app entry module.
+- TanStack Router: files under the configured ``routesDirectory`` that call
+  ``createFileRoute`` or ``createLazyFileRoute``, named with the configured
+  index/route tokens. Generated route trees and ignore-prefixed files are
+  skipped. ``(group)`` directories, ``_pathless`` layouts, ``$params``, and
+  ``[.]`` escapes follow the router generator's naming rules.
+- React Router: static JSX ``<Route>`` elements in the app entry module, or
+  the literal route objects passed to ``createBrowserRouter``/``useRoutes``.
   A ``path`` that is not a string literal makes that route and its children
-  unresolvable, so they are omitted. Data routers (``createBrowserRouter``),
-  ``useRoutes`` objects, and descendant ``<Routes>`` in other modules are not
-  read.
+  unresolvable, so they are omitted; an unreadable route array yields no
+  routes. Descendant ``<Routes>`` in other modules are not read.
 - Next.js: ``page`` files of the App Router directory.
 """
 
@@ -25,10 +27,20 @@ from pathlib import Path
 
 from mattstack.parsers.frontend_layout import FrontendLayout
 from mattstack.parsers.nextjs_routes import parse_nextjs_routes
+from mattstack.parsers.react_router_source import (
+    RouteShapeError,
+    RouteSource,
+    object_routes,
+    route_array_start,
+)
+from mattstack.parsers.tanstack_config import RouteNaming
 
 ROUTE_SUFFIXES = (".tsx", ".ts", ".jsx", ".js")
+DEFAULT_ROUTE_NAMING = RouteNaming()
 
-_SEGMENT_RE = re.compile(r"[\w$-]+")
+_SEGMENT_RE = re.compile(r"(?:[\w$-]|\[[^\]/\\?#:*<>|!$%]\])+")
+_GROUP_RE = re.compile(r"\([\w-]+\)")
+_DOT_RE = re.compile(r"(?<!\[)\.(?!\])")
 _FILE_ROUTE_RE = re.compile(r"""\bcreate(?:Lazy)?FileRoute\(\s*(?:(['"`])([^'"`]*)\1)?""")
 _JSX_ROUTE_TOKEN_RE = re.compile(r"<Route\b|</Route\s*>")
 # Attributes are matched on the top level of the tag; each `{...}` value is
@@ -54,15 +66,19 @@ class UiRoute:
     layouts: tuple[str, ...] = ()  # enclosing React Router route elements, outermost first
 
 
-def tanstack_route_id(routes_dir: Path, path: Path) -> str | None:
+def tanstack_route_id(
+    routes_dir: Path, path: Path, naming: RouteNaming = DEFAULT_ROUTE_NAMING
+) -> str | None:
     """Return the route id TanStack's generator derives from *path*.
 
     ``about.tsx`` gives ``/about``, ``a.b.tsx`` and ``a/b.tsx`` give ``/a/b``,
     ``index.tsx`` gives ``/``, and ``reports/index.tsx`` or ``reports.index.tsx``
     give ``/reports/``. ``posts/route.tsx`` and ``posts.lazy.tsx`` share the
-    ``/posts`` id. Return None for the ``__root`` file, generated trees,
-    ``-``-prefixed (ignored) files and directories, files outside *routes_dir*,
-    and names this mapping does not cover, such as ``(group)`` directories.
+    ``/posts`` id. ``(group)`` directories and ``_pathless`` segments stay in
+    the id; ``script[.]js.tsx`` gives ``/script.js``. *naming* supplies the
+    configured index/route tokens and ignore prefix. Return None for the
+    ``__root`` file, generated trees, ignored files and directories, files
+    outside *routes_dir*, and names this mapping does not cover.
     """
     if path.suffix not in ROUTE_SUFFIXES:
         return None
@@ -70,16 +86,21 @@ def tanstack_route_id(routes_dir: Path, path: Path) -> str | None:
         relative = path.relative_to(routes_dir).with_suffix("")
     except ValueError:
         return None
-    parts = [segment for part in relative.parts for segment in part.split(".")]
+    if any(p.startswith((".", naming.ignore_prefix)) for p in relative.parts):
+        return None
+    if _GROUP_RE.fullmatch(relative.parts[-1]):
+        return None  # the generator rejects route files named like a group
+    parts = [segment for part in relative.parts for segment in _DOT_RE.split(part)]
     if parts[-1] == "lazy" and len(parts) > 1:
         parts = parts[:-1]
-    if parts[-1] == "route" and len(parts) > 1:
+    if parts[-1] == naming.route_token and len(parts) > 1:
         parts = parts[:-1]
     if parts == ["__root"] or parts[-1] == "gen":
         return None
-    if not all(_SEGMENT_RE.fullmatch(part) and not part.startswith("-") for part in parts):
+    if not all(_GROUP_RE.fullmatch(part) or _SEGMENT_RE.fullmatch(part) for part in parts):
         return None
-    if parts[-1] == "index":
+    parts = [re.sub(r"\[(.*?)\]", r"\1", part) for part in parts]
+    if parts[-1] == naming.index_token:
         return "/" + "/".join(parts[:-1]) + ("/" if len(parts) > 1 else "")
     return "/" + "/".join(parts)
 
@@ -105,7 +126,7 @@ def _tanstack_kind(route_id: str) -> str:
     return "page"
 
 
-def tanstack_routes(routes_dir: Path) -> list[UiRoute]:
+def tanstack_routes(routes_dir: Path, naming: RouteNaming = DEFAULT_ROUTE_NAMING) -> list[UiRoute]:
     """Return the file routes under *routes_dir* that define a route."""
     routes: list[UiRoute] = []
     for path in sorted(routes_dir.rglob("*")):
@@ -114,12 +135,12 @@ def tanstack_routes(routes_dir: Path) -> list[UiRoute]:
         relative = path.relative_to(routes_dir)
         if "node_modules" in relative.parts or ".gen." in path.name:
             continue
-        if any(part.startswith("-") for part in relative.parts):
+        if any(part.startswith((".", naming.ignore_prefix)) for part in relative.parts):
             continue
         match = _FILE_ROUTE_RE.search(path.read_text(encoding="utf-8", errors="replace"))
         if match is None:
             continue
-        route_id = tanstack_route_id(routes_dir, path) or match.group(2)
+        route_id = tanstack_route_id(routes_dir, path, naming) or match.group(2)
         if not route_id:
             continue
         routes.append(
@@ -249,12 +270,51 @@ def react_router_routes(entry: Path) -> list[UiRoute]:
     return routes
 
 
+def react_router_object_routes(source: RouteSource) -> list[UiRoute]:
+    """Return the routes of a data router's literal route objects; [] if unreadable."""
+    text = source.entry.read_text(encoding="utf-8", errors="replace")
+    try:
+        _, parsed = object_routes(text, route_array_start(text, source))
+    except RouteShapeError:
+        return []
+    routes: list[UiRoute] = []
+    for route in parsed:
+        layouts: list[str] = []
+        parent = route.parent
+        while parent is not None:
+            if parsed[parent].element:
+                layouts.insert(0, parsed[parent].element or "")
+            parent = parsed[parent].parent
+        if route.url is None:
+            continue
+        if route.index:
+            kind = "index"
+        elif route.url.endswith("*"):
+            kind = "splat"
+        else:
+            kind = "layout" if route.children is not None else "page"
+        routes.append(
+            UiRoute(
+                router="react-router",
+                path=_join("/", route.url),
+                file=source.entry,
+                kind=kind,
+                element=route.element,
+                layouts=tuple(layouts),
+            )
+        )
+    return routes
+
+
 def find_ui_routes(layout: FrontendLayout) -> list[UiRoute]:
     """Return the UI routes of the router *layout* detected; [] when unknown."""
     if layout.router == "tanstack" and layout.routes_dir is not None:
-        return tanstack_routes(layout.routes_dir)
-    if layout.router == "react-router" and layout.app_entry is not None:
-        return react_router_routes(layout.app_entry)
+        naming = layout.tanstack.naming if layout.tanstack else RouteNaming()
+        return tanstack_routes(layout.routes_dir, naming)
+    if layout.router == "react-router" and layout.route_source is not None:
+        if layout.route_source.style == "data":
+            return react_router_object_routes(layout.route_source)
+        return react_router_routes(layout.route_source.entry)
     if layout.router == "nextjs" and layout.app_dir is not None:
         pages = [r for r in parse_nextjs_routes(layout.app_dir) if r.route_type == "page"]
         return [

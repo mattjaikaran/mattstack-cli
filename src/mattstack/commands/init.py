@@ -4,12 +4,18 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import Any
 
 import questionary
 import typer
 from rich.panel import Panel
 from rich.table import Table
 
+from mattstack.commands.init_runtime import (
+    apply_runtime_overrides,
+    ask_runtime,
+    runtime_overrides,
+)
 from mattstack.config import (
     BackendFramework,
     FrontendFramework,
@@ -22,6 +28,8 @@ from mattstack.generators.backend_only import BackendOnlyGenerator
 from mattstack.generators.frontend_only import FrontendOnlyGenerator
 from mattstack.generators.fullstack import FullstackGenerator
 from mattstack.presets import get_all_presets, get_preset
+from mattstack.runtime_profiles import task_summary
+from mattstack.templates.deploy_files import unsupported_deployment_reason
 from mattstack.utils.console import console, print_error, print_info, print_success
 from mattstack.utils.git import get_git_user
 from mattstack.utils.yaml_config import load_config_file
@@ -45,6 +53,9 @@ def run_init(
     ios: bool = False,
     output_dir: Path | None = None,
     dry_run: bool = False,
+    task_backend: str | None = None,
+    realtime: bool | None = None,
+    media_storage: str | None = None,
 ) -> None:
     """Main init entry point. Routes to interactive, preset, or config-file mode."""
     if output_dir is None:
@@ -59,26 +70,34 @@ def run_init(
     if not config_file and not preset and not sys.stdin.isatty():
         print_error("Use a project name with --preset, or pass --config, without a terminal")
         raise typer.Exit(code=2)
-
+    overrides = runtime_overrides(task_backend, realtime, media_storage)
     try:
         if config_file:
-            _run_from_config(Path(config_file), output_dir, ios=ios, dry_run=dry_run)
+            _run_from_config(
+                Path(config_file), output_dir, ios=ios, dry_run=dry_run, overrides=overrides
+            )
         elif preset and name:
-            _run_from_preset(name, preset, ios, output_dir, dry_run=dry_run)
+            _run_from_preset(name, preset, ios, output_dir, dry_run=dry_run, overrides=overrides)
         else:
-            _run_interactive(output_dir, default_name=name, dry_run=dry_run)
+            _run_interactive(output_dir, default_name=name, dry_run=dry_run, overrides=overrides)
     except KeyboardInterrupt:
         console.print("\n[yellow]Cancelled.[/yellow]")
         raise typer.Exit(code=130) from None
 
 
 def _run_from_config(
-    config_path: Path, output_dir: Path, *, ios: bool = False, dry_run: bool = False
+    config_path: Path,
+    output_dir: Path,
+    *,
+    ios: bool = False,
+    dry_run: bool = False,
+    overrides: dict[str, Any] | None = None,
 ) -> None:
-    """Generate from a YAML config file."""
-    config = load_config_file(config_path, output_dir)
-    if config is None:
+    """Generate from a YAML config file; CLI runtime flags override the file."""
+    loaded = load_config_file(config_path, output_dir)
+    if loaded is None:
         raise typer.Exit(code=1)
+    config = apply_runtime_overrides(loaded, overrides or {})
     config.dry_run = dry_run
     if ios:
         if not config.is_fullstack:
@@ -95,6 +114,7 @@ def _run_from_preset(
     output_dir: Path,
     *,
     dry_run: bool = False,
+    overrides: dict[str, Any] | None = None,
 ) -> None:
     """Generate from a named preset."""
     all_presets = get_all_presets()
@@ -110,7 +130,7 @@ def _run_from_preset(
         raise typer.Exit(code=2)
     default_author, default_email = get_git_user()
 
-    config = preset.to_config(name, output_dir / name)
+    config = apply_runtime_overrides(preset.to_config(name, output_dir / name), overrides or {})
     if ios:
         if config.project_type != ProjectType.FULLSTACK:
             print_error("--ios requires a fullstack preset")
@@ -129,6 +149,7 @@ def _run_interactive(
     default_name: str | None = None,
     *,
     dry_run: bool = False,
+    overrides: dict[str, Any] | None = None,
 ) -> None:
     """Run the interactive wizard."""
     _show_welcome()
@@ -240,35 +261,26 @@ def _run_interactive(
         if include_ios is None:
             raise KeyboardInterrupt
 
-    # 7. Celery (Django only — NestJS uses Bull queues internally)
-    use_celery = True
-    if project_type in (ProjectType.FULLSTACK, ProjectType.BACKEND_ONLY):
-        if backend_framework == BackendFramework.NESTJS:
-            use_celery = False  # NestJS has Bull/Redis queues built-in
-        else:
-            use_celery = questionary.confirm(
-                "Include Celery background tasks?",
-                default=True,
-                style=STYLE,
-            ).ask()
-            if use_celery is None:
-                raise KeyboardInterrupt
+    # 7. Task backend + realtime (flags win; NestJS runs Bull inside the API)
+    runtime = ask_runtime(project_type, backend_framework, overrides or {}, questionary, STYLE)
 
     # Build config
-    config = ProjectConfig(
-        name=project_name,
-        path=output_dir / project_name,
-        project_type=project_type,
-        variant=variant,
-        frontend_framework=frontend_framework,
-        backend_framework=backend_framework,
-        include_ios=include_ios,
-        use_celery=use_celery,
-        # ProjectConfig keeps Redis for backends that need it without Celery.
-        use_redis=use_celery,
-        author_name=default_author,
-        author_email=default_email,
-    )
+    try:
+        config = ProjectConfig(
+            name=project_name,
+            path=output_dir / project_name,
+            project_type=project_type,
+            variant=variant,
+            frontend_framework=frontend_framework,
+            backend_framework=backend_framework,
+            include_ios=include_ios,
+            author_name=default_author,
+            author_email=default_email,
+            **runtime,
+        )
+    except ValueError as error:
+        print_error(str(error))
+        raise typer.Exit(code=2) from None
     config.dry_run = dry_run
 
     # 7. Summary + confirm
@@ -312,7 +324,9 @@ def _show_summary(config: ProjectConfig) -> None:
     if config.has_frontend:
         table.add_row("Frontend", config.frontend_framework.value)
     if config.has_backend:
-        table.add_row("Celery", "yes" if config.use_celery else "no")
+        table.add_row("Tasks", task_summary(config))
+        table.add_row("Realtime", "centrifugo (profile: realtime)" if config.use_realtime else "no")
+        table.add_row("Media storage", config.media_storage.value)
         table.add_row("Redis", "yes" if config.use_redis else "no")
     table.add_row("iOS", "yes" if config.include_ios else "no")
     table.add_row("Path", str(config.path))
@@ -326,6 +340,10 @@ def _generate(config: ProjectConfig) -> bool:
     if config.path.exists() and not config.dry_run:
         print_error(f"Directory already exists: {config.path}")
         raise typer.Exit(code=1)
+    reason = unsupported_deployment_reason(config)
+    if reason:
+        print_error(reason)
+        raise typer.Exit(code=2)
 
     generator: FullstackGenerator | BackendOnlyGenerator | FrontendOnlyGenerator
     if config.project_type == ProjectType.FULLSTACK:
@@ -368,6 +386,10 @@ def _print_next_steps(config: ProjectConfig) -> None:
             BackendFramework.DJANGO_MATT,
         }:
             console.print("  [cyan]make backend-superuser[/cyan]")
+        if config.task_backend.value != "none":
+            console.print(f"  [cyan]make backend-worker[/cyan]  # {task_summary(config)}")
+        if config.use_realtime:
+            console.print("  [cyan]make up-realtime[/cyan]  # Centrifugo; see CLAUDE.md")
     console.print("  [cyan]mattstack dev --mode host[/cyan]")
     if config.has_backend:
         console.print(f"  API: http://localhost:{config.backend_api_port}{config.api_prefix}")

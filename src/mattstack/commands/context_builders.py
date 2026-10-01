@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,14 @@ from mattstack.config import BackendFramework
 from mattstack.parsers.frontend_layout import FrontendLayout, detect_frontend_layout
 from mattstack.parsers.frontend_routes import find_ui_routes
 from mattstack.project import ResolvedProject, resolve_project
+from mattstack.runtime_profiles import (
+    CENTRIFUGO_PORT,
+    CENTRIFUGO_SERVICE,
+    REALTIME_PROFILE,
+    task_backend_extra,
+    task_processes,
+    task_profile,
+)
 from mattstack.utils.package_manager import detect_package_manager
 from mattstack.utils.process import command_available, get_command_version
 
@@ -43,13 +52,37 @@ def _detect_backend_stack(project: ResolvedProject) -> dict[str, Any]:
     else:
         info = {"language": "python", "package_manager": "uv"}
     info["framework"] = framework.value if framework else None
-    if project.config.use_celery:
-        info["task_queue"] = "celery"
+    info.update(_runtime_stack(project))
     if project.settings_module:
         info["settings_module"] = project.settings_module
     info["api_prefix"] = project.api_prefix
     info["port"] = project.api_port
     return info
+
+
+def _runtime_stack(project: ResolvedProject) -> dict[str, Any]:
+    """Report the task queue and realtime runtime so agents never assume Celery."""
+    config = project.config
+    runtime: dict[str, Any] = {
+        "task_backend": config.task_backend.value,
+        "task_processes": [
+            {"service": process.service, "role": process.role, "command": process.command}
+            for process in task_processes(config, production=False)
+        ],
+        "task_profile": task_profile(config),
+        "task_extra": task_backend_extra(config),
+        "realtime": None,
+        "media_storage": config.media_storage.value,
+    }
+    if config.use_realtime:
+        port = project.env.get("CENTRIFUGO_PORT") or str(CENTRIFUGO_PORT)
+        runtime["realtime"] = {
+            "service": CENTRIFUGO_SERVICE,
+            "profile": REALTIME_PROFILE,
+            "url": f"http://localhost:{port}",
+            "health": f"http://localhost:{port}/health",
+        }
+    return runtime
 
 
 _ROUTER_NAMES = {"tanstack": "tanstack-router", "react-router": "react-router", "nextjs": "nextjs"}
@@ -94,6 +127,10 @@ def _detect_frontend_stack(project: ResolvedProject, layout: FrontendLayout) -> 
         info["pages_dir"] = _relative(layout.pages_dir, root)
     if "tailwindcss" in deps or "@tailwindcss/vite" in deps:
         info["styling"] = "tailwind"
+        major = re.search(r"\d+", str(deps.get("tailwindcss", "")))
+        info["styling_version"] = int(major.group()) if major else None
+    info["transport_camel_case_keys"] = layout.camel_case_keys
+    info["alias_root"] = _relative(layout.alias_root, root)
     info["port"] = project.frontend_port
     scripts = pkg.get("scripts", {})
     if scripts:
