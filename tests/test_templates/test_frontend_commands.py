@@ -66,18 +66,10 @@ def test_makefile_emits_the_resolved_command(tmp_path: Path) -> None:
     assert "bun run type-check" not in starter
 
 
-def test_makefile_nextjs_omits_the_test_recipe(tmp_path: Path) -> None:
-    """Do not emit a test command the boilerplate cannot run."""
-    makefile = generate_makefile(_config(tmp_path, FrontendFramework.NEXTJS))
-    assert "make test" not in makefile.lower() or "No frontend test script" in makefile
-    assert "bun run test" not in makefile
-
-
-def test_makefile_ships_a_gauntlet_target(tmp_path: Path) -> None:
-    """The scaffold must expose the verification gate locally."""
+def test_makefile_ships_a_read_only_gauntlet_target(tmp_path: Path) -> None:
+    """The local gate must not write tasks/todo.md, matching the CI job."""
     makefile = generate_makefile(_config(tmp_path, FrontendFramework.REACT_VITE))
-    assert "gauntlet: ## Run the verification gate" in makefile
-    assert "mattstack audit" in makefile
+    assert "\tmattstack audit --no-todo\n" in makefile
 
 
 def test_makefile_sync_types_uses_the_real_command(tmp_path: Path) -> None:

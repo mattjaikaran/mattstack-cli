@@ -42,6 +42,9 @@ _FRONTEND_GLOBS: list[str] = [
     ".env*",
     "env.example",
     "env.monorepo.example",
+    # Parallel bundler configs drift from the real one, which the generator
+    # patches in place; `bun run dev` never loads these.
+    "*.config.monorepo.*",
     "CLAUDE.md",
     ".gitignore",
     ".dockerignore",

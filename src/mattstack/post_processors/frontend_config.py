@@ -1,62 +1,79 @@
-"""Post-processor to configure frontend for monorepo integration."""
+"""Configure the cloned frontend for the generated project.
+
+Patch the boilerplate's own bundler config in place. Do not write a parallel
+``*.monorepo.ts`` file: ``bun run dev`` never loads it, and a hand-written copy
+drops the TanStack Router plugin and the ``@/`` aliases the app imports.
+"""
 
 from __future__ import annotations
 
+import json
+import re
+from pathlib import Path
+
 from mattstack.config import FrontendFramework, ProjectConfig
-from mattstack.utils.console import print_info
+from mattstack.post_processors.tanstack_router import align_tanstack_router
+from mattstack.templates.frontend_runtime import (
+    FRONTEND_PORT,
+    RSBUILD_FRAMEWORKS,
+    VITE_FRAMEWORKS,
+    api_prefix,
+    browser_env,
+    proxy_paths,
+    render_env_file,
+)
+from mattstack.utils.console import print_info, print_warning
+
+_PROXY_CONST = "apiProxyTarget"
+_CONFIG_SUFFIXES = (".ts", ".mts", ".js", ".mjs")
 
 
 def setup_frontend_monorepo(config: ProjectConfig) -> None:
-    """Configure frontend .env and proxy config for monorepo integration."""
-    if not config.has_frontend or not config.has_backend:
+    """Wire the frontend dev server, ports, and env for the generated project.
+
+    Runs for frontend-only projects too: the port and the TanStack Router
+    alignment do not depend on a backend. The proxy and env need one.
+    """
+    if not config.has_frontend or not config.frontend_dir.is_dir():
         return
+    _configure_react_doctor(config)
+
+    if config.frontend_framework == FrontendFramework.REACT_VITE:
+        align_tanstack_router(config)
 
     if config.is_nextjs:
-        _setup_nextjs_monorepo(config)
-    elif config.frontend_framework in (
-        FrontendFramework.REACT_RSBUILD,
-        FrontendFramework.REACT_RSBUILD_KIBO,
-    ):
-        _setup_rsbuild_monorepo(config)
-    else:
-        _setup_vite_monorepo(config)
+        _inline_next_public_env(config)
+        if config.has_backend:
+            _setup_nextjs(config)
+        return
+
+    _patch_dev_server(config)
+    if config.has_backend:
+        (config.frontend_dir / ".env").write_text(render_env_file(browser_env(config)))
+        print_info("Configured frontend .env for the API proxy")
+        if config.frontend_framework in VITE_FRAMEWORKS:
+            _seed_generated_types(config)
 
 
-def _api_base_url(config: ProjectConfig) -> str:
-    return f"http://localhost:{config.backend_api_port}/api/v1"
-
-
-def _backend_origin(config: ProjectConfig) -> str:
-    return f"http://localhost:{config.backend_api_port}"
-
-
-def _setup_vite_monorepo(config: ProjectConfig) -> None:
-    api_url = _api_base_url(config)
-    if config.is_nestjs_backend:
-        env_content = f"""\
-VITE_API_BASE_URL={api_url}
-VITE_AUTH_TOKEN_KEY=access_token
-VITE_REFRESH_TOKEN_KEY=refresh_token
-VITE_ENABLE_MOCK_API=false
-"""
-    else:
-        env_content = f"""\
-VITE_MODE=django-spa
-VITE_API_BASE_URL={api_url}
-VITE_AUTH_TOKEN_KEY=access_token
-VITE_REFRESH_TOKEN_KEY=refresh_token
-VITE_ENABLE_MOCK_API=false
-VITE_DJANGO_CSRF_TOKEN_NAME=csrftoken
-VITE_DJANGO_STATIC_URL=/static/
-VITE_DJANGO_MEDIA_URL=/media/
-VITE_DJANGO_API_PREFIX=/api/v1
-"""
-
-    (config.frontend_dir / ".env").write_text(env_content)
-    (config.frontend_dir / ".env.monorepo").write_text(env_content)
-    print_info("Configured frontend for monorepo mode")
-    _create_vite_monorepo_config(config)
-    _seed_generated_types(config)
+def _configure_react_doctor(config: ProjectConfig) -> None:
+    """Replace upstream's network-fetching doctor script with a local command."""
+    manifest = config.frontend_dir / "package.json"
+    if not manifest.is_file():
+        return
+    package = json.loads(manifest.read_text())
+    scripts = package.get("scripts", {})
+    doctor = scripts.get("doctor", "")
+    if not isinstance(doctor, str) or "react-doctor" not in doctor:
+        return
+    for section in ("dependencies", "devDependencies"):
+        if "react-doctor" in package.get(section, {}):
+            package[section]["react-doctor"] = "0.9.14"
+    scripts["doctor"] = (
+        "./node_modules/.bin/react-doctor . --yes --json "
+        "--no-telemetry --no-supply-chain --blocking error"
+    )
+    manifest.write_text(json.dumps(package, indent=2) + "\n")
+    print_info("Configured a local, privacy-aware React Doctor script; install the tool to opt in")
 
 
 def _seed_generated_types(config: ProjectConfig) -> None:
@@ -80,184 +97,244 @@ def _seed_generated_types(config: ProjectConfig) -> None:
         print_info("Seeded src/types/generated.ts for `mattstack sync types`")
 
 
-def _setup_nextjs_monorepo(config: ProjectConfig) -> None:
-    api_url = _api_base_url(config)
-    env_content = f"""\
-NEXT_PUBLIC_API_BASE_URL={api_url}
-NEXT_PUBLIC_AUTH_TOKEN_KEY=access_token
-NEXT_PUBLIC_REFRESH_TOKEN_KEY=refresh_token
-"""
-    (config.frontend_dir / ".env.local").write_text(env_content)
-    print_info("Configured Next.js frontend for monorepo mode")
-    _create_nextjs_monorepo_config(config)
+# --- Next.js -----------------------------------------------------------------
 
 
-def _create_vite_monorepo_config(config: ProjectConfig) -> None:
-    origin = _backend_origin(config)
-    proxy_entries = f"""\
-      "/api": {{
-        target: "{origin}",
-        changeOrigin: true,
-      }},"""
+def _setup_nextjs(config: ProjectConfig) -> None:
+    """Point nextjs-starter's own rewrite at the backend's real API prefix."""
+    env = browser_env(config)
+    # next.config.ts reads this when it builds the rewrites. Compose overrides
+    # it with the api-dev service; the host default is the published port.
+    env["INTERNAL_API_URL"] = f"http://localhost:{config.backend_api_port}"
+    (config.frontend_dir / ".env.local").write_text(render_env_file(env))
 
-    if config.is_django_backend:
-        proxy_entries += f"""
-      "/static": {{
-        target: "{origin}",
-        changeOrigin: true,
-      }},
-      "/media": {{
-        target: "{origin}",
-        changeOrigin: true,
-      }},
-      "/admin": {{
-        target: "{origin}",
-        changeOrigin: true,
-      }},"""
-
-    content = f"""\
-import {{ defineConfig }} from "vite";
-import react from "@vitejs/plugin-react";
-import path from "path";
-
-export default defineConfig({{
-  plugins: [react()],
-  resolve: {{
-    alias: {{
-      "@": path.resolve(__dirname, "./src"),
-    }},
-  }},
-  server: {{
-    port: 3000,
-    proxy: {{
-{proxy_entries}
-    }},
-  }},
-  build: {{
-    outDir: "dist",
-    rollupOptions: {{
-      output: {{
-        assetFileNames: "static/css/[name]-[hash][extname]",
-        chunkFileNames: "static/js/[name]-[hash].js",
-        entryFileNames: "static/js/[name]-[hash].js",
-      }},
-    }},
-  }},
-}});
-"""
-    (config.frontend_dir / "vite.config.monorepo.ts").write_text(content)
-    print_info("Created vite.config.monorepo.ts with API proxy")
+    next_config = _find_config(config.frontend_dir, "next.config")
+    if next_config is None:
+        print_warning("No next.config found; add an API rewrite to reach the backend")
+        return
+    text = next_config.read_text()
+    if "INTERNAL_API_URL" not in text:
+        print_warning(f"{next_config.name} does not read INTERNAL_API_URL; check its rewrites")
+        return
+    prefix = api_prefix(config)
+    patched = text.replace("/api/v1/:path*", f"{prefix}/:path*")
+    if patched != text:
+        next_config.write_text(patched)
+    print_info(f"Configured Next.js rewrites for {prefix}")
 
 
-def _create_nextjs_monorepo_config(config: ProjectConfig) -> None:
-    origin = _backend_origin(config)
-    rewrites = f"""\
-      {{
-        source: "/api/v1/:path*",
-        destination: "{origin}/api/v1/:path*",
-      }},"""
-
-    if config.is_django_backend:
-        rewrites += f"""
-      {{
-        source: "/admin/:path*",
-        destination: "{origin}/admin/:path*",
-      }},
-      {{
-        source: "/static/:path*",
-        destination: "{origin}/static/:path*",
-      }},"""
-
-    content = f"""\
-import type {{ NextConfig }} from "next";
-
-const nextConfig: NextConfig = {{
-  async rewrites() {{
-    return [
-{rewrites}
-    ];
-  }},
-}};
-
-export default nextConfig;
-"""
-    (config.frontend_dir / "next.config.monorepo.ts").write_text(content)
-    print_info("Created next.config.monorepo.ts with API rewrites")
+_NEXT_PUBLIC_KEY = re.compile(r"""['"](NEXT_PUBLIC_[A-Z0-9_]+)['"]""")
+_NEXT_CONFIG_FILES = ("config/index.ts", "src/config/index.ts")
 
 
-def _setup_rsbuild_monorepo(config: ProjectConfig) -> None:
-    api_url = _api_base_url(config)
-    if config.is_nestjs_backend:
-        env_content = f"""\
-PUBLIC_API_BASE_URL={api_url}
-PUBLIC_AUTH_TOKEN_KEY=access_token
-PUBLIC_REFRESH_TOKEN_KEY=refresh_token
-PUBLIC_ENABLE_MOCK_API=false
-"""
-    else:
-        env_content = f"""\
-PUBLIC_API_BASE_URL={api_url}
-PUBLIC_AUTH_TOKEN_KEY=access_token
-PUBLIC_REFRESH_TOKEN_KEY=refresh_token
-PUBLIC_ENABLE_MOCK_API=false
-PUBLIC_DJANGO_CSRF_TOKEN_NAME=csrftoken
-PUBLIC_DJANGO_STATIC_URL=/static/
-PUBLIC_DJANGO_MEDIA_URL=/media/
-PUBLIC_DJANGO_API_PREFIX=/api/v1
-"""
+def _inline_next_public_env(config: ProjectConfig) -> None:
+    """Replace ``process.env[key]`` with literal ``process.env.NEXT_PUBLIC_*`` reads.
 
-    (config.frontend_dir / ".env").write_text(env_content)
-    (config.frontend_dir / ".env.monorepo").write_text(env_content)
-    print_info("Configured Rsbuild frontend for monorepo mode")
-    _create_rsbuild_monorepo_config(config)
+    Next.js inlines only literal property accesses into browser bundles. The
+    starter's ``getEnvVar`` reads ``process.env[key]``, so in the browser every
+    NEXT_PUBLIC value is undefined and the localhost fallback wins. A static
+    map keeps the helper and gives the compiler the literal references.
+    """
+    for relative in _NEXT_CONFIG_FILES:
+        path = config.frontend_dir / relative
+        if not path.is_file():
+            continue
+        text = path.read_text()
+        keys = sorted(set(_NEXT_PUBLIC_KEY.findall(text)))
+        if "process.env[key]" not in text or not keys:
+            continue
+        entries = "".join(f"  {key}: process.env.{key},\n" for key in keys)
+        block = (
+            "// Literal reads: Next.js does not inline dynamic process.env lookups.\n"
+            f"const publicEnv: Record<string, string | undefined> = {{\n{entries}}};\n\n"
+        )
+        anchor = re.search(r"^(export )?const getEnvVar\b", text, re.MULTILINE)
+        at = anchor.start() if anchor else 0
+        text = text[:at] + block + text[at:]
+        path.write_text(text.replace("process.env[key]", "publicEnv[key]"))
+        print_info(f"Inlined {len(keys)} NEXT_PUBLIC variable(s) in {relative}")
 
 
-def _create_rsbuild_monorepo_config(config: ProjectConfig) -> None:
-    origin = _backend_origin(config)
-    proxy_entries = f"""\
-      "/api": {{
-        target: "{origin}",
-        changeOrigin: true,
-      }},"""
+# --- Vite and Rsbuild dev server ----------------------------------------------
 
-    if config.is_django_backend:
-        proxy_entries += f"""
-      "/static": {{
-        target: "{origin}",
-        changeOrigin: true,
-      }},
-      "/media": {{
-        target: "{origin}",
-        changeOrigin: true,
-      }},
-      "/admin": {{
-        target: "{origin}",
-        changeOrigin: true,
-      }},"""
 
-    content = f"""\
-import {{ defineConfig }} from "@rsbuild/core";
-import {{ pluginReact }} from "@rsbuild/plugin-react";
+def _patch_dev_server(config: ProjectConfig) -> None:
+    """Set the dev-server port and add the API proxy to upstream's config."""
+    stem = "rsbuild.config" if config.frontend_framework in RSBUILD_FRAMEWORKS else "vite.config"
+    path = _find_config(config.frontend_dir, stem)
+    if path is None:
+        print_warning(f"No {stem} file found; the dev server has no API proxy")
+        return
+    try:
+        patched = _patch_config_text(path.read_text(), config)
+    except ValueError as e:
+        print_warning(f"Could not patch {path.name}: {e}; the dev server has no API proxy")
+        return
+    path.write_text(patched)
+    proxy = ", API proxy" if config.has_backend else ""
+    print_info(f"Configured {path.name}: port {FRONTEND_PORT}{proxy}")
 
-export default defineConfig({{
-  plugins: [pluginReact()],
-  source: {{
-    entry: {{
-      index: "./src/main.tsx",
-    }},
-  }},
-  resolve: {{
-    alias: {{
-      "@": "./src",
-    }},
-  }},
-  server: {{
-    port: 3000,
-    proxy: {{
-{proxy_entries}
-    }},
-  }},
-}});
-"""
-    (config.frontend_dir / "rsbuild.config.monorepo.ts").write_text(content)
-    print_info("Created rsbuild.config.monorepo.ts with API proxy")
+
+def _find_config(frontend_dir: Path, stem: str) -> Path | None:
+    for suffix in _CONFIG_SUFFIXES:
+        candidate = frontend_dir / f"{stem}{suffix}"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _patch_config_text(text: str, config: ProjectConfig) -> str:
+    """Return the config text with ``server.port`` and ``server.proxy`` set.
+
+    Every other key, including plugins and aliases, is left as upstream wrote
+    it. Running the patch twice gives the same result.
+    """
+    match = re.search(r"defineConfig\(\s*\{", text)
+    if match is None:
+        raise ValueError("no `defineConfig({` object")
+    root_open = match.end() - 1
+
+    server = _top_level_key(text, root_open, "server")
+    if server is None:
+        insert_at = root_open + 1
+        text = f"{text[:insert_at]}\n  server: {{\n  }},{text[insert_at:]}"
+        server = _top_level_key(text, root_open, "server")
+    if server is None or text[server[1]] != "{":
+        raise ValueError("`server` is not an object literal")
+    key_start, server_open = server
+    line_start = text.rfind("\n", 0, key_start) + 1
+    inner = text[line_start:key_start] + "  "
+
+    for key in ("port", "proxy"):
+        text = _remove_entry(text, server_open, key)
+
+    quote = "'" if text.count("'") >= text.count('"') else '"'
+    entries = [f"{inner}port: Number(process.env.FRONTEND_PORT ?? {FRONTEND_PORT}),"]
+    if config.has_backend:
+        entries.append(f"{inner}proxy: {{")
+        entries.extend(
+            f"{inner}  {quote}{path}{quote}: {{ target: {_PROXY_CONST} }},"
+            for path in proxy_paths(config)
+        )
+        entries.append(f"{inner}}},")
+    text = f"{text[: server_open + 1]}\n{chr(10).join(entries)}{text[server_open + 1 :]}"
+    if config.has_backend and f"const {_PROXY_CONST}" not in text:
+        text = _insert_after_imports(text, _proxy_const(text, config))
+    return text
+
+
+def _proxy_const(text: str, config: ProjectConfig) -> str:
+    semi = ";" if re.search(r"^import .*;\s*$", text, re.MULTILINE) else ""
+    return (
+        "\n// Compose sets API_PROXY_TARGET to the api-dev service. Host runs reach\n"
+        "// the backend on API_PORT, which `make frontend-dev` loads from the root .env.\n"
+        f"const {_PROXY_CONST} =\n"
+        "  process.env.API_PROXY_TARGET ??\n"
+        f"  `http://localhost:${{process.env.API_PORT ?? {config.backend_api_port}}}`{semi}\n"
+    )
+
+
+def _insert_after_imports(text: str, block: str) -> str:
+    imports = list(
+        re.finditer(
+            r"^import\b[^;]*?\bfrom\s*['\"][^'\"]+['\"];?[ \t]*$"
+            r"|^import\s*['\"][^'\"]+['\"];?[ \t]*$",
+            text,
+            re.MULTILINE,
+        )
+    )
+    at = imports[-1].end() + 1 if imports else 0
+    return text[:at] + block + text[at:]
+
+
+# --- Minimal TypeScript object scanning ---------------------------------------
+
+
+def _skip_string(text: str, i: int) -> int:
+    quote = text[i]
+    i += 1
+    while i < len(text):
+        if text[i] == "\\":
+            i += 2
+            continue
+        if text[i] == quote:
+            return i + 1
+        i += 1
+    return i
+
+
+def _skip_comment(text: str, i: int) -> int | None:
+    if text.startswith("//", i):
+        end = text.find("\n", i)
+        return len(text) if end == -1 else end
+    if text.startswith("/*", i):
+        end = text.find("*/", i + 2)
+        return len(text) if end == -1 else end + 2
+    return None
+
+
+def _top_level_key(text: str, obj_open: int, key: str) -> tuple[int, int] | None:
+    """Return ``(key_start, value_start)`` for ``key`` directly inside the object."""
+    pattern = re.compile(rf"{key}\s*:\s*")
+    depth = 0
+    i = obj_open
+    while i < len(text):
+        ch = text[i]
+        if ch in "'\"`":
+            i = _skip_string(text, i)
+            continue
+        skipped = _skip_comment(text, i)
+        if skipped is not None:
+            i = skipped
+            continue
+        if ch in "{[(":
+            depth += 1
+        elif ch in "}])":
+            depth -= 1
+            if depth == 0:
+                return None
+        elif depth == 1 and not (text[i - 1].isalnum() or text[i - 1] in "_$"):
+            match = pattern.match(text, i)
+            if match:
+                return i, match.end()
+        i += 1
+    raise ValueError("unbalanced braces")
+
+
+def _value_end(text: str, start: int) -> int:
+    """Return the index just past a value and its trailing comma, if any."""
+    depth = 0
+    i = start
+    while i < len(text):
+        ch = text[i]
+        if ch in "'\"`":
+            i = _skip_string(text, i)
+            continue
+        skipped = _skip_comment(text, i)
+        if skipped is not None:
+            i = skipped
+            continue
+        if ch in "{[(":
+            depth += 1
+        elif ch in "}])":
+            if depth == 0:
+                return i
+            depth -= 1
+        elif ch == "," and depth == 0:
+            return i + 1
+        i += 1
+    raise ValueError("unterminated value")
+
+
+def _remove_entry(text: str, obj_open: int, key: str) -> str:
+    while (found := _top_level_key(text, obj_open, key)) is not None:
+        key_start, value_start = found
+        end = _value_end(text, value_start)
+        line_start = text.rfind("\n", 0, key_start) + 1
+        if text[line_start:key_start].strip() == "":
+            key_start = line_start
+            newline = text.find("\n", end)
+            if newline != -1 and text[end:newline].strip() == "":
+                end = newline + 1
+        text = text[:key_start] + text[end:]
+    return text

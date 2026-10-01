@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from mattstack.config import ProjectConfig, ProjectType, Variant
+from mattstack.config import FrontendFramework, ProjectConfig, ProjectType, Variant
 from mattstack.post_processors.b2b import print_b2b_instructions
 from mattstack.post_processors.consolidate import consolidate_backend, consolidate_frontend
 from mattstack.post_processors.customizer import customize_backend, customize_frontend
@@ -25,41 +25,177 @@ def _make_config(tmp_path: Path, **kwargs) -> ProjectConfig:
 
 # --- setup_frontend_monorepo ---
 
+_UPSTREAM_VITE_CONFIG = """\
+import { tanstackRouter } from '@tanstack/router-plugin/vite';
+import react from '@vitejs/plugin-react';
+import path from 'node:path';
+import { defineConfig } from 'vite';
 
-def test_setup_frontend_monorepo_creates_env(tmp_path: Path) -> None:
+export default defineConfig({
+  plugins: [
+    tanstackRouter({
+      target: 'react',
+      autoCodeSplitting: true,
+    }),
+    react(),
+  ],
+  resolve: {
+    alias: {
+      '@': path.resolve(import.meta.dirname, './src'),
+      '@/components': path.resolve(import.meta.dirname, './src/components'),
+    },
+  },
+  server: {
+    port: 5173,
+    host: true,
+  },
+});
+"""
+
+_UPSTREAM_RSBUILD_CONFIG = """\
+import { defineConfig } from '@rsbuild/core'
+import { pluginReact } from '@rsbuild/plugin-react'
+import { TanStackRouterRspack } from '@tanstack/router-plugin/rspack'
+
+export default defineConfig({
+  plugins: [pluginReact()],
+  resolve: {
+    alias: {
+      '@': './src',
+    },
+  },
+  tools: {
+    rspack: {
+      plugins: [TanStackRouterRspack()],
+    },
+  },
+})
+"""
+
+
+def _frontend(config: ProjectConfig, files: dict[str, str]) -> None:
+    for name, content in files.items():
+        path = config.frontend_dir / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+
+
+def test_frontend_env_points_the_browser_at_the_relative_api_prefix(tmp_path: Path) -> None:
+    """An absolute localhost URL bypasses the proxy and breaks in the container."""
     config = _make_config(tmp_path)
     config.frontend_dir.mkdir(parents=True)
     setup_frontend_monorepo(config)
 
-    env_file = config.frontend_dir / ".env"
-    assert env_file.exists()
-    content = env_file.read_text()
+    content = (config.frontend_dir / ".env").read_text()
     assert "VITE_MODE=django-spa" in content
-    assert "VITE_API_BASE_URL=http://localhost:8000/api/v1" in content
+    assert f"VITE_API_BASE_URL={config.api_prefix}\n" in content
 
 
-def test_setup_frontend_monorepo_creates_env_monorepo(tmp_path: Path) -> None:
-    config = _make_config(tmp_path)
-    config.frontend_dir.mkdir(parents=True)
+def test_rsbuild_env_uses_the_variable_the_app_reads(tmp_path: Path) -> None:
+    """The Rsbuild boilerplates read PUBLIC_API_URL, not PUBLIC_API_BASE_URL."""
+    config = _make_config(tmp_path, frontend_framework=FrontendFramework.REACT_RSBUILD)
+    _frontend(config, {"rsbuild.config.ts": _UPSTREAM_RSBUILD_CONFIG})
     setup_frontend_monorepo(config)
 
-    env_mono = config.frontend_dir / ".env.monorepo"
-    assert env_mono.exists()
-    content = env_mono.read_text()
-    assert "VITE_MODE=django-spa" in content
+    assert f"PUBLIC_API_URL={config.api_prefix}\n" in (config.frontend_dir / ".env").read_text()
 
 
-def test_setup_frontend_monorepo_creates_vite_config(tmp_path: Path) -> None:
+def test_vite_proxy_is_added_to_the_config_dev_runs(tmp_path: Path) -> None:
+    """Patch upstream's config in place; plugins and aliases must survive."""
     config = _make_config(tmp_path)
-    config.frontend_dir.mkdir(parents=True)
+    _frontend(config, {"vite.config.ts": _UPSTREAM_VITE_CONFIG})
     setup_frontend_monorepo(config)
 
-    vite_config = config.frontend_dir / "vite.config.monorepo.ts"
-    assert vite_config.exists()
-    content = vite_config.read_text()
-    assert "defineConfig" in content
-    assert "proxy" in content
-    assert '"http://localhost:8000"' in content
+    content = (config.frontend_dir / "vite.config.ts").read_text()
+    assert "tanstackRouter({" in content
+    assert "'@/components': path.resolve(import.meta.dirname" in content
+    assert "host: true" in content
+    assert f"'{config.api_prefix}': {{ target: apiProxyTarget }}" in content
+    assert "process.env.API_PROXY_TARGET" in content
+    # Compose publishes ${FRONTEND_PORT:-3000}:3000, so 5173 is unreachable.
+    assert "5173" not in content
+    assert "FRONTEND_PORT ?? 3000" in content
+    assert not list(config.frontend_dir.glob("*.monorepo.*"))
+
+
+def test_dev_server_patch_is_idempotent(tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    _frontend(config, {"vite.config.ts": _UPSTREAM_VITE_CONFIG})
+    setup_frontend_monorepo(config)
+    once = (config.frontend_dir / "vite.config.ts").read_text()
+    setup_frontend_monorepo(config)
+    assert (config.frontend_dir / "vite.config.ts").read_text() == once
+
+
+def test_rsbuild_proxy_keeps_its_own_static_assets(tmp_path: Path) -> None:
+    """Rsbuild serves bundles from /static/js; proxying /static breaks the app."""
+    config = _make_config(tmp_path, frontend_framework=FrontendFramework.REACT_RSBUILD)
+    _frontend(config, {"rsbuild.config.ts": _UPSTREAM_RSBUILD_CONFIG})
+    setup_frontend_monorepo(config)
+
+    content = (config.frontend_dir / "rsbuild.config.ts").read_text()
+    assert "plugins: [TanStackRouterRspack()]" in content
+    assert f"'{config.api_prefix}': {{ target: apiProxyTarget }}" in content
+    assert "'/static/admin'" in content
+    assert "'/static':" not in content
+
+
+def test_tanstack_router_is_aligned_and_route_casts_removed(tmp_path: Path) -> None:
+    """router-plugin 1.58.4 cannot load, and the newer router rejects `as any` ids."""
+    config = _make_config(tmp_path)
+    package = {
+        "dependencies": {
+            "@tanstack/react-router": "1.58.3",
+            "@tanstack/router-devtools": "1.58.3",
+        },
+        "devDependencies": {"@tanstack/router-plugin": "1.58.4", "vite": "5.4.8"},
+    }
+    _frontend(
+        config,
+        {
+            "package.json": json.dumps(package),
+            "src/routes/dashboard/index.tsx": "createFileRoute('/dashboard' as any)({})\n",
+            "src/routes/profile.tsx": "<Link to={'/settings' as any}>\n",
+            "src/routes/__root.tsx": (
+                "import { TanStackRouterDevtools } from '@tanstack/router-devtools';\n"
+            ),
+        },
+    )
+    setup_frontend_monorepo(config)
+
+    data = json.loads((config.frontend_dir / "package.json").read_text())
+    assert data["dependencies"]["@tanstack/react-router"] == "1.169.2"
+    # The deprecated package has no release that fits the aligned router.
+    assert "@tanstack/router-devtools" not in data["dependencies"]
+    assert data["dependencies"]["@tanstack/react-router-devtools"] == "1.166.13"
+    assert data["devDependencies"]["@tanstack/router-plugin"] == "1.167.34"
+    assert data["devDependencies"]["vite"] == "5.4.8"
+    routes = config.frontend_dir / "src" / "routes"
+    assert (routes / "dashboard/index.tsx").read_text() == "createFileRoute('/dashboard/')({})\n"
+    assert (routes / "profile.tsx").read_text() == '<Link to="/settings">\n'
+    assert (routes / "__root.tsx").read_text() == (
+        "import { TanStackRouterDevtools } from '@tanstack/react-router-devtools';\n"
+    )
+
+
+def test_tanstack_router_alignment_never_downgrades(tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    package = {"dependencies": {"@tanstack/react-router": "1.170.0"}}
+    _frontend(config, {"package.json": json.dumps(package)})
+    setup_frontend_monorepo(config)
+
+    data = json.loads((config.frontend_dir / "package.json").read_text())
+    assert data["dependencies"]["@tanstack/react-router"] == "1.170.0"
+
+
+def test_react_router_starter_is_left_on_react_router(tmp_path: Path) -> None:
+    """react-vite-starter uses react-router-dom by design."""
+    config = _make_config(tmp_path, frontend_framework=FrontendFramework.REACT_VITE_STARTER)
+    package = json.dumps({"dependencies": {"react-router-dom": "7.1.0"}})
+    _frontend(config, {"package.json": package})
+    setup_frontend_monorepo(config)
+
+    assert (config.frontend_dir / "package.json").read_text() == package
 
 
 def test_setup_frontend_monorepo_noop_for_backend_only(tmp_path: Path) -> None:
@@ -72,14 +208,15 @@ def test_setup_frontend_monorepo_noop_for_backend_only(tmp_path: Path) -> None:
     assert not env_file.exists()
 
 
-def test_setup_frontend_monorepo_noop_for_frontend_only(tmp_path: Path) -> None:
+def test_frontend_only_sets_the_port_without_a_proxy(tmp_path: Path) -> None:
     config = _make_config(tmp_path, project_type=ProjectType.FRONTEND_ONLY)
-    config.path.mkdir(parents=True)
+    _frontend(config, {"vite.config.ts": _UPSTREAM_VITE_CONFIG})
     setup_frontend_monorepo(config)
 
-    # Should not create any files since there's no backend
-    env_file = config.frontend_dir / ".env"
-    assert not env_file.exists()
+    content = (config.frontend_dir / "vite.config.ts").read_text()
+    assert "FRONTEND_PORT ?? 3000" in content
+    assert "proxy" not in content
+    assert not (config.frontend_dir / ".env").exists()
 
 
 # --- print_b2b_instructions ---
