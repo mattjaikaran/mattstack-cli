@@ -87,8 +87,10 @@ def _configure_react_doctor(config: ProjectConfig) -> None:
     doctor = scripts.get("doctor", "")
     if not isinstance(doctor, str) or "react-doctor" not in doctor:
         return
+    changed_dependency = False
     for section in ("dependencies", "devDependencies"):
         if "react-doctor" in package.get(section, {}):
+            changed_dependency |= package[section]["react-doctor"] != "0.9.14"
             package[section]["react-doctor"] = "0.9.14"
     scripts["doctor"] = (
         "./node_modules/.bin/react-doctor . --yes --json "
@@ -96,6 +98,11 @@ def _configure_react_doctor(config: ProjectConfig) -> None:
     )
     manifest.write_text(json.dumps(package, indent=2) + "\n")
     print_info("Configured a local, privacy-aware React Doctor script; install the tool to opt in")
+    if changed_dependency:
+        print_info(
+            "Updated frontend/package.json: react-doctor to 0.9.14. Run `make setup` "
+            "to update frontend/bun.lock before you use frozen dependency installs."
+        )
 
 
 def _seed_generated_types(config: ProjectConfig) -> None:

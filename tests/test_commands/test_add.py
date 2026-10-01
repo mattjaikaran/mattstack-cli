@@ -171,7 +171,8 @@ class TestRunAdd:
         meta = _stack_metadata(proj)
         assert meta["variant"] == "b2b"
         assert meta["backend"]["framework"] == "django-matt"
-        assert meta["backend"]["celery"] is False
+        assert meta["backend"]["task_backend"] == "none"  # legacy celery: false translated
+        assert "celery" not in meta["backend"]
         assert yaml.safe_load((proj / "mattstack.yml").read_text())["scope"] == {"enforce": False}
 
     def test_unknown_backend_refuses_without_writing(

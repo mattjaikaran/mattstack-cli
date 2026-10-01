@@ -11,6 +11,9 @@ from pathlib import Path
 
 from mattstack.commands.codegen.django_api import resource_path
 from mattstack.commands.codegen.fields import FieldSpec, search_field, ts_key
+from mattstack.commands.codegen.react_basic import render_route_error, render_tanstack_module
+from mattstack.commands.codegen.route_options import DEFAULT_ROUTE_OPTIONS, RouteOptions
+from mattstack.commands.codegen.tanstack_routes import TanStackTarget
 from mattstack.commands.codegen.ts_transport import render_request_helper
 from mattstack.parsers.frontend_layout import FrontendLayout
 
@@ -95,7 +98,7 @@ export function delete{name}(id: {id_type}): Promise<void> {{
 def render_tanstack_hooks(name: str, client_spec: str, id_type: str) -> str:
     key = resource_path(name)
     return f"""{HEADER}import {{
-  keepPreviousData, useMutation, useQuery, useQueryClient,
+  keepPreviousData, queryOptions, useMutation, useQuery, useQueryClient,
 }} from "@tanstack/react-query";
 
 import {{
@@ -107,10 +110,17 @@ import {{
 }} from "{client_spec}";
 import type {{ {name}CreateSchema, {name}UpdateSchema }} from "{client_spec}";
 
-export function use{name}List(page = 1, pageSize = 20, search?: string) {{
-  return useQuery({{
+/** Query options shared by the list hook and route loaders that prefetch it. */
+export function {name}ListQuery(page = 1, pageSize = 20, search?: string) {{
+  return queryOptions({{
     queryKey: ["{key}", "list", page, pageSize, search],
     queryFn: () => list{name}s(page, pageSize, search),
+  }});
+}}
+
+export function use{name}List(page = 1, pageSize = 20, search?: string) {{
+  return useQuery({{
+    ...{name}ListQuery(page, pageSize, search),
     placeholderData: keepPreviousData,
   }});
 }}
@@ -179,8 +189,23 @@ export default {name}List;
 """
 
 
-def render_list_page(name: str, component_spec: str, route_id: str | None) -> str:
-    """Render the list page: a TanStack file route for *route_id*, else a default export."""
+def render_list_page(
+    name: str,
+    component_spec: str,
+    target: TanStackTarget | None = None,
+    options: RouteOptions = DEFAULT_ROUTE_OPTIONS,
+    *,
+    hooks_spec: str | None = None,
+    error_package: str | None = None,
+) -> str:
+    """Render the list page: a TanStack file route for *target*, else a default export.
+
+    With `options.pending`, the TanStack loader prefetches the first list page
+    into the router context's QueryClient (*hooks_spec* imports the shared
+    query options), so the pending component shows while it loads. With
+    *error_package*, the default export module also exports the React Router
+    error boundary `<name>sPageError`.
+    """
     body = f"""function {name}sPage() {{
   return (
     <div className="container mx-auto p-4">
@@ -190,13 +215,29 @@ def render_list_page(name: str, component_spec: str, route_id: str | None) -> st
   );
 }}
 """
-    if route_id is None:
-        return f'{HEADER}import {{ {name}List }} from "{component_spec}";\n\nexport default {body}'
-    return (
-        f'{HEADER}import {{ createFileRoute }} from "@tanstack/react-router";\n\n'
-        f'import {{ {name}List }} from "{component_spec}";\n\n'
-        f'export const Route = createFileRoute("{route_id}")({{\n'
-        f"  component: {name}sPage,\n}});\n\n{body}"
+    component_import = f'import {{ {name}List }} from "{component_spec}";'
+    if target is None:
+        if error_package is None:
+            return f"{HEADER}{component_import}\n\nexport default {body}"
+        return (
+            f'{HEADER}import {{ isRouteErrorResponse, useRouteError }} from "{error_package}";\n\n'
+            f"{component_import}\n\nexport default {body}{render_route_error(f'{name}sPage')}"
+        )
+    imports = [component_import]
+    loader = None
+    if options.pending:
+        if hooks_spec is None:
+            raise ValueError("render_list_page needs hooks_spec to prefetch for --pending")
+        imports.append(f'import {{ {name}ListQuery }} from "{hooks_spec}";')
+        loader = f"({{ context }}) => context.queryClient.ensureQueryData({name}ListQuery())"
+    return render_tanstack_module(
+        target,
+        f"{name}sPage",
+        body,
+        options,
+        imports=tuple(imports),
+        loader=loader,
+        header=HEADER,
     )
 
 

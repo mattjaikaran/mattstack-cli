@@ -7,6 +7,7 @@ refuses to start when one is missing instead of shipping a placeholder.
 from __future__ import annotations
 
 from mattstack.config import ProjectConfig
+from mattstack.runtime_profiles import TaskProcess, task_processes
 from mattstack.templates.compose_env import (
     backend_env,
     db_service,
@@ -24,6 +25,7 @@ from mattstack.templates.frontend_runtime import (
     browser_env,
     service_origin,
 )
+from mattstack.templates.realtime_compose import centrifugo_service
 
 _ENV_FILE = ".env.production"
 
@@ -45,9 +47,11 @@ def generate_docker_compose_prod(config: ProjectConfig) -> str:
 
         services.append(_api_service(config))
 
-        if config.use_celery:
-            services.append(_celery_service(config, "worker", "--concurrency=4"))
-            services.append(_celery_service(config, "beat", ""))
+        # Production runs the selected queue's consumers without a profile.
+        prod_processes = task_processes(config, production=True)
+        services.extend(_task_service(config, process) for process in prod_processes)
+        if config.use_realtime:
+            services.append(centrifugo_service(production=True))
 
     if config.has_frontend:
         services.append(_frontend_service(config))
@@ -70,8 +74,6 @@ def _api_service(config: ProjectConfig) -> str:
             "CORS_ALLOWED_ORIGINS": f"${{CORS_ALLOWED_ORIGINS:-{origin}}}",
             "CSRF_TRUSTED_ORIGINS": f"${{CSRF_TRUSTED_ORIGINS:-{origin}}}",
         }
-    elif config.is_fastapi_backend:
-        extra = {"CORS_ORIGINS": f"${{CORS_ORIGINS:-{origin}}}"}
     return f"""\
   {PROD_API_SERVICE}:
     build:
@@ -85,15 +87,14 @@ def _api_service(config: ProjectConfig) -> str:
     restart: unless-stopped"""
 
 
-def _celery_service(config: ProjectConfig, role: str, options: str) -> str:
-    flags = f"-l warning {options}".rstrip()
+def _task_service(config: ProjectConfig, process: TaskProcess) -> str:
     return f"""\
-  celery-{role}:
+  {process.service}:
     build:
       context: .
       dockerfile: docker/backend/Dockerfile
       target: production
-    command: celery -A {config.django_package} {role} {flags}
+    command: {process.command}
 {service_environment({})}
 {depends_block(config)}
     restart: unless-stopped"""

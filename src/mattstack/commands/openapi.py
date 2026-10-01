@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import shlex
 import shutil
 import subprocess  # nosec B404 # Required CLI subprocess support.
 import tempfile
@@ -11,11 +13,83 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from rich.markup import escape
 
-from mattstack.project import resolve_project
-from mattstack.utils.console import print_error, print_info, print_success
+from mattstack.config import BackendFramework
+from mattstack.project import ResolvedProject, resolve_project
+from mattstack.utils.console import err_console, print_error, print_info, print_success
 
 MANIFEST = ".mattstack-openapi.json"
+# Schema path for backends without a documented export location.
+ROOT_SCHEMA = Path("openapi.json")
+# Django Ninja's `manage.py export_openapi` writes here, relative to the backend.
+NINJA_SCHEMA = Path("docs/openapi/openapi.json")
+# Version used by the generated-client proof recorded in docs/ecosystem.md.
+HEY_API_PACKAGE = "@hey-api/openapi-ts@0.99.0"
+
+
+def _error(message: str) -> None:
+    """Print an error without wrapping, so printed commands run when copied."""
+    err_console.print(f"[red]\\[ERROR][/red] {escape(message)}", soft_wrap=True)
+
+
+def ninja_export_command(project: ResolvedProject) -> str:
+    """Return the shell command that writes the Ninja schema to ``NINJA_SCHEMA``.
+
+    It loads the root .env the same way the generated Makefile does, because
+    consolidation removes ``backend/.env`` and the settings read the environment.
+    """
+    steps = [f"cd {shlex.quote(str(project.root))}"]
+    if (project.root / ".env").is_file():
+        steps.append("set -a && . ./.env && set +a")
+    backend = os.path.relpath(project.backend_dir, project.root)
+    if backend != ".":
+        steps.append(f"cd {shlex.quote(backend)}")
+    steps.append("uv run python manage.py export_openapi")
+    return " && ".join(steps)
+
+
+def resolve_schema(project: ResolvedProject, schema: Path | None) -> Path:
+    """Return the OpenAPI file to read; an explicit ``--schema`` always wins."""
+    if schema is not None:
+        source = schema if schema.is_absolute() else project.root / schema
+        if not source.is_file():
+            raise ValueError(
+                f"OpenAPI schema not found at {source} (from --schema). "
+                "Pass an existing OpenAPI JSON file: --schema <path>"
+            )
+        return source
+    if project.backend_framework == BackendFramework.DJANGO_NINJA:
+        source = project.backend_dir / NINJA_SCHEMA
+        if source.is_file():
+            return source
+        rerun = f"mattstack sync openapi --path {shlex.quote(str(project.root))}"
+        hint = ""
+        if (project.root / ROOT_SCHEMA).is_file():
+            hint = f"\nOr use the existing root file: {rerun} --schema {ROOT_SCHEMA}"
+        raise ValueError(
+            f"No exported Django Ninja schema at {source}. Export it with:\n"
+            f"  {ninja_export_command(project)}\n"
+            f"Then rerun: {rerun}{hint}"
+        )
+    source = project.root / ROOT_SCHEMA
+    if not source.is_file():
+        raise ValueError(
+            f"No OpenAPI schema at {source}. Save the backend's OpenAPI JSON document "
+            "there, or pass its location: --schema <path>"
+        )
+    return source
+
+
+def _check_contract(source: Path) -> None:
+    try:
+        contract = json.loads(source.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{source} is not valid JSON ({exc}); export the schema again") from exc
+    if not isinstance(contract, dict) or not isinstance(contract.get("openapi"), str):
+        raise ValueError(f"{source} has no openapi version field; use an OpenAPI JSON document")
+    if not isinstance(contract.get("paths"), dict):
+        raise ValueError(f"{source} has no paths object; use an OpenAPI JSON document")
 
 
 def _files(directory: Path) -> dict[str, str]:
@@ -43,8 +117,13 @@ def _read_manifest(directory: Path) -> dict[str, str] | None:
 def sync_openapi(
     path: Annotated[Path | None, typer.Option("--path", "-p", help="Project root")] = None,
     schema: Annotated[
-        Path, typer.Option("--schema", help="Local OpenAPI JSON file, relative to the project")
-    ] = Path("openapi.json"),
+        Path | None,
+        typer.Option(
+            "--schema",
+            help="OpenAPI JSON file, relative to the project. Default: the Django Ninja "
+            "export (backend/docs/openapi/openapi.json), else openapi.json",
+        ),
+    ] = None,
     output: Annotated[
         Path, typer.Option("--output", "-o", help="Output directory, relative to the frontend")
     ] = Path("src/api/generated"),
@@ -58,12 +137,9 @@ def sync_openapi(
     """Generate a client with the installed @hey-api/openapi-ts package; never download a tool."""
     try:
         project = resolve_project(path or Path.cwd())
-        source = schema if schema.is_absolute() else project.root / schema
-        contract = json.loads(source.read_text(encoding="utf-8"))
-        if not isinstance(contract, dict) or not isinstance(contract.get("openapi"), str):
-            raise ValueError("Use an OpenAPI JSON document with an openapi version field")
-        if not isinstance(contract.get("paths"), dict):
-            raise ValueError("The OpenAPI document must contain a paths object")
+        source = resolve_schema(project, schema)
+        _check_contract(source)
+        print_info(f"Using OpenAPI schema {source}")
         candidate = project.frontend_dir / output
         frontend = project.frontend_dir.resolve()
         target = candidate.resolve()
@@ -79,7 +155,9 @@ def sync_openapi(
         binary = frontend / "node_modules" / ".bin" / "openapi-ts"
         if not binary.is_file():
             raise ValueError(
-                "Install a pinned @hey-api/openapi-ts dev dependency in the frontend first"
+                f"@hey-api/openapi-ts is not installed in {frontend}. Install the pinned "
+                f"local tool: mattstack client add {HEY_API_PACKAGE} --dev --exact "
+                f"--path {shlex.quote(str(project.root))}"
             )
         with tempfile.TemporaryDirectory(prefix="mattstack-openapi-") as temporary:
             generated = Path(temporary) / "client"
@@ -102,8 +180,10 @@ def sync_openapi(
                 raise ValueError("The generator produced no client files")
             if check:
                 if expected != current:
-                    print_error(
-                        "OpenAPI client differs from the backend contract; run sync openapi"
+                    _error(
+                        "OpenAPI client differs from the backend contract. Regenerate it: "
+                        f"mattstack sync openapi --path {shlex.quote(str(project.root))} "
+                        f"--schema {shlex.quote(str(source))} --output {shlex.quote(str(output))}"
                     )
                     raise typer.Exit(code=1)
                 print_success("OpenAPI client matches the backend contract")
@@ -132,5 +212,5 @@ def sync_openapi(
         print_success(f"Generated OpenAPI client in {target}")
         print_info("Run the frontend type check and API integration tests before committing")
     except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
-        print_error(str(exc))
+        _error(str(exc))
         raise typer.Exit(code=1) from exc

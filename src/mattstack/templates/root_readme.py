@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from mattstack.config import FrontendFramework, ProjectConfig
+from mattstack.runtime_profiles import task_summary
 
 
 def generate_readme(config: ProjectConfig) -> str:
@@ -63,10 +64,12 @@ def _tech_stack(config: ProjectConfig) -> str:
         stack.append("- **Database**: PostgreSQL 17")
         if config.use_redis:
             stack.append("- **Cache/Queue**: Redis 7")
-        if config.use_celery:
-            stack.append("- **Background Tasks**: Celery")
-        elif config.is_nestjs_backend:
+        if config.is_nestjs_backend:
             stack.append("- **Background Jobs**: Bull (Redis-based)")
+        else:
+            stack.append(f"- **Background Tasks**: {task_summary(config)}")
+        if config.use_realtime:
+            stack.append("- **Realtime**: Centrifugo (`make up-realtime`)")
     if config.has_frontend:
         stack.append(f"- **Frontend**: {_frontend_description(config)}")
     if config.include_ios:

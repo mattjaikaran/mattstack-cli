@@ -176,6 +176,12 @@ class BaseGenerator(ABC):
                 progress.advance(task)
         return True
 
+    def prepare_runtime(self) -> bool:
+        """Add TASK_BACKEND=none when needed, then check runtime prerequisites."""
+        from mattstack.post_processors.task_runtime import prepare_runtime
+
+        return prepare_runtime(self.config, dry_run=self.config.dry_run)
+
     def write_project_configuration(self) -> bool:
         """Write project metadata before the initial Git commit."""
         from mattstack.project import save_project_config

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from mattstack.config import ProjectConfig
+from mattstack.runtime_profiles import TaskProcess, task_processes, task_profile, uv_run
 from mattstack.templates.compose_env import (
     backend_env,
     db_service,
@@ -19,6 +20,7 @@ from mattstack.templates.frontend_runtime import (
     proxy_target_env_var,
     service_origin,
 )
+from mattstack.templates.realtime_compose import centrifugo_service
 
 
 def generate_docker_compose(config: ProjectConfig) -> str:
@@ -37,9 +39,12 @@ def generate_docker_compose(config: ProjectConfig) -> str:
             volumes.append("  redis_data:")
 
         services.append(_api_dev_service(config))
-        if config.use_celery:
-            services.append(_celery_service(config, "worker"))
-            services.append(_celery_service(config, "beat"))
+        # Task workers and Centrifugo start only with their profile, so a
+        # plain `docker compose up` keeps the same services.
+        dev_processes = task_processes(config, production=False)
+        services.extend(_task_service(config, process) for process in dev_processes)
+        if config.use_realtime:
+            services.append(centrifugo_service(production=False))
 
     if config.has_frontend:
         services.append(_frontend_dev_service(config))
@@ -59,10 +64,10 @@ def _api_dev_service(config: ProjectConfig) -> str:
         volumes = "      - ./backend:/app\n      - /app/node_modules"
     elif config.is_fastapi_backend:
         command = f"uv run uvicorn app.main:app --host 0.0.0.0 --port {port} --reload"
-        extra = {"CORS_ORIGINS": cors}
+        extra = {}
         volumes = "      - ./backend:/app"
     else:
-        command = f"uv run python manage.py runserver 0.0.0.0:{port}"
+        command = f"{uv_run(config)} python manage.py runserver 0.0.0.0:{port}"
         extra = {"CORS_ALLOWED_ORIGINS": cors}
         volumes = "      - ./backend:/app"
     return f"""\
@@ -80,20 +85,21 @@ def _api_dev_service(config: ProjectConfig) -> str:
 {depends_block(config)}"""
 
 
-def _celery_service(config: ProjectConfig, role: str) -> str:
+def _task_service(config: ProjectConfig, process: TaskProcess) -> str:
+    """Render a task worker on the backend's Compose profile (celery, huey, ...)."""
     return f"""\
-  celery-{role}:
+  {process.service}:
     build:
       context: .
       dockerfile: docker/backend/Dockerfile
       target: development
-    command: uv run celery -A {config.django_package} {role} -l info
+    command: {uv_run(config)} {process.command}
     volumes:
       - ./backend:/app
 {service_environment({})}
 {depends_block(config)}
     profiles:
-      - celery"""
+      - {task_profile(config)}"""
 
 
 def _frontend_dev_service(config: ProjectConfig) -> str:

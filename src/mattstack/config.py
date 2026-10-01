@@ -47,6 +47,39 @@ class DeploymentTarget(StrEnum):
     SELF_HOSTED = "self-hosted"
 
 
+class TaskBackend(StrEnum):
+    """Background task backend; values match the Ninja ``TASK_BACKEND`` setting."""
+
+    CELERY = "celery"
+    HUEY = "huey"
+    DJANGO_Q = "django_q"
+    DJANGO_RQ = "django_rq"
+    DRAMATIQ = "dramatiq"
+    NONE = "none"
+
+
+class MediaStorage(StrEnum):
+    """Where the production backend stores user-uploaded media."""
+
+    LOCAL = "local"
+    S3 = "s3"
+
+
+def supported_task_backends(
+    backend: BackendFramework, project_type: ProjectType
+) -> tuple[TaskBackend, ...]:
+    """Return the task backends the chosen backend boilerplate implements.
+
+    Only django-ninja ships the pluggable ``api.tasks`` facade. The other
+    Python backends ship Celery, and NestJS uses its built-in Bull queues.
+    """
+    if project_type == ProjectType.FRONTEND_ONLY or backend == BackendFramework.NESTJS:
+        return (TaskBackend.NONE,)
+    if backend == BackendFramework.DJANGO_NINJA:
+        return tuple(TaskBackend)
+    return (TaskBackend.CELERY, TaskBackend.NONE)
+
+
 REPO_URLS: dict[str, str] = {
     # Python backends
     "django-ninja": "https://github.com/mattjaikaran/django-ninja-boilerplate.git",
@@ -98,7 +131,12 @@ class ProjectConfig:
     frontend_framework: FrontendFramework = FrontendFramework.REACT_VITE
     backend_framework: BackendFramework = BackendFramework.DJANGO_NINJA
     include_ios: bool = False
-    use_celery: bool = True
+    # Legacy ``use_celery`` maps to CELERY (True) or NONE (False). Read
+    # ``use_celery`` as a property; this field is the single source of truth.
+    task_backend: TaskBackend = TaskBackend.CELERY
+    # Opt-in Centrifugo service (django-ninja only).
+    use_realtime: bool = False
+    media_storage: MediaStorage = MediaStorage.LOCAL
     use_redis: bool = True
     deployment: DeploymentTarget = DeploymentTarget.DOCKER
     init_git: bool = True
@@ -115,28 +153,64 @@ class ProjectConfig:
             raise ValueError("Project name cannot be empty")
         if isinstance(self.path, str):
             self.path = Path(self.path)
+        self.task_backend = TaskBackend(self.task_backend)
+        self.media_storage = MediaStorage(self.media_storage)
         # Frontend-only projects don't need backend features
         if self.project_type == ProjectType.FRONTEND_ONLY:
-            self.use_celery = False
+            self.task_backend = TaskBackend.NONE
             self.use_redis = False
             self.include_ios = False
-        # NestJS uses Bull (Redis-based queues) not Celery; Redis still needed
+            self.use_realtime = False
+            self.media_storage = MediaStorage.LOCAL
+        # NestJS uses Bull (Redis-based queues) not Celery; Redis still needed.
+        # The legacy default (Celery on) means "the backend's own queue".
         if self.backend_framework == BackendFramework.NESTJS:
-            self.use_celery = False
+            if self.task_backend == TaskBackend.CELERY:
+                self.task_backend = TaskBackend.NONE
             self.use_redis = True
-        # FastAPI uses Celery + Redis (same as Django)
-        if self.backend_framework == BackendFramework.FASTAPI and self.use_celery:
-            self.use_redis = True
+        self._validate_runtime()
         # The django-ninja settings always use a Valkey/Redis cache, and the
-        # cache backs sessions, throttles, and readiness. Celery is optional.
+        # cache backs sessions, throttles, and readiness. Every Ninja task
+        # backend and Centrifugo use the same Redis.
         if (
             self.backend_framework == BackendFramework.DJANGO_NINJA
             and self.project_type != ProjectType.FRONTEND_ONLY
         ):
             self.use_redis = True
-        # Celery requires Redis
-        if self.use_celery and not self.use_redis:
+        # Celery (FastAPI, django-matt) requires Redis
+        if self.task_backend != TaskBackend.NONE:
             self.use_redis = True
+
+    def _validate_runtime(self) -> None:
+        """Reject a task, realtime, or media choice the backend cannot run."""
+        backend = self.backend_framework.value
+        supported = supported_task_backends(self.backend_framework, self.project_type)
+        if self.task_backend not in supported:
+            valid = ", ".join(choice.value for choice in supported)
+            raise ValueError(
+                f"task_backend '{self.task_backend.value}' is not supported by the "
+                f"{backend} boilerplate. Use --task-backend with one of: {valid}"
+            )
+        ninja = self.backend_framework == BackendFramework.DJANGO_NINJA
+        if self.use_realtime and not (ninja and self.has_backend):
+            raise ValueError(
+                f"realtime needs the django-ninja backend (api/centrifugo.py); "
+                f"{backend} has no Centrifugo integration. Remove --realtime"
+            )
+        if self.media_storage == MediaStorage.S3 and not (ninja and self.has_backend):
+            raise ValueError(
+                f"media_storage 's3' needs the django-ninja backend; {backend} has no "
+                "S3 media settings. Use --media-storage local"
+            )
+
+    @property
+    def use_celery(self) -> bool:
+        """Whether Celery runs the background tasks (derived from task_backend)."""
+        return self.task_backend == TaskBackend.CELERY
+
+    @property
+    def is_ninja_backend(self) -> bool:
+        return self.backend_framework == BackendFramework.DJANGO_NINJA
 
     @property
     def python_package_name(self) -> str:

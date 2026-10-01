@@ -10,8 +10,10 @@ from mattstack.config import (
     BackendFramework,
     DeploymentTarget,
     FrontendFramework,
+    MediaStorage,
     ProjectConfig,
     ProjectType,
+    TaskBackend,
     Variant,
     normalize_name,
 )
@@ -64,10 +66,26 @@ def load_config_file(config_path: Path, output_path: Path) -> ProjectConfig | No
         ("ios", data, False),
         ("celery", backend, True),
         ("redis", backend, True),
+        ("realtime", backend, False),
     ):
         if not isinstance(section.get(key, default), bool):
             print_error(f"'{key}' must be true or false")
             return None
+    # backend.task_backend wins; legacy backend.celery true keeps the
+    # backend's default queue (Celery; NestJS uses Bull) and false means none.
+    legacy = TaskBackend.CELERY if backend.get("celery", True) else TaskBackend.NONE
+    try:
+        task_backend = TaskBackend(backend.get("task_backend", legacy.value))
+        media_storage = MediaStorage(backend.get("media_storage", MediaStorage.LOCAL.value))
+    except ValueError:
+        tasks = ", ".join(e.value for e in TaskBackend)
+        media = ", ".join(e.value for e in MediaStorage)
+        print_error(
+            f"Invalid backend.task_backend '{backend.get('task_backend')}' or "
+            f"backend.media_storage '{backend.get('media_storage')}'. "
+            f"task_backend: {tasks}; media_storage: {media}"
+        )
+        return None
     try:
         backend_fw = BackendFramework(backend.get("framework", "django-ninja"))
     except ValueError:
@@ -88,17 +106,23 @@ def load_config_file(config_path: Path, output_path: Path) -> ProjectConfig | No
         print_error(f"Invalid deployment target: '{data.get('deployment')}'. Valid: {valid}")
         return None
 
-    return ProjectConfig(
-        name=name,
-        path=output_path / name,
-        project_type=project_type,
-        variant=variant,
-        frontend_framework=frontend_fw,
-        backend_framework=backend_fw,
-        include_ios=data.get("ios", False),
-        use_celery=backend.get("celery", True),
-        use_redis=backend.get("redis", True),
-        deployment=deployment,
-        author_name=author.get("name", ""),
-        author_email=author.get("email", ""),
-    )
+    try:
+        return ProjectConfig(
+            name=name,
+            path=output_path / name,
+            project_type=project_type,
+            variant=variant,
+            frontend_framework=frontend_fw,
+            backend_framework=backend_fw,
+            include_ios=data.get("ios", False),
+            task_backend=task_backend,
+            use_realtime=backend.get("realtime", False),
+            media_storage=media_storage,
+            use_redis=backend.get("redis", True),
+            deployment=deployment,
+            author_name=author.get("name", ""),
+            author_email=author.get("email", ""),
+        )
+    except ValueError as error:
+        print_error(f"{config_path}: {error}")
+        return None

@@ -13,6 +13,9 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from mattstack.parsers.react_router_source import RouteSource, locate_react_router
+from mattstack.parsers.tanstack_config import TanStackConfig, read_tanstack_config
+
 # A shared axios instance: `export const api = axios.create(` or the
 # boilerplate's `export const api = createApiInstance();`.
 TRANSPORT_EXPORT_RE = re.compile(
@@ -37,14 +40,17 @@ class FrontendLayout:
     bundler: str  # "vite" | "rsbuild" | "next" | "unknown"
     router: str  # "tanstack" | "nextjs" | "react-router" | "unknown"
     app_dir: Path | None  # Next.js app router directory
-    routes_dir: Path | None  # TanStack file-route directory
+    routes_dir: Path | None  # TanStack file-route directory (plugin routesDirectory)
     transport_file: Path | None  # shared axios instance module
     transport_export: str | None
     camel_case_keys: bool  # transport converts keys to camelCase
     has_vitest: bool
     api_env_var: str | None = None  # browser env var holding the API base URL
     pages_dir: Path | None = None  # React Router page components (src/pages)
-    app_entry: Path | None = None  # React Router module declaring JSX <Routes>
+    app_entry: Path | None = None  # React Router module declaring the route tree
+    route_source: RouteSource | None = None  # React Router declaration style and module
+    tanstack: TanStackConfig | None = None  # TanStack generator options
+    router_issue: str | None = None  # why routes cannot be located or edited safely
 
     @property
     def env_expression(self) -> str | None:
@@ -113,14 +119,6 @@ def _transport(src_dir: Path) -> tuple[Path | None, str | None, bool]:
     return None, None, False
 
 
-def _react_router_entry(src_dir: Path) -> Path | None:
-    for name in ("App.tsx", "App.jsx"):
-        path = src_dir / name
-        if path.is_file() and "<Routes" in path.read_text(encoding="utf-8", errors="replace"):
-            return path
-    return None
-
-
 def detect_frontend_layout(frontend_dir: Path, api_env_var: str | None = None) -> FrontendLayout:
     """Inspect *frontend_dir* without modifying it.
 
@@ -143,7 +141,8 @@ def detect_frontend_layout(frontend_dir: Path, api_env_var: str | None = None) -
     app_dir = next(
         (d for d in (frontend_dir / "app", frontend_dir / "src" / "app") if d.is_dir()), None
     )
-    routes_dir = src_dir / "routes" if (src_dir / "routes").is_dir() else None
+    tanstack = read_tanstack_config(frontend_dir) if "@tanstack/react-router" in deps else None
+    routes_dir = tanstack.routes_dir if tanstack and tanstack.routes_dir.is_dir() else None
     if "next" in deps:
         router = "nextjs"
     elif "@tanstack/react-router" in deps:
@@ -156,10 +155,16 @@ def detect_frontend_layout(frontend_dir: Path, api_env_var: str | None = None) -
     transport_file, transport_export, camel = _transport(src_dir)
     is_react_router = router == "react-router"
     pages_dir = src_dir / "pages" if is_react_router and (src_dir / "pages").is_dir() else None
+    alias_root = _alias_root(frontend_dir)
+    route_source, issue = (
+        locate_react_router(src_dir, alias_root) if is_react_router else (None, None)
+    )
+    if router == "tanstack" and tanstack is not None and tanstack.error:
+        issue = f"{tanstack.source.name if tanstack.source else 'TanStack'}: {tanstack.error}"
     return FrontendLayout(
         frontend_dir=frontend_dir,
         src_dir=src_dir,
-        alias_root=_alias_root(frontend_dir),
+        alias_root=alias_root,
         bundler=bundler,
         router=router,
         app_dir=app_dir if router == "nextjs" else None,
@@ -170,5 +175,8 @@ def detect_frontend_layout(frontend_dir: Path, api_env_var: str | None = None) -
         has_vitest="vitest" in deps and "@testing-library/react" in deps,
         api_env_var=api_env_var,
         pages_dir=pages_dir,
-        app_entry=_react_router_entry(src_dir) if is_react_router else None,
+        app_entry=route_source.entry if route_source else None,
+        route_source=route_source,
+        tanstack=tanstack if router == "tanstack" else None,
+        router_issue=issue,
     )

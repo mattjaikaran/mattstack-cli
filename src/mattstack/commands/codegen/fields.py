@@ -20,6 +20,21 @@ DJANGO_FIELD_MAP: dict[str, str] = {
     "uuid": "UUIDField(default=uuid.uuid4)",
 }
 
+# Instance attribute type of each DJANGO_FIELD_MAP column, for annotations.
+FIELD_VALUE_TYPES: dict[str, str] = {
+    "str": "str",
+    "int": "int",
+    "float": "float",
+    "decimal": "Decimal",
+    "bool": "bool",
+    "text": "str",
+    "date": "date",
+    "datetime": "datetime",
+    "email": "str",
+    "url": "str",
+    "uuid": "uuid.UUID",
+}
+
 PYDANTIC_TYPE_MAP: dict[str, str] = {
     "str": "str",
     "int": "int",

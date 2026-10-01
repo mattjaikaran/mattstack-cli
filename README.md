@@ -3,15 +3,20 @@
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![Version](https://img.shields.io/badge/version-0.7.0-blue.svg)](CHANGELOG.md)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-863%20passing-brightgreen.svg)](#development)
 
-CLI to scaffold fullstack monorepos from battle-tested boilerplates, then generate features and audit for quality.
+Scaffold a selected backend and frontend, generate features, and inspect the resulting project.
 
-Skip the week of project setup — `mattstack init` clones production-ready backend and React boilerplates, wires them together, and hands you a running monorepo in under a minute. From there, `generate crud` scaffolds a complete full-stack feature in one command. The `audit` command keeps the codebase honest: type drift, missing tests, stub endpoints, hardcoded credentials, and CVEs — all surfaced in one pass.
+Use mattstack as the project control plane. It clones the selected source repositories,
+customizes their configuration, and generates root runtime and quality commands.
+Your applications run from the generated project; they do not run inside mattstack.
+
+Choose a fullstack, backend-only, or frontend-only preset. Supported frameworks are
+alternatives, not services that every project installs. Review generated code and
+source contracts before you deploy; scaffolding is not production certification.
 
 ---
 
-## Supported Stacks
+## Supported stacks
 
 ### Backends
 
@@ -34,36 +39,42 @@ Skip the week of project setup — `mattstack init` clones production-ready back
 
 ---
 
-## Quick Start
+## Quick start
+
+Install the CLI with `uv`. Install Docker for local database/cache containers and
+`bun` for JavaScript components.
 
 ```bash
-# Install
-pip install mattstack
-
-# Scaffold a project (interactive)
-mattstack init
-
-# Or with a preset
-mattstack init my-app -p nestjs-fullstack
+uv tool install git+https://github.com/mattjaikaran/mattstack-cli
 mattstack init my-app -p starter-fullstack
-mattstack init my-app -p nestjs-api          # NestJS API only
-
-# Generate a full-stack CRUD feature
 cd my-app
-mattstack generate crud Product --fields "name:str price:decimal"
-
-# Audit the project
-mattstack audit
+make setup
+make up
+mattstack db migrate
+mattstack dev --mode host
 ```
+
+Run application commands from the generated project root. `make up` starts the
+shared infrastructure; host mode runs the selected applications on your machine.
+Use `mattstack dev --mode docker` for container application development instead.
+Do not run both modes on the same ports.
+
+For unattended scaffolding, use a preset or a
+[scaffold YAML file](docs/commands.md#mattstack-init), not the interactive wizard.
+Run `mattstack init --help` to inspect runtime flags and `mattstack info` to inspect presets.
 
 ---
 
-## Monorepo Structure
+## Generated project layout
+
+This tree shows a fullstack project. Frontend-only projects omit the backend,
+shared Compose infrastructure, and root environment files. Provider recipes
+can still add the frontend deployment files they need.
 
 ```
 my-app/
-├── backend/          # API (Django or NestJS) — cloned + customized
-├── frontend/         # React / Next.js — cloned + wired to backend
+├── backend/          # Selected API; omitted for frontend-only projects
+├── frontend/         # Selected UI; omitted for backend-only projects
 ├── ios/              # Swift iOS client (optional)
 ├── docker-compose.yml
 ├── Makefile          # setup, up, down, test, lint, format, migrate
@@ -82,35 +93,39 @@ my-app/           ← git root
   frontend/       ← UI  (frontend/package.json)
 ```
 
-This is the same layout whether you use Django or NestJS on the backend, and any React variant on the frontend. The root Makefile and docker-compose glue everything together.
+The layout is the same for the supported backend and frontend families. Ports and
+commands come from the selected configuration. Check the generated README and
+`mattstack context` instead of assuming a source repository's standalone ports.
 
 ---
 
-## Architecture Diagram
+## Architecture: one selected stack
+
+This example shows `starter-fullstack`: one Django Ninja API and one React Vite UI.
+It does **not** combine all supported frameworks. Solid arrows show application
+traffic. Dashed arrows show optional background-job traffic.
 
 ```mermaid
-graph TD
-    A[mattstack init] --> B{Backend Framework}
-    B -->|django-ninja| C[Django Ninja API<br/>Python + uv<br/>port 8000]
-    B -->|django-matt| D[django-matt API<br/>Python + uv<br/>port 8000]
-    B -->|nestjs| E[NestJS API<br/>TypeScript + bun<br/>port 4000]
-
-    A --> F{Frontend Framework}
-    F -->|react-vite| G[React Vite<br/>TanStack Router<br/>port 5173]
-    F -->|react-rsbuild| H[React Rsbuild<br/>TanStack Router<br/>port 3000]
-    F -->|nextjs| I[Next.js<br/>App Router<br/>port 3000]
-
-    C --> J[Monorepo Root]
-    D --> J
-    E --> J
-    G --> J
-    H --> J
-    I --> J
-
-    J --> K[Makefile<br/>docker-compose.yml<br/>.env.example]
-    J --> L[mattstack generate crud<br/>→ full vertical slice]
-    J --> M[mattstack audit<br/>→ types, quality, CVEs]
+flowchart TD
+    browser["Browser"] --> ui["Selected frontend<br/>React Vite"]
+    ui -->|"HTTP API calls"| api["Selected backend<br/>Django Ninja"]
+    api -->|"read and write"| db[("PostgreSQL")]
+    api -->|"cache"| redis[("Redis")]
+    api -. "enqueue, if enabled" .-> redis
+    redis -. "consume jobs" .-> worker["Selected worker<br/>Celery by default"]
+    worker -. "read and write" .-> db
 ```
+
+Use a backend-only preset to omit the UI, or a frontend-only preset to omit the
+API and its infrastructure. With `--task-backend none`, omit the queue consumer.
+Realtime and production S3 storage are opt-in Ninja profiles, not default services.
+
+Keep three views separate:
+
+- [CLI architecture](docs/architecture.md): configuration, planners, and file writes.
+- [Command contracts](docs/commands.md): resource policies, routing, workers, and checks.
+- [Deployment topology](docs/deployment-guide.md): public edges, internal services,
+  provider prerequisites, and health probes.
 
 ---
 
@@ -120,7 +135,7 @@ Run `mattstack info` to list all presets. Use `-p <preset>` with `mattstack init
 
 ### Django presets
 
-| Preset | Backend | Frontend | Celery |
+| Preset | Backend | Frontend | Celery by default |
 |--------|---------|----------|--------|
 | `starter-fullstack` | django-ninja | react-vite | yes |
 | `b2b-fullstack` | django-ninja | react-vite | yes |
@@ -135,7 +150,7 @@ Run `mattstack info` to list all presets. Use `-p <preset>` with `mattstack init
 
 ### FastAPI presets
 
-| Preset | Backend | Frontend | Celery |
+| Preset | Backend | Frontend | Celery by default |
 |--------|---------|----------|--------|
 | `fastapi-api` | fastapi | — | yes |
 | `fastapi-fullstack` | fastapi | react-vite | yes |
@@ -164,36 +179,46 @@ Run `mattstack info` to list all presets. Use `-p <preset>` with `mattstack init
 
 ---
 
-## Generate: Full-Stack Feature in One Command
+## Generate a resource
+
+For a Django Ninja or Django Matt project, plan a backend resource and its
+frontend client, hooks, and routes together:
 
 ```bash
+mattstack generate crud Product --fields "name:str price:decimal" --dry-run
 mattstack generate crud Product --fields "name:str price:decimal"
 ```
 
-**Files created (Django backend):**
+The planner detects the existing backend app and frontend router. It validates
+both plans before it writes files. Paths depend on that layout; they are not
+fixed to `backend/apps/products`.
 
-```
-backend/apps/products/models/product.py      ← Django model
-backend/apps/products/schemas/product.py     ← Pydantic schemas
-backend/apps/products/api/product.py         ← Django Ninja router
-backend/apps/products/admin/product_admin.py ← Admin registration
-frontend/src/api/product.ts                  ← TypeScript API client
-frontend/src/hooks/useProducts.ts            ← TanStack Query hooks
-frontend/src/components/ProductList/index.tsx ← React component
-```
+Choose the access policy explicitly:
 
-Other generators: `model`, `endpoint`, `component`, `page`, `hook`, `schema`.
+- `--scope owned --owner-field owner` binds a user foreign key on the server and
+  isolates reads and mutations to the authenticated owner.
+- `--scope global` permits public reads. Writes require JWT when the backend
+  has JWT auth; without it, writes are public too. Review the printed warning.
+  Ninja's route-auth gate needs an explicit review of the generated public GETs;
+  the generator does not add a waiver.
+
+Use `--with-service` for a separate service layer and `--lifecycle` for the
+supported model lifecycle. A browser route guard is a navigation control,
+not backend authorization. See the
+[resource and routing reference](docs/commands.md#generate) before you generate.
+
+Other generators include `model`, `endpoint`, `component`, `page`, `hook`, and `schema`.
 
 ---
 
-## Commands Overview
+## Command overview
 
 ```
 mattstack init        Scaffold a new project
 mattstack add         Add frontend/backend/ios to existing project
 mattstack generate    Generate models, CRUDs, components, hooks
 mattstack db          Database operations (migrate, seed, reset, shell)
-mattstack sync        Sync types/zod/api-client between stacks
+mattstack sync        Sync types/Zod/api-client or generate from OpenAPI
 mattstack test        Run all tests (parallel supported)
 mattstack lint        Lint all code (parallel supported)
 mattstack fmt         Format all code
@@ -202,7 +227,7 @@ mattstack dev         Start all services
 mattstack deps        Dependency management (check, update, audit)
 mattstack health      Service health checks
 mattstack hooks       Git hooks (install, status, run)
-mattstack workflow    Generate CI/CD (GitHub Actions, GitLab CI)
+mattstack workflow    Generate GitHub Actions or GitLab CI
 mattstack env         Manage .env files
 mattstack protect     Enable branch protection (hooks, CODEOWNERS, ruleset)
 mattstack board       Pluggable kanban board (Axis backend + stubs)
@@ -221,64 +246,54 @@ Full reference: [docs/commands.md](docs/commands.md)
 
 ---
 
-## FastAPI Backend Details
+## Runtime choices
 
-The `fastapi-boilerplate` is a production-ready async Python stack:
+Select runtime services independently of the frontend:
 
-- **Framework**: FastAPI + Uvicorn (ASGI, fully async)
-- **ORM**: SQLAlchemy 2.0 (async) + Alembic migrations + asyncpg driver
-- **Auth**: JWT (python-jose) + bcrypt + TOTP (pyotp) + WebAuthn
-- **Queues**: Celery + Redis (same pattern as Django backends)
-- **Email**: Resend integration
-- **File storage**: aioboto3 (S3-compatible)
-- **Payments**: Stripe
-- **Admin**: SQLAdmin panel at `/admin`
-- **Observability**: OpenTelemetry + Sentry + Prometheus
-- **Testing**: pytest + pytest-asyncio (real DB integration tests)
-- **Tooling**: uv (package manager), ruff (lint + format)
+| Backend | Task choices | Migration target |
+|---|---|---|
+| Django Ninja | `celery`, `huey`, `django_q`, `django_rq`, `dramatiq`, `none` | `make backend-migrate` |
+| Django Matt | `celery`, `none` | `make backend-migrate` |
+| FastAPI | `celery`, `none` | `make backend-migrate` (Alembic) |
+| NestJS | Source Bull queues; not the Python task facade | `make backend-migrate` (Drizzle) |
 
-Runs on **port 8000** alongside any React frontend.
+Only emitted worker targets exist. `make backend-worker` starts the selected
+consumer; `make backend-beat` exists only for Celery. Disabled Ninja dispatch
+rejects enqueue attempts rather than dropping jobs.
 
 ```bash
-# FastAPI monorepo workflow
-mattstack init my-app -p fastapi-fullstack
-cd my-app
-make setup             # uv sync --extra dev (backend) + bun install (frontend)
-make up                # Start Postgres + Redis via Docker
-make backend-migrate   # Run Alembic migrations
-make backend-dev       # http://localhost:8000 (docs at /docs)
-make frontend-dev      # http://localhost:5173
+mattstack init task-api -p starter-api --task-backend huey
+cd task-api
+make setup
+make up
+mattstack db migrate
+make backend-worker
 ```
+
+Keep secrets in environment files, not persisted project metadata. Use separate
+production values. See the [runtime reference](docs/commands.md#mattstack-init)
+for realtime and S3 prerequisites, and the
+[deployment guide](docs/deployment-guide.md) for provider mode and secret checks.
 
 ---
 
-## NestJS Backend Details
+## Source capabilities and verification
 
-The `nestjs-boilerplate` is a production-ready NestJS v11 stack:
+Scaffolding support does not mean every source feature shares a contract.
+For example, Django CRUD planners do not generate FastAPI or NestJS resources,
+and a B2B frontend is not a drop-in replacement for another source's API.
 
-- **Runtime**: Node.js + Fastify (faster than Express)
-- **ORM**: Drizzle ORM + PostgreSQL
-- **Auth**: JWT (access + refresh) + Google/GitHub OAuth + WebAuthn/passkeys
-- **Queues**: Bull (Redis-based — no Celery needed)
-- **Email**: Resend integration
-- **File storage**: Local or S3/Cloudflare R2
-- **Payments**: Stripe
-- **Observability**: OpenTelemetry + Sentry
-- **Testing**: Jest + mutation testing (Stryker)
-- **Tooling**: Biome (lint + format), bun (package manager)
+`init` clones the configured repository URLs. Local edits to a sibling boilerplate
+do not reach a new scaffold until you publish them or configure a source override.
+Run `make setup`, review dependency lock changes, and check the selected source's
+quality tools. Use the [ecosystem guide](docs/ecosystem.md) to configure sources.
 
-In monorepo mode, the NestJS API runs on **port 4000** (to avoid conflicts with React dev servers on 3000/5173). The generated root `.env` and Makefile are pre-configured for this.
+Keep evidence specific:
 
-```bash
-# NestJS monorepo workflow
-mattstack init my-app -p nestjs-fullstack
-cd my-app
-make setup         # bun install (backend) + bun install (frontend)
-make up            # Start Postgres + Redis via Docker
-make backend-migrate   # Run Drizzle migrations
-make backend-dev   # http://localhost:4000
-make frontend-dev  # http://localhost:5173
-```
+- A build proves the selected build path, not authentication or production readiness.
+- A route guard does not prove API authorization.
+- A local production-image smoke does not prove cloud IAM or provider networking.
+- Nonblocking quality findings remain warnings, not an all-clear result.
 
 ---
 
@@ -288,12 +303,12 @@ Six audit domains in one pass:
 
 ```bash
 mattstack audit                         # All domains
-mattstack audit --domain types          # Pydantic ↔ TypeScript drift
-mattstack audit --domain quality        # TODOs, stubs, hardcoded creds
-mattstack audit --domain endpoints      # Missing/unimplemented endpoints
-mattstack audit --domain tests          # Coverage gaps
-mattstack audit --domain dependencies   # Outdated packages
-mattstack audit --domain vulnerabilities # CVE scan
+mattstack audit --type types          # Pydantic ↔ TypeScript drift
+mattstack audit --type quality        # TODOs, stubs, hardcoded creds
+mattstack audit --type endpoints      # Missing/unimplemented endpoints
+mattstack audit --type tests          # Coverage gaps
+mattstack audit --type dependencies   # Outdated packages
+mattstack audit --type vulnerabilities # CVE scan
 mattstack audit --html                  # HTML dashboard
 ```
 
@@ -304,7 +319,7 @@ Results are printed as a Rich table and appended to `tasks/todo.md`.
 ## Installation
 
 ```bash
-pip install mattstack
+uv tool install git+https://github.com/mattjaikaran/mattstack-cli
 
 # Or install from source
 git clone https://github.com/mattjaikaran/mattstack-cli
@@ -319,19 +334,21 @@ uv run mattstack --help
 
 ```bash
 uv sync --extra dev     # Install with dev deps
-uv run pytest -x -q    # 863 tests
+uv run pytest -x -q
 uv run ruff check src/ tests/
 uv run ruff format src/ tests/
+make gauntlet-quick     # Format, lint, types, security, architecture, length, tests, install
 ```
 
 ---
 
-## Source Repositories
+## Source repositories
 
 | Key | Repository |
 |-----|-----------|
 | `django-ninja` | [django-ninja-boilerplate](https://github.com/mattjaikaran/django-ninja-boilerplate) |
-| `django-matt` | [django-matt-boilerplate](https://github.com/mattjaikaran/django-matt-boilerplate) |
+| `django-matt` | [Configured source](docs/ecosystem.md#source-provenance) |
+| `fastapi` | [fastapi-boilerplate](https://github.com/mattjaikaran/fastapi-boilerplate) |
 | `nestjs` | [nestjs-boilerplate](https://github.com/mattjaikaran/nestjs-boilerplate) |
 | `react-vite` | [react-vite-boilerplate](https://github.com/mattjaikaran/react-vite-boilerplate) |
 | `react-vite-starter` | [react-vite-starter](https://github.com/mattjaikaran/react-vite-starter) |
@@ -339,6 +356,10 @@ uv run ruff format src/ tests/
 | `react-rsbuild-kibo` | [react-rsbuild-kibo-boilerplate](https://github.com/mattjaikaran/react-rsbuild-kibo-boilerplate) |
 | `nextjs` | [nextjs-starter](https://github.com/mattjaikaran/nextjs-starter) |
 | `swift-ios` | [swift-ios-starter](https://github.com/mattjaikaran/swift-ios-starter) |
+
+Resolve the active repository through the configured source key. Use the
+[source provenance guide](docs/ecosystem.md#source-provenance) to check overrides,
+published commits, and compatibility before you substitute another source.
 
 ---
 

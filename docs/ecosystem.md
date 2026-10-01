@@ -1,37 +1,75 @@
-# mattstack Ecosystem Guide
+# mattstack ecosystem guide
 
-mattstack is designed to be extensible. You can bring your own boilerplate repos, define custom presets, and write audit plugins.
+This guide explains where generated code comes from and how you can customize
+sources, presets, and defaults. It also lists optional tools that you can add to
+a generated project.
 
-## Custom Boilerplate Repos
+## Source provenance
 
-Override or add new source repositories in `~/.mattstack/config.yaml`:
+`mattstack init` and `mattstack add` copy code from source repositories.
+`mattstack upgrade` compares your project with fresh clones of the same sources.
+
+```mermaid
+flowchart LR
+    builtin["Built-in repository map"] --> map["Repository URL<br/>for each selected key"]
+    user["~/.mattstack/config.yaml<br/>repos: overrides"] --> map
+    map --> clone["git clone --depth 1<br/>default branch"]
+    clone --> post["Remove .git, rename project,<br/>update lock names"]
+    post --> project["Generated project"]
+    local["Unpublished changes<br/>in a local checkout"] -. "not used" .-> clone
+```
+
+- The clone uses the remote default branch. mattstack does not pin a branch,
+  tag, or commit.
+- mattstack removes the cloned `.git` directory. `mattstack.yml` records the
+  selected frameworks, not the source URL or commit.
+- Local changes in a sibling boilerplate do not reach a new project until you
+  publish them to the default branch, or point a `repos:` override at a
+  repository that contains them.
+
+Some source fixes used in this repository's local verification are not
+published yet. A fresh `init` clones the published sources and may not include
+them. To record provenance, note the source commit when you scaffold, for
+example with `git ls-remote <url> HEAD`.
+
+Built-in keys:
+
+| Key | Repository |
+|---|---|
+| `django-ninja` | [django-ninja-boilerplate](https://github.com/mattjaikaran/django-ninja-boilerplate) |
+| `django-matt` | [django-matt-starter](https://github.com/mattjaikaran/django-matt-starter) |
+| `fastapi` | [fastapi-boilerplate](https://github.com/mattjaikaran/fastapi-boilerplate) |
+| `nestjs` | [nestjs-boilerplate](https://github.com/mattjaikaran/nestjs-boilerplate) |
+| `react-vite` | [react-vite-boilerplate](https://github.com/mattjaikaran/react-vite-boilerplate) |
+| `react-vite-starter` | [react-vite-starter](https://github.com/mattjaikaran/react-vite-starter) |
+| `react-rsbuild` | [react-rsbuild-boilerplate](https://github.com/mattjaikaran/react-rsbuild-boilerplate) |
+| `react-rsbuild-kibo` | [react-rsbuild-kibo-boilerplate](https://github.com/mattjaikaran/react-rsbuild-kibo-boilerplate) |
+| `nextjs` | [nextjs-starter](https://github.com/mattjaikaran/nextjs-starter) |
+| `swift-ios` | [swift-ios-starter](https://github.com/mattjaikaran/swift-ios-starter) |
+
+The B2B variant uses the same repository key as the starter variant.
+
+## Custom source repositories
+
+Override built-in keys in `~/.mattstack/config.yaml`:
 
 ```yaml
 repos:
-  # Override the default Django boilerplate
   django-ninja: https://github.com/myorg/django-boilerplate.git
-
-  # Add new repositories
-  nextjs: https://github.com/myorg/nextjs-boilerplate.git
-  fastapi: https://github.com/myorg/fastapi-starter.git
+  nextjs: https://github.com/myorg/nextjs-starter.git
 ```
 
-User repos are merged with built-in repos. User entries take precedence (override by key).
+A user entry replaces the built-in URL with the same key. Use any URL that
+`git clone` accepts; mattstack does not validate it. A `file://` URL clones the
+local repository's checked-out branch at its last commit. Uncommitted or
+stashed edits never reach the scaffold. Commit on the intended branch first,
+then record that branch and commit yourself.
 
-### Using Custom Repos in Presets
+mattstack clones only the built-in keys. A new key appears in `mattstack info`,
+but no command clones it. Presets cannot select a repository; they select
+framework keys.
 
-Reference your custom repo keys in preset definitions:
-
-```yaml
-presets:
-  my-fullstack:
-    description: "Our team's fullstack setup"
-    project_type: fullstack
-    variant: starter
-    frontend_framework: react-vite
-```
-
-## Custom Presets
+## Custom presets
 
 Define presets in `~/.mattstack/config.yaml`:
 
@@ -40,52 +78,90 @@ presets:
   my-api:
     description: "Internal API template"
     project_type: backend-only
-    variant: starter
-    use_celery: false
+    backend_framework: django-ninja
+    task_backend: none
 
   my-fullstack:
     description: "Our standard fullstack"
     project_type: fullstack
     variant: b2b
+    backend_framework: fastapi
     frontend_framework: react-vite
     include_ios: true
-    use_celery: true
+    task_backend: celery
 ```
 
-### Preset Fields
-
 | Field | Type | Default | Description |
-|-------|------|---------|-------------|
+|---|---|---|---|
 | `description` | string | auto | Human-readable description |
-| `project_type` | string | fullstack | `fullstack`, `backend-only`, `frontend-only` |
-| `variant` | string | starter | `starter`, `b2b` |
-| `frontend_framework` | string | react-vite | `react-vite`, `react-vite-starter` |
-| `include_ios` | bool | false | Include iOS client |
-| `use_celery` | bool | true | Include Celery background tasks |
+| `project_type` | string | `fullstack` | `fullstack`, `backend-only`, or `frontend-only` |
+| `variant` | string | `starter` | `starter` or `b2b` |
+| `backend_framework` | string | `django-ninja` | `django-ninja`, `django-matt`, `fastapi`, or `nestjs` |
+| `frontend_framework` | string | `react-vite` | Explicit frontend and router selection |
+| `include_ios` | bool | `false` | Include the iOS client |
+| `task_backend` | string | `celery` | Django Ninja: all six choices. Django Matt and FastAPI: `celery` or `none`. NestJS: Bull in the API. |
+| `use_realtime` | bool | `false` | Opt-in Django Ninja Centrifugo profile |
 
-## Default Settings
+The legacy `use_celery` field maps to the task selection; an explicit
+`task_backend` wins. Presets do not select a deployment target. mattstack
+validates each user preset and skips an invalid preset with a warning.
 
-Set project defaults so you don't have to specify them every time:
+Keep the selected frontend and router. B2B presets use the same explicit
+TanStack source as their starter counterpart and add backend features. They do
+not select `react-vite-b2b`: its organization, team, invitation, and auth API
+contracts differ from the supported backends. Do not substitute that React
+Router source silently.
+
+## User defaults
+
+mattstack reads one default:
 
 ```yaml
 defaults:
-  deployment: railway
-  use_celery: true
-  use_redis: true
-  init_git: true
+  package_manager: bun    # bun | npm | yarn | pnpm
 ```
 
-## Config Commands
+Commands that run frontend tools, such as `client`, `deps`, `dev`, `lint`, and
+`test`, choose the package manager in this order: the `--pm` option, the
+project's lockfile, this default, then `bun`. Run `mattstack client which` to
+see the choice and its reason. Generated Makefiles use Bun.
+
+The template from `mattstack config init` also lists `deployment`,
+`task_backend`, `use_redis`, and `init_git` under `defaults`. The CLI does not
+read them. Set those values per project with a preset, a scaffold YAML file, or
+`init` flags.
+
+## Config commands
 
 ```bash
 mattstack config show   # Display current config
 mattstack config path   # Print config file path
-mattstack config init   # Create template config
+mattstack config init   # Write the template config
 ```
 
-## Plugin System
+`config init` overwrites an existing file. Back it up first.
 
-See [Plugin Guide](plugin-guide.md) for writing custom audit plugins.
+## Dependency and lock updates
+
+`make setup` installs dependencies without locked mode, so it can update
+`uv.lock` and `bun.lock`. It also requests the backend's `dev` extra when one
+exists. For a Django Ninja task backend other than Celery, it adds that
+backend's extra, for example `uv sync --extra huey`.
+
+`mattstack deps update` runs `uv lock --upgrade`, then a plain `uv sync`. That
+sync can remove those extras from the virtual environment. Run
+`make setup` again after a backend update. `--major` affects only the frontend;
+`uv lock --upgrade` already upgrades backend packages as far as `pyproject.toml`
+allows.
+
+Review both lockfiles before you commit. Generated Bun installs use
+`--frozen-lockfile` and fail on drift. The uv installs in the backend image and
+CI do not detect a stale `uv.lock`. See
+[production prerequisites](deployment-guide.md#production-prerequisites).
+
+## Plugin system
+
+See the [plugin guide](plugin-guide.md) to write custom audit plugins.
 
 ## Optional cross-language tools
 
@@ -96,21 +172,27 @@ that repeats Gauntlet checks.
 ### OpenAPI clients with Hey API
 
 Use the runtime OpenAPI schema when regex-based `sync` cannot express your
-backend contract. Prefer one client generator; do not install both Hey API
-and Orval.
+backend contract. The regex commands read source text; the OpenAPI schema comes
+from the backend framework. See [sync](commands.md#sync) to compare them.
+Prefer one client generator; do not install both Hey API and Orval.
 
 ```bash
 mattstack client add @hey-api/openapi-ts@0.99.0 --dev --exact
-# Export your running backend's schema to openapi.json.
-mattstack sync openapi
+mattstack sync openapi           # Prints the Ninja export command if the schema is missing
 mattstack sync openapi --check
 ```
 
+For Django Ninja, `sync openapi` reads `backend/docs/openapi/openapi.json`. When
+the file is missing, the CLI prints an export command that loads the root
+`.env` and runs `uv run python manage.py export_openapi` from the backend
+directory. Run it, then retry. An explicit `--schema` overrides discovery.
+Other backends use `openapi.json` at the project root unless you pass a path.
+The CLI does not export your schema or install Hey API implicitly.
+
 Use Node 22.18 or later. `sync openapi` runs only your installed local tool.
-It does not fetch packages. It rejects edited or unmanaged output unless
-you pass `--force`. `--check` reports drift without replacing files.
-Keep the schema free of secrets and check the generated client with your
-frontend typecheck and API integration tests.
+It rejects edited or unmanaged output unless you pass `--force`. `--check`
+reports drift without replacing files. Keep the schema free of secrets. Check
+the generated client with your frontend typecheck and API integration tests.
 
 Read the [Hey API setup guide](https://heyapi.dev/docs/openapi/typescript/get-started)
 for SDK, Zod, and TanStack Query plugin configuration.
@@ -132,7 +214,7 @@ Check each project's completion status and skipped checks; an empty
 diagnostic list does not prove that analysis completed.
 Use `--scope changed --base origin/main` only when that Git ref exists.
 Review the [React Doctor license](https://github.com/millionco/react-doctor/blob/main/LICENSE):
-its modified MIT terms restrict AI training/evaluation pipelines and some
+its modified MIT terms restrict AI training and evaluation pipelines and some
 paid hosted services. Do not enable it automatically in agent pipelines.
 Read the [React Doctor CLI documentation](https://www.react.doctor/) for
 the supported Node versions and flags.

@@ -1,10 +1,12 @@
 """Align react-vite-boilerplate's TanStack Router packages and app code.
 
-The boilerplate pins router-plugin 1.58.4, which resolves a router-generator
-that no longer exports ``generator``, and its vite.config.ts imports
-``tanstackRouter``, which 1.58.4 does not export. Align it to the line the
-Rsbuild boilerplates ship. Leave react-vite-starter alone: it uses React
-Router (``react-router-dom``) by design.
+Published checkouts that predate the boilerplate's own router alignment pin
+router-plugin 1.58.4, which resolves a router-generator that no longer exports
+``generator``, while vite.config.ts imports ``tanstackRouter``, which 1.58.4
+does not export. Align them to the line the Rsbuild boilerplates ship. An
+aligned checkout is left unchanged: versions never downgrade, and the build
+order and devtools import already match. Leave react-vite-starter and
+react-vite-b2b alone: they use React Router (``react-router-dom``) by design.
 """
 
 from __future__ import annotations
@@ -15,7 +17,8 @@ from pathlib import Path
 
 from mattstack.config import ProjectConfig
 from mattstack.parsers.frontend_routes import tanstack_route_id
-from mattstack.utils.console import print_info
+from mattstack.parsers.tanstack_config import RouteNaming, read_tanstack_config
+from mattstack.utils.console import print_info, print_warning
 
 # Exact published versions with compatible peers. Devtools does not publish
 # the router's patch numbers: react-router-devtools 1.166.13 declares
@@ -44,7 +47,16 @@ def align_tanstack_router(config: ProjectConfig) -> None:
             "`make setup` regenerates frontend/bun.lock to match"
         )
     _migrate_devtools_imports(config.frontend_dir)
-    _fix_route_casts(config.frontend_dir / "src" / "routes")
+    tanstack = read_tanstack_config(config.frontend_dir)
+    if tanstack.error:
+        where = tanstack.source or config.frontend_dir
+        print_warning(
+            f"Left `as any` route-id casts in place: {where}: {tanstack.error} "
+            "Fix the TanStack Router plugin options, then remove the casts by hand "
+            "and run `bun run build` in the frontend to regenerate the route tree."
+        )
+        return
+    _fix_route_casts(tanstack.routes_dir, tanstack.naming)
 
 
 def _version_tuple(spec: str) -> tuple[int, ...] | None:
@@ -114,12 +126,13 @@ def _migrate_devtools_imports(frontend_dir: Path) -> None:
         print_info(f"Migrated {migrated} file(s) to {_DEVTOOLS}")
 
 
-def _fix_route_casts(routes_dir: Path) -> None:
+def _fix_route_casts(routes_dir: Path, naming: RouteNaming) -> None:
     """Remove ``as any`` casts the newer router rejects in route ids.
 
     ``createFileRoute('/dashboard' as any)`` fails the route transform with
     "expected route id to be a string literal". Write the id the generator
-    derives from the file, which also matches the generated route tree.
+    derives from the file under the configured ``routesDirectory`` and naming
+    tokens, which also matches the generated route tree.
     """
     if not routes_dir.is_dir():
         return
@@ -128,7 +141,7 @@ def _fix_route_casts(routes_dir: Path) -> None:
     fixed = 0
     for path in sorted(routes_dir.rglob("*.ts*")):
         text = path.read_text()
-        route_id = tanstack_route_id(routes_dir, path)
+        route_id = tanstack_route_id(routes_dir, path, naming)
 
         def replace_route(match: re.Match[str], value: str | None = route_id) -> str:
             return f"createFileRoute('{value or match.group(2)}')"

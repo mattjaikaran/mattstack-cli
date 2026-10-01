@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
-from mattstack.config import FrontendFramework, ProjectConfig
+from mattstack.config import FrontendFramework, MediaStorage, ProjectConfig
+from mattstack.runtime_profiles import runtime_guidance, runtime_service_lines, task_summary
+from mattstack.templates.component_guidance import component_guidance
 from mattstack.templates.frontend_runtime import api_base_env_var
 from mattstack.templates.stack_facts import BackendFacts, Toolchain, backend_facts
 
@@ -24,6 +26,7 @@ def generate_claude_md(config: ProjectConfig, tools: Toolchain | None = None) ->
         _structure(config, backend),
         _tech(config, backend),
         _rules(config, backend, tools),
+        *filter(None, [component_guidance(config, tools)]),
         _commands(config),
         _ports(config, backend),
         _env_vars(config, backend),
@@ -79,10 +82,10 @@ def _structure(config: ProjectConfig, backend: BackendFacts) -> str:
 
 
 def _background(config: ProjectConfig, backend: BackendFacts) -> str | None:
-    """Return the background job runner, or None when the project has none."""
+    """Return the background job runtime; NestJS runs Bull inside the API."""
     if config.is_nestjs_backend:
         return backend.background
-    return backend.background if config.use_celery else None
+    return task_summary(config)
 
 
 def _tech(config: ProjectConfig, backend: BackendFacts) -> str:
@@ -238,6 +241,12 @@ def _env_vars(config: ProjectConfig, backend: BackendFacts) -> str:
     parts: list[str] = ["## Environment Variables", ""]
     if config.has_backend:
         parts.append(f"- Root `.env`: {backend.env_vars}")
+        if config.media_storage == MediaStorage.S3:
+            parts.append(
+                "- `.env.production` (S3 media, opt-in): `AWS_STORAGE_BUCKET_NAME`, "
+                "`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_S3_REGION_NAME` "
+                "(default `us-east-1`). Never commit them; static files stay local."
+            )
     if config.has_frontend:
         parts.append(f"- Frontend: `{api_base_env_var(config)}` for API base URL")
     if not config.has_backend and not config.has_frontend:
@@ -259,8 +268,7 @@ def _backend(config: ProjectConfig, backend: BackendFacts) -> str:
     if backend.docs_path:
         docs_url = f"http://localhost:{config.backend_api_port}{backend.docs_path}"
         lines.append(f"- API docs: {docs_url} (Swagger UI)")
-    if config.use_celery and not config.is_nestjs_backend:
-        lines.append("- Background jobs: Celery (run with `docker compose --profile celery up`)")
+    lines.extend(runtime_guidance(config))
     if config.is_b2b:
         lines.append("- B2B: Organizations, teams, RBAC (role-based access control)")
     return "\n".join(lines)
@@ -323,8 +331,7 @@ def _docker_services(config: ProjectConfig, backend: BackendFacts) -> str:
         parts.append("- `api-dev`: NestJS dev server (auto-migrates on start)")
     else:
         parts.append(f"- `api-dev`: {backend.service} dev server (when using Docker)")
-        if config.use_celery:
-            parts.append("- `celery-worker`, `celery-beat`: Celery (profile: celery)")
+        parts.extend(runtime_service_lines(config))
     return "\n".join(parts)
 
 

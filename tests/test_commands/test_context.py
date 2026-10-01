@@ -84,6 +84,19 @@ class TestDetectFrontendStack:
         proj = _make_fullstack(tmp_path / "app")
         assert build_stack_context(proj)["backend"]["framework"] == BackendFramework.DJANGO_NINJA
 
+    def test_backend_reports_selected_task_runtime(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.delenv("TASK_BACKEND", raising=False)
+        proj = _make_fullstack(tmp_path / "app")
+        (proj / ".env").write_text("TASK_BACKEND=dramatiq\n")
+        backend = build_stack_context(proj)["backend"]
+        assert backend["task_backend"] == "dramatiq"  # never assumed to be Celery
+        assert backend["task_profile"] == "dramatiq"
+        assert backend["task_extra"] == "dramatiq"
+        assert [p["service"] for p in backend["task_processes"]] == ["dramatiq-worker"]
+        assert backend["realtime"] is None
+
     def test_spa_with_src_app_is_not_reported_as_nextjs(self, tmp_path: Path) -> None:
         proj = _make_fullstack(tmp_path / "app")
         frontend = proj / "frontend"

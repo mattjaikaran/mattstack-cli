@@ -8,7 +8,11 @@ credential has a single source on the host and in the containers.
 
 from __future__ import annotations
 
-from mattstack.config import ProjectConfig
+import json
+import secrets
+
+from mattstack.config import MediaStorage, ProjectConfig
+from mattstack.runtime_profiles import CENTRIFUGO_PORT, REALTIME_SECRETS, task_backend_env
 from mattstack.templates.frontend_runtime import (
     FRONTEND_PORT,
     PROD_API_SERVICE,
@@ -21,8 +25,10 @@ _USER = "${POSTGRES_USER}"
 _PASSWORD = "${POSTGRES_PASSWORD}"  # nosec B105 # Environment reference, not a credential.
 
 
-def generate_env_example(config: ProjectConfig) -> str:
-    """Generate .env.example with combined backend + frontend vars."""
+def generate_env_example(
+    config: ProjectConfig, *, realtime_secrets: dict[str, str] | None = None
+) -> str:
+    """Generate .env.example; ``realtime_secrets`` fills the Centrifugo keys for .env."""
     frontend_origin = "http://localhost:${FRONTEND_PORT}"
     lines: list[str] = [
         f"# Project: {config.display_name}",
@@ -35,6 +41,8 @@ def generate_env_example(config: ProjectConfig) -> str:
         lines.append("DB_PORT=5432")
         if config.use_redis:
             lines.append("REDIS_PORT=6379")
+        if config.use_realtime:
+            lines.append(f"CENTRIFUGO_PORT={CENTRIFUGO_PORT}")
     lines.append("")
 
     if config.has_backend:
@@ -67,7 +75,9 @@ def generate_env_example(config: ProjectConfig) -> str:
                 [
                     f"# === Backend ({label}) ===",
                     "DEBUG=true",
-                    f"SECRET_KEY=change-me-{config.name}-secret",
+                    f"SECRET_KEY=change-me-dev-{config.name}-secret-key-at-least-32-chars"
+                    if config.is_fastapi_backend
+                    else f"SECRET_KEY=change-me-{config.name}-secret",
                     f"DATABASE_URL={scheme}://{db_url}",
                 ]
             )
@@ -85,7 +95,15 @@ def generate_env_example(config: ProjectConfig) -> str:
                     ]
                 )
             else:
-                lines.append(f"CORS_ORIGINS={frontend_origin}")
+                lines.extend(
+                    [
+                        "APP_ENV=development",
+                        "APP_DEBUG=true",
+                        f"JWT_SECRET_KEY=change-me-dev-{config.name}-jwt-key-at-least-32-chars",
+                        _json_env("CORS_ORIGINS", [frontend_origin]),
+                        _json_env("ALLOWED_HOSTS", ["localhost", "127.0.0.1"]),
+                    ]
+                )
             if config.use_redis:
                 lines.append(f"REDIS_URL={redis}/0")
             if config.use_celery:
@@ -95,12 +113,46 @@ def generate_env_example(config: ProjectConfig) -> str:
                         f"CELERY_RESULT_BACKEND={redis}/0",
                     ]
                 )
+            lines.extend(_task_lines(config))
+            if config.use_realtime:
+                lines.extend(_realtime_lines(realtime_secrets or {}))
         lines.append("")
 
     if config.has_frontend:
         lines.extend(_frontend_lines(config, "http://localhost:${API_PORT}"))
 
     return "\n".join(lines).rstrip() + "\n"
+
+
+def generate_env_file(config: ProjectConfig) -> str:
+    """Generate the gitignored .env; realtime projects get fresh random secrets."""
+    if not config.use_realtime:
+        return generate_env_example(config)
+    fresh = {key: secrets.token_hex(32) for key in REALTIME_SECRETS}
+    return generate_env_example(config, realtime_secrets=fresh)
+
+
+def _task_lines(config: ProjectConfig) -> list[str]:
+    env = task_backend_env(config)
+    if not env:
+        return []
+    comment = (
+        "# TASK_BACKEND=none runs no worker: .delay() raises TaskDispatchDisabled"
+        if env["TASK_BACKEND"] == "none"
+        else "# Task backend; the worker runs under its Compose profile"
+    )
+    return [comment, f"TASK_BACKEND={env['TASK_BACKEND']}"]
+
+
+def _realtime_lines(values: dict[str, str]) -> list[str]:
+    """Centrifugo keys; Compose maps them onto the Centrifugo container too."""
+    return [
+        "",
+        "# === Realtime (Centrifugo; start with: make up-realtime) ===",
+        "# Never commit values. Generate each secret: openssl rand -hex 32",
+        "CENTRIFUGO_URL=http://localhost:${CENTRIFUGO_PORT}",
+        *(f"{key}={values.get(key, '')}" for key in REALTIME_SECRETS),
+    ]
 
 
 def generate_env_production_example(config: ProjectConfig) -> str:
@@ -113,8 +165,10 @@ def generate_env_production_example(config: ProjectConfig) -> str:
         "# === Ports (host side) ===",
         f"API_PORT={config.backend_api_port}",
         "FRONTEND_PORT=80",
-        "",
     ]
+    if config.use_realtime:
+        lines.append(f"CENTRIFUGO_PORT={CENTRIFUGO_PORT}")
+    lines.append("")
 
     if config.has_backend:
         lines.extend(_database_lines(config, password="change-me-strong-password"))  # nosec B106 # Placeholder; replace in production.
@@ -165,7 +219,17 @@ def generate_env_production_example(config: ProjectConfig) -> str:
                     ]
                 )
             else:
-                lines.append(f"CORS_ORIGINS={origin}")
+                lines.extend(
+                    [
+                        "APP_ENV=production",
+                        "APP_DEBUG=false",
+                        "JWT_SECRET_KEY=change-me-distinct-jwt-key-at-least-32-characters",
+                        _json_env("CORS_ORIGINS", [origin]),
+                        _json_env("ALLOWED_HOSTS", [origin.removeprefix("https://")]),
+                        f"WEBAUTHN_RP_ID={origin.removeprefix('https://')}",
+                        f"WEBAUTHN_ORIGIN={origin}",
+                    ]
+                )
             if config.use_redis:
                 lines.append("REDIS_URL=redis://redis:6379/0")
             if config.use_celery:
@@ -173,6 +237,29 @@ def generate_env_production_example(config: ProjectConfig) -> str:
                     [
                         "CELERY_BROKER_URL=redis://redis:6379/0",
                         "CELERY_RESULT_BACKEND=redis://redis:6379/0",
+                    ]
+                )
+            lines.extend(_task_lines(config))
+            if config.use_realtime:
+                lines.extend(
+                    [
+                        "",
+                        "# === Realtime (Centrifugo) ===",
+                        "# Generate: openssl rand -hex 32. Compose refuses to start while empty.",
+                        "CENTRIFUGO_API_KEY=",
+                        "# Browser origins allowed to open a WebSocket, space separated",
+                        f"CENTRIFUGO_ALLOWED_ORIGINS={origin}",
+                    ]
+                )
+            if config.media_storage == MediaStorage.S3:
+                lines.extend(
+                    [
+                        "",
+                        "# === Media storage (S3, opt-in; static files stay local) ===",
+                        "AWS_STORAGE_BUCKET_NAME=",
+                        "AWS_ACCESS_KEY_ID=",
+                        "AWS_SECRET_ACCESS_KEY=",
+                        "AWS_S3_REGION_NAME=us-east-1",
                     ]
                 )
         lines.append("")
@@ -216,3 +303,8 @@ def _frontend_lines(config: ProjectConfig, backend_origin: str) -> list[str]:
         if config.is_nextjs:
             lines.append(f"INTERNAL_API_URL={backend_origin}")
     return [*lines, ""] if len(lines) > 1 else []
+
+
+def _json_env(key: str, values: list[str]) -> str:
+    """Quote JSON list settings so dotenv, Compose, and shell exports preserve them."""
+    return f"{key}={json.dumps(json.dumps(values))}"

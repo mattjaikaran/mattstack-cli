@@ -5,31 +5,68 @@ from __future__ import annotations
 from mattstack.commands.codegen.backend_layout import DJANGO_MATT, BackendLayout
 from mattstack.commands.codegen.fields import (
     DJANGO_FIELD_MAP,
+    FIELD_VALUE_TYPES,
     FK_KEY_TYPES,
     FieldSpec,
     search_field,
     to_snake,
 )
+from mattstack.commands.codegen.py_lines import LINE_LIMIT, bracketed, from_import
+from mattstack.commands.codegen.resource_policy import DEFAULT_POLICY, ResourcePolicy
 
 
-def render_model(name: str, fields: list[FieldSpec], layout: BackendLayout) -> str:
-    """Render a model. FKs carry resolved lazy references, so no model imports."""
+def _field(name: str, column: str, value_type: str, args: str) -> list[str]:
+    """A model field annotated `models.<column>[set, get]`.
+
+    Without the django-stubs mypy plugin, mypy cannot infer a field's value
+    types and reports `var-annotated`; the annotation states them. The value
+    type is the instance attribute's type; FK targets resolve lazily, so FKs
+    use Any.
+    """
+    target = f"{name}: models.{column}[{value_type}, {value_type}]"
+    items = args.split(", ") if args else []
+    if len(f"    {target} = models.{column}(") <= LINE_LIMIT:
+        return bracketed("    ", f"{target} = models.{column}", items)
+    # The call cannot open on the target's line: parenthesize the value.
+    return [f"    {target} = (", *bracketed(" " * 8, f"models.{column}", items), "    )"]
+
+
+def render_model(
+    name: str,
+    fields: list[FieldSpec],
+    layout: BackendLayout,
+    policy: ResourcePolicy = DEFAULT_POLICY,
+) -> str:
+    """Render a model. FKs carry resolved lazy references, so no model imports.
+
+    The model inherits *policy*'s lifecycle base class from the project's base
+    model module; without one it declares a UUID id and timestamps itself.
+    """
     snake = to_snake(name)
     base = layout.base_model_module
+    parent = policy.base_class if base else "models.Model"
     needs_uuid = base is None or any(f.type == "uuid" for f in fields)
+    value_types = {FIELD_VALUE_TYPES[f.type] for f in fields if not f.is_fk}
+    stdlib = ["import uuid"] if needs_uuid else []
+    dates = sorted(value_types & {"date", "datetime"} | ({"datetime"} if base is None else set()))
+    if dates:
+        stdlib.append(f"from datetime import {', '.join(dates)}")
+    if "Decimal" in value_types:
+        stdlib.append("from decimal import Decimal")
+    if any(f.is_fk for f in fields):
+        stdlib.append("from typing import Any")
     lines = [f'"""Django model for {name}."""', "", "from __future__ import annotations", ""]
-    if needs_uuid:
-        lines += ["import uuid", ""]
+    if stdlib:
+        lines += [*stdlib, ""]
     if any(f.fk_reference == "settings.AUTH_USER_MODEL" for f in fields):
         lines.append("from django.conf import settings")
     lines.append("from django.db import models")
     if base:
-        lines += ["", f"from {base} import AbstractBaseModel"]
-    lines += ["", "", f"class {name}({'AbstractBaseModel' if base else 'models.Model'}):"]
+        lines += ["", f"from {base} import {parent}"]
+    lines += ["", "", f"class {name}({parent}):"]
     if base is None:
-        lines.append(
-            "    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)"
-        )
+        args = "primary_key=True, default=uuid.uuid4, editable=False"
+        lines += _field("id", "UUIDField", "uuid.UUID", args)
 
     targets = [f.fk_target for f in fields if f.is_fk]
     for field in fields:
@@ -39,16 +76,15 @@ def render_model(name: str, fields: list[FieldSpec], layout: BackendLayout) -> s
             related = (
                 f"{snake}s" if targets.count(field.fk_target) == 1 else f"{snake}_{field.name}s"
             )
-            lines.append(
-                f"    {field.name} = models.ForeignKey({field.fk_reference}, "
-                f'on_delete=models.CASCADE, related_name="{related}")'
-            )
+            args = f'{field.fk_reference}, on_delete=models.CASCADE, related_name="{related}"'
+            lines += _field(field.name, "ForeignKey", "Any", args)
         else:
-            lines.append(f"    {field.name} = models.{DJANGO_FIELD_MAP[field.type]}")
+            column, args = DJANGO_FIELD_MAP[field.type].removesuffix(")").split("(", 1)
+            lines += _field(field.name, column, FIELD_VALUE_TYPES[field.type], args)
     if base is None:
         lines += [
-            "    created_at = models.DateTimeField(auto_now_add=True)",
-            "    updated_at = models.DateTimeField(auto_now=True)",
+            *_field("created_at", "DateTimeField", "datetime", "auto_now_add=True"),
+            *_field("updated_at", "DateTimeField", "datetime", "auto_now=True"),
         ]
     str_field = search_field(fields)
     lines += [
@@ -109,18 +145,19 @@ def render_schemas(name: str, fields: list[FieldSpec], layout: BackendLayout) ->
         first_party = ["", f"from {layout.camel_schema_module} import CamelCaseSchema"]
     else:
         base_class, third_party = "Schema", ["from ninja import Schema"]
-    third_party.append(f"from pydantic import {', '.join(sorted(pydantic_names))}")
+    third_party += from_import("pydantic", sorted(pydantic_names))
 
     def field_lines(optional: bool) -> list[str]:
         if not fields:
             return ["    pass"]
         out = []
         for field in fields:
-            args = ", ".join(
-                a for a in ("default=None" if optional else "", field.py_constraints) if a
-            )
-            suffix = f" = Field({args})" if args else ""
-            out.append(f"    {field.api_name}: {field.py_type}{suffix}")
+            args = [a for a in ("default=None" if optional else "", field.py_constraints) if a]
+            declared = f"{field.api_name}: {field.py_type}"
+            if args:
+                out += bracketed("    ", f"{declared} = Field", ", ".join(args).split(", "))
+            else:
+                out.append(f"    {declared}")
         return out
 
     lines = [
@@ -132,19 +169,19 @@ def render_schemas(name: str, fields: list[FieldSpec], layout: BackendLayout) ->
         *first_party,
         "",
         "",
-        f"class {name}BaseSchema({base_class}):",
+        *bracketed("", f"class {name}BaseSchema", [base_class], ":"),
         *field_lines(optional=False),
         "",
         "",
-        f"class {name}CreateSchema({name}BaseSchema):",
+        *bracketed("", f"class {name}CreateSchema", [f"{name}BaseSchema"], ":"),
         "    pass",
         "",
         "",
-        f"class {name}UpdateSchema({base_class}):",
+        *bracketed("", f"class {name}UpdateSchema", [base_class], ":"),
         *field_lines(optional=True),
         "",
         "",
-        f"class {name}ResponseSchema({name}BaseSchema):",
+        *bracketed("", f"class {name}ResponseSchema", [f"{name}BaseSchema"], ":"),
         "    model_config = ConfigDict(from_attributes=True)",
         "",
         f"    id: {id_type}",
@@ -166,10 +203,9 @@ def _decimal_serializer(names: list[str]) -> list[str]:
     """
     if not names:
         return []
-    targets = ", ".join(f'"{n}"' for n in names)
     return [
         "",
-        f"    @field_serializer({targets})",
+        *bracketed("    ", "@field_serializer", [f'"{n}"' for n in names]),
         "    def serialize_decimals(self, value: Decimal) -> str:",
         '        return str(value.quantize(Decimal("0.01")))',
     ]
@@ -179,10 +215,12 @@ def render_admin(name: str, fields: list[FieldSpec], layout: BackendLayout) -> s
     """Render a ModelAdmin; unfold's when the project depends on django-unfold."""
     snake = to_snake(name)
     text_fields = [f.name for f in fields if f.type in ("str", "text", "email")][:3]
-    display = ", ".join(f'"{f}"' for f in ["id", *text_fields, "created_at"])
-    search = text_fields or ["id"]
-    search_tuple = (
-        "(" + ", ".join(f'"{f}"' for f in search) + ("," if len(search) == 1 else "") + ")"
+    display = [f'"{f}"' for f in ["id", *text_fields, "created_at"]]
+    search = [f'"{f}"' for f in text_fields or ["id"]]
+    search_lines = (
+        [f"    search_fields = ({search[0]},)"]
+        if len(search) == 1
+        else bracketed("    ", "search_fields = ", search)
     )
     if layout.has_unfold:
         imports = ["from django.contrib import admin", "from unfold.admin import ModelAdmin"]
@@ -196,14 +234,14 @@ def render_admin(name: str, fields: list[FieldSpec], layout: BackendLayout) -> s
             "",
             *imports,
             "",
-            f"from {layout.app_module}.models.{snake} import {name}",
+            *from_import(f"{layout.app_module}.models.{snake}", [name]),
             "",
             "",
             f"@admin.register({name})",
             f"class {name}Admin({parent}):",
-            f"    list_display = [{display}]",
+            *bracketed("    ", "list_display = ", display, brackets="[]"),
             '    list_filter = ("created_at",)',
-            f"    search_fields = {search_tuple}",
+            *search_lines,
             '    readonly_fields = ("id", "created_at", "updated_at")',
             "",
         ]

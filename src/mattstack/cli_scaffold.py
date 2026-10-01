@@ -33,6 +33,28 @@ def init(
         bool,
         typer.Option("--dry-run", help="Preview what would be generated without creating files"),
     ] = False,
+    task_backend: Annotated[
+        str | None,
+        typer.Option(
+            "--task-backend",
+            help="Background tasks: celery, huey, django_q, django_rq, dramatiq (django-ninja),"
+            " or none (no worker; enqueueing fails). Default: celery",
+        ),
+    ] = None,
+    realtime: Annotated[
+        bool | None,
+        typer.Option(
+            "--realtime/--no-realtime",
+            help="Add the Centrifugo realtime profile (django-ninja only; default off)",
+        ),
+    ] = None,
+    media_storage: Annotated[
+        str | None,
+        typer.Option(
+            "--media-storage",
+            help="Production media storage: local or s3 (django-ninja only; default local)",
+        ),
+    ] = None,
 ) -> None:
     """Create a new project from boilerplates."""
     from mattstack.commands.init import run_init
@@ -44,6 +66,9 @@ def init(
         ios=ios,
         output_dir=output_dir,
         dry_run=dry_run,
+        task_backend=task_backend,
+        realtime=realtime,
+        media_storage=media_storage,
     )
 
 

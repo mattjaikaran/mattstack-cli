@@ -1,9 +1,10 @@
-"""Register generated pages in a React Router `<Routes>` tree in `App.tsx`.
+"""Register generated pages in a React Router route tree.
 
-Only the boilerplate shape is edited: one JSX `<Routes>` block of literal
-`<Route>` elements, an optional pathless `<Route element={<ProtectedRoute />}>`
-group, and a `path="*"` splat. Anything else (data routers, `useRoutes`,
-lazy or mapped routes, several `<Routes>`) is refused before any write.
+JSX apps: one `<Routes>` block of literal `<Route>` elements, an optional
+pathless `<Route element={<ProtectedRoute />}>` group, and a `path="*"`
+splat. Data routers (`createBrowserRouter`/`useRoutes` route objects) are
+edited by `react_router_objects`. Anything else (computed or mapped routes,
+both styles at once, several declarations) is refused before any write.
 """
 
 from __future__ import annotations
@@ -15,7 +16,20 @@ from pathlib import Path
 
 from mattstack.commands.codegen.backend_layout import GenerateError
 from mattstack.commands.codegen.plan import FilePlan
-from mattstack.parsers.frontend_layout import FrontendLayout
+from mattstack.commands.codegen.react_router_objects import register_object_route
+from mattstack.commands.codegen.react_router_text import (
+    has_import,
+    import_insertion,
+    indent_at,
+    line_start,
+    normalize_url,
+)
+from mattstack.commands.codegen.route_options import (
+    DEFAULT_ROUTE_OPTIONS,
+    RouteOptions,
+    is_data_router,
+)
+from mattstack.parsers.frontend_layout import FrontendLayout, package_dependencies
 
 
 class RouteGroup(StrEnum):
@@ -29,9 +43,7 @@ PROTECTED_NOTICE = (
     "ProtectedRoute only redirects signed-out users in the browser. "
     "It is not authorization: the API must enforce access to the data."
 )
-UNSUPPORTED_ROUTER_RE = re.compile(
-    r"\b(?:createBrowserRouter|createHashRouter|createMemoryRouter|RouterProvider|useRoutes)\b"
-)
+URL_RE = re.compile(r"/|(?:/(?:[a-z0-9][a-z0-9-]*|:[A-Za-z_]\w*))+")
 ROUTES_OPEN_RE = re.compile(r"<Routes\b[^>]*>")
 ROUTES_CLOSE_RE = re.compile(r"</Routes\s*>")
 # A `<Route ...>` opener or self-closing tag (attribute values may hold JSX), or `</Route>`.
@@ -45,9 +57,6 @@ PATH_LITERAL_RE = re.compile(
 )
 INDEX_ATTR_RE = re.compile(r"(?<![\w-])index(?:\s*=\s*\{\s*true\s*\})?(?=[\s/]|$)")
 ELEMENT_RE = re.compile(r"(?<![\w-])element\s*=\s*\{\s*<([A-Za-z_$][\w$.]*)")
-IMPORT_RE = re.compile(r"^import\b[\s\S]*?(['\"])[^'\"\n]+\1;?[ \t]*$", re.M)
-SOURCE_SUFFIXES = (".ts", ".tsx", ".js", ".jsx")
-TEST_PARTS = frozenset({"node_modules", "test", "tests", "__tests__", "__mocks__"})
 
 
 @dataclass
@@ -68,11 +77,6 @@ def _join(prefix: str, path: str) -> str:
     if path.startswith("/"):
         return path
     return (prefix.rstrip("/") + "/" + path) if path else (prefix or "/")
-
-
-def _normalize(url: str) -> str:
-    """React Router matches case-insensitively and ignores a trailing slash."""
-    return (url.rstrip("/") or "/").lower()
 
 
 def _parse_routes(text: str, start: int, stop: int) -> list[_Route]:
@@ -134,15 +138,6 @@ def _parse_routes(text: str, start: int, stop: int) -> list[_Route]:
     return routes
 
 
-def _line_start(text: str, index: int) -> int:
-    return text.rfind("\n", 0, index) + 1
-
-
-def _indent(text: str, index: int) -> str:
-    line = text[_line_start(text, index) :]
-    return line[: len(line) - len(line.lstrip(" \t"))]
-
-
 def _insertion_point(text: str, routes: list[_Route], group: RouteGroup) -> tuple[int, str]:
     """Return (offset, indent) for a new line inside the selected group."""
     if group is RouteGroup.protected:
@@ -158,10 +153,10 @@ def _insertion_point(text: str, routes: list[_Route], group: RouteGroup) -> tupl
         if guard.close_start is None:
             raise GenerateError("The ProtectedRoute group is not closed.")
         if guard.children:
-            indent = _indent(text, routes[guard.children[-1]].start)
+            indent = indent_at(text, routes[guard.children[-1]].start)
         else:
-            indent = _indent(text, guard.start) + "  "
-        return _line_start(text, guard.close_start), indent
+            indent = indent_at(text, guard.start) + "  "
+        return line_start(text, guard.close_start), indent
 
     splats = [r for r in routes if r.url is not None and r.url.endswith("*") and not r.protected]
     if len(splats) != 1:
@@ -184,37 +179,14 @@ def _insertion_point(text: str, routes: list[_Route], group: RouteGroup) -> tupl
     if leaves:
         last = max(leaves, key=lambda r: r.end)
         line_end = text.find("\n", last.end)
-        return (len(text) if line_end == -1 else line_end + 1), _indent(text, last.start)
-    offset = _line_start(text, splat.start)
+        return (len(text) if line_end == -1 else line_end + 1), indent_at(text, last.start)
+    offset = line_start(text, splat.start)
     while offset > 0:  # keep a `{/* 404 */}` comment attached to the splat
-        previous = _line_start(text, offset - 1)
+        previous = line_start(text, offset - 1)
         if not JSX_COMMENT_RE.fullmatch(text[previous : offset - 1].strip()):
             break
         offset = previous
-    return offset, _indent(text, splat.start)
-
-
-def _imports(text: str, component: str, spec: str) -> bool:
-    pattern = rf"^import\s+{re.escape(component)}\s+from\s+(['\"]){re.escape(spec)}\1"
-    return re.search(pattern, text, re.M) is not None
-
-
-def _import_insertion(text: str, component: str, spec: str) -> tuple[int, str] | None:
-    """Return (offset, text) adding a default import of *spec*, or None if present."""
-    if _imports(text, component, spec):
-        return None
-    if re.search(rf"(?<![\w$.]){re.escape(component)}(?![\w$])", text):
-        raise GenerateError(
-            f"App.tsx already uses the name {component}; rename the page or register it by hand."
-        )
-    imports = list(IMPORT_RE.finditer(text))
-    if not imports:
-        raise GenerateError("App.tsx has no import block to extend.")
-    pages = [m for m in imports if "/pages/" in m.group(0)]
-    anchor = (pages or imports)[-1]
-    quote = anchor.group(1)
-    semi = ";" if anchor.group(0).rstrip().endswith(";") else ""
-    return anchor.end(), f"\nimport {component} from {quote}{spec}{quote}{semi}"
+    return offset, indent_at(text, splat.start)
 
 
 def register_route(
@@ -225,6 +197,7 @@ def register_route(
     group: RouteGroup,
     *,
     replace_existing: bool = False,
+    module: str = "App.tsx",
 ) -> str:
     """Return *text* with `<Route path=url element={<component />} />` added in *group*.
 
@@ -232,23 +205,21 @@ def register_route(
     (`--force`) accepts one identical registration (same component, import,
     and group) and returns *text* unchanged.
     """
-    if UNSUPPORTED_ROUTER_RE.search(text):
-        raise GenerateError("App.tsx uses a data router or useRoutes; register the page by hand.")
     opens, closes = list(ROUTES_OPEN_RE.finditer(text)), list(ROUTES_CLOSE_RE.finditer(text))
     if len(opens) != 1 or len(closes) != 1:
         raise GenerateError(
-            f"Expected exactly one <Routes> block in App.tsx, found {len(opens)}; "
+            f"Expected exactly one <Routes> block in {module}, found {len(opens)}; "
             "register the page by hand."
         )
     if re.search(r"\{\s*\.\.\.", opens[0].group()):
-        raise GenerateError("App.tsx spreads props into <Routes>; register the page by hand.")
+        raise GenerateError(f"{module} spreads props into <Routes>; register the page by hand.")
     block = opens[0]
     routes = _parse_routes(text, block.end(), closes[0].start())
-    target = _normalize(url)
+    target = normalize_url(url)
     existing = [
         r
         for r in routes
-        if r.url is not None and not r.url.endswith("*") and _normalize(r.url) == target
+        if r.url is not None and not r.url.endswith("*") and normalize_url(r.url) == target
     ]
     if existing:
         route = existing[0]
@@ -257,14 +228,14 @@ def register_route(
             and route.self_closing
             and route.element == component
             and route.protected == (group is RouteGroup.protected)
-            and _imports(text, component, spec)
+            and has_import(text, component, spec)
         )
         if replace_existing and identical:
             return text
-        raise GenerateError(f"App.tsx already routes {url}; pick another page name.")
+        raise GenerateError(f"{module} already routes {url}; pick another page name.")
 
     offset, indent = _insertion_point(text, routes, group)
-    import_edit = _import_insertion(text, component, spec)
+    import_edit = import_insertion(text, component, spec, module=module)
     quote = "'" if re.search(r"(?<![\w-])path\s*=\s*'", text) else '"'
     text = (
         text[:offset]
@@ -274,24 +245,23 @@ def register_route(
     if import_edit is not None:
         at, line = import_edit
         if at > offset:
-            raise GenerateError("App.tsx imports follow its routes; register the page by hand.")
+            raise GenerateError(f"{module} imports follow its routes; register the page by hand.")
         text = text[:at] + line + text[at:]
     return text
 
 
-def _check_sources(src_dir: Path, app_entry: Path) -> None:
-    """Refuse projects that declare routes outside JSX; test helpers do not count."""
-    for path in sorted(src_dir.rglob("*")):
-        if path.suffix not in SOURCE_SUFFIXES or not path.is_file():
-            continue
-        parts = path.relative_to(src_dir).parts
-        if TEST_PARTS.intersection(parts) or re.search(r"\.(test|spec)\.", path.name):
-            continue
-        if UNSUPPORTED_ROUTER_RE.search(path.read_text(encoding="utf-8", errors="replace")):
-            raise GenerateError(
-                f"{path.relative_to(src_dir)} defines routes with a data router or useRoutes; "
-                f"only JSX <Routes> in {app_entry.name} is supported."
-            )
+def react_router_package(layout: FrontendLayout) -> str:
+    """Return the package the app imports React Router from."""
+    deps = package_dependencies(layout.frontend_dir)
+    return "react-router-dom" if "react-router-dom" in deps else "react-router"
+
+
+def check_react_router_url(url: str) -> None:
+    if not URL_RE.fullmatch(url):
+        raise GenerateError(
+            f"React Router path {url!r} is not supported. Use an absolute path of "
+            "lowercase-kebab segments and :params, e.g. /reports/:reportId."
+        )
 
 
 def plan_react_router_page(
@@ -303,24 +273,53 @@ def plan_react_router_page(
     group: RouteGroup,
     *,
     replace_existing: bool = False,
+    options: RouteOptions = DEFAULT_ROUTE_OPTIONS,
 ) -> None:
-    """Create *page_file* and register it at *url* in the app's `<Routes>`.
+    """Create *page_file* and register it at *url* in the app's route tree.
 
-    *replace_existing* (`--force`) keeps an identical existing registration
-    so the page file can be regenerated; it never accepts a different route.
+    JSX `<Routes>` and data-router route objects are both edited in place;
+    every check runs before the plan changes. With `options.error`, *content*
+    must export `<component>Error` (see `render_default_page`). *replace_existing*
+    (`--force`) keeps an identical existing registration so the page file can
+    be regenerated; it never accepts a different route.
     """
-    if layout.pages_dir is None or layout.app_entry is None:
+    check_react_router_url(url)
+    if layout.router_issue:
+        raise GenerateError(layout.router_issue)
+    source = layout.route_source
+    if layout.pages_dir is None or source is None:
         raise GenerateError(
-            "React Router generation needs src/pages and a JSX <Routes> block in src/App.tsx."
+            "React Router generation needs src/pages and either a JSX <Routes> block or one "
+            "createBrowserRouter/useRoutes route array under src/."
         )
-    _check_sources(layout.src_dir, layout.app_entry)
-    entry = layout.app_entry
-    current = plan.updates.get(entry) or entry.read_text(encoding="utf-8")
     component = page_file.stem
+    if options.error and f"export function {component}Error(" not in content:
+        raise GenerateError(f"--error needs {page_file.name} to export {component}Error.")
+    entry = source.entry
+    current = plan.updates.get(entry) or entry.read_text(encoding="utf-8")
     spec = layout.import_path(entry, page_file)
-    updated = register_route(
-        current, url, component, spec, group, replace_existing=replace_existing
-    )
+    if source.style == "data":
+        updated = register_object_route(
+            current,
+            source,
+            url,
+            component,
+            spec,
+            protected=group is RouteGroup.protected,
+            replace_existing=replace_existing,
+            lazy=options.lazy and is_data_router(layout),
+            error=options.error,
+        )
+    else:
+        updated = register_route(
+            current,
+            url,
+            component,
+            spec,
+            group,
+            replace_existing=replace_existing,
+            module=entry.name,
+        )
     plan.create(page_file, content)
     if updated != current:
         plan.update(entry, updated)
