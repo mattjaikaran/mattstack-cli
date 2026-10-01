@@ -71,6 +71,15 @@ controllers register with the detected API. Foreign keys use the target model's
 primary-key type. Partial updates preserve omitted fields and reject explicit
 nulls for non-nullable fields. Use `--force` to replace generated files.
 
+When your Ninja backend defines `CamelCaseSchema`, generated schemas inherit it
+and preserve its camelCase wire keys. ORM writes use validated Python field
+names. Generation preserves existing package exports and rejects dynamic
+`__all__` definitions before writing.
+
+Generated resources remain global unless you implement an explicit ownership
+policy. A User foreign key does not establish authorization. Track ownership,
+service layers, and model lifecycle support in [issue #6](https://github.com/mattjaikaran/mattstack-cli/issues/6).
+
 ### `mattstack generate endpoint`
 
 ```bash
@@ -88,6 +97,36 @@ mattstack generate component ProductCard --with-test
 ```bash
 mattstack generate page Products
 ```
+
+Use TanStack Router as the primary routing path for Vite and Rsbuild React
+frontends. Page names use kebab-case URLs. CRUD pages use
+`src/routes/<resource>/index.tsx`; nested index route IDs keep their trailing
+slash. Run your dev server or build after generation to update the typed route
+tree before typecheck. Existing route and layout conflicts stop generation.
+
+Generated Vite builds run the router plugin before TypeScript checks new route
+IDs. Rsbuild boilerplates use ES2023 library types for their array helpers.
+Use a supported Node.js runtime; the exercised runtime is Node.js 22.
+
+React Router support covers the scanned `BrowserRouter` and JSX `<Routes>`
+structure. Generation creates a default-export page and registers it in
+`App.tsx`. Choose its group explicitly when you need a client-side guard:
+
+```bash
+mattstack generate page Reports --route-group protected
+mattstack generate crud Product -f "title:str" --route-group public
+```
+
+The default group is public. `protected` provides a client redirect, not server
+authorization. Ambiguous, computed, spread, or data-router registrations stop
+generation without writes. A duplicate URL also stops generation; `--force`
+can regenerate a page only when its existing import, component, and group
+match exactly.
+
+Next.js App Router pages remain supported. Use `--path` to choose an existing
+route group. UI route inventory appears in `mattstack context`; it does not
+represent backend endpoints or prove authorization. Track advanced router
+configuration in [issue #10](https://github.com/mattjaikaran/mattstack-cli/issues/10).
 
 ### `mattstack generate hook`
 
@@ -228,6 +267,7 @@ mattstack audit --type endpoints          # Unimplemented endpoints
 mattstack audit --type tests              # Missing test coverage
 mattstack audit --type dependencies       # Outdated packages
 mattstack audit --type vulnerabilities    # CVE scan
+mattstack audit --type types,endpoints,dependencies --no-todo
 mattstack audit --html                    # Export HTML dashboard
 mattstack audit --json --no-todo > audit.json
 ```
@@ -247,11 +287,24 @@ Use `--no-docker` when infrastructure is already available.
 Commands use configured ports and supervise child process groups. Shutdown stops
 the selected application processes or containers and leaves infrastructure intact.
 
+Development Compose publishes database, Redis, API, and frontend ports on
+`127.0.0.1` only. Change host mappings explicitly if you need LAN access.
+Keep container listeners separate from host publishing.
+
+The supported Ninja backend needs Redis for cache, sessions, and throttling
+even when Celery is disabled. Celery worker services remain optional.
+
 For production Django deployments, load `.env.production` and set
-`DJANGO_ENVIRONMENT=production`. Django Ninja also requires distinct
+`DJANGO_ENVIRONMENT=production`. Django Ninja also sets
+`ENVIRONMENT=production` for its storage and logging mode and requires distinct
 `SECRET_KEY`, `NINJA_JWT_SIGNING_KEY`, and `CENTRIFUGO_TOKEN_SECRET` values.
 The generated production image selects the matching server and settings package.
 Static collection uses transient build keys and fails visibly on errors.
+
+Keep credentials in runtime environment files, not Docker images. The generated
+root `.dockerignore` excludes dotenv files, host virtual environments, dependency
+directories, and build caches. Pass browser API configuration through the
+generated Docker build arguments; do not depend on copying `frontend/.env`.
 
 ---
 

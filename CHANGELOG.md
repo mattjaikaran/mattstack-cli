@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Persist nonsecret project metadata and resolve nested commands consistently.
 - Add local OpenAPI SDK generation with ownership protection and read-only drift checks.
 - Add project-aware JSON diagnostics and optional, privacy-aware frontend tool guidance.
+- Add UI route inventory for TanStack Router, React Router JSX routes, and Next.js pages.
+- Generate and register React Router pages and CRUD routes with explicit public/protected groups.
 
 ### Changed
 
@@ -35,6 +37,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Detect Django Matt's settings package and use its installed Granian server in production.
 - Install Git for Git-based backend dependencies and fail builds when static collection fails.
 - Select production Django settings explicitly and require separate Ninja signing secrets.
+- Declare the development type checker and install locked CI tools with the selected interpreter.
+- Use HTTP(S)-only clients for live probes, vulnerability queries, and update checks.
+- Publish development services on loopback and document exact reviewed security waivers.
+- Share TanStack route-ID derivation; preserve nested index routes and prevent layout collisions.
+- Generate the TanStack route tree before Vite typecheck and expose the ES2023 APIs used by Rsbuild helpers.
+- Require a Next.js dependency before auditing App Router API handlers.
+- Respect Ninja camelCase schema inheritance, Python ORM field names, and existing package exports.
+- Keep Ninja cache services independent from Celery and select both production environment modes.
+- Preserve Django apps during consolidation and accept comma-separated audit filters.
+- Exclude dotenv secrets and host dependencies from root Docker build contexts.
 
 ## [0.7.0] - 2026-08-12
 

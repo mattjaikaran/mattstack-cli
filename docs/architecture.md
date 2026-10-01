@@ -19,6 +19,7 @@ src/mattstack/
 │   ├── add.py          # Add frontend/backend/ios, validates --framework
 │   ├── upgrade.py      # Diff-based updates, detects nextjs/rsbuild/kibo/vite
 │   ├── generate.py     # Subgroup: model, endpoint, component, page, hook, schema
+│   ├── codegen/        # Backend schemas/exports, UI routing, TS clients/hooks/Zod
 │   ├── db.py           # Subgroup: migrate, makemigrations, status, seed, reset, shell, dump, load
 │   ├── sync.py         # types, zod, api-client, all
 │   ├── openapi.py      # Local OpenAPI SDK generation, ownership, drift checks
@@ -43,7 +44,6 @@ src/mattstack/
 │
 ├── generators/         # BaseGenerator ABC → Fullstack/BackendOnly/FrontendOnly + iOS
 ├── auditors/           # BaseAuditor ABC → types, quality, endpoints, tests, dependencies, vulnerabilities
-├── codegen/            # Django/Matt layouts, model PKs, schemas, CRUD, TS transport/hooks/Zod
 ├── parsers/            # Regex schema, route, enum, dependency, and frontend-layout parsers
 ├── post_processors/    # Customization, active bundler config, TanStack version alignment
 ├── templates/          # Root Makefile, Compose, runtime env, agent rules, Dockerfiles
@@ -63,13 +63,43 @@ NestJS uses Bull (Redis-based) for queues — `use_celery` is always `False` for
 
 ## Frontend Frameworks
 
-| Key | Enum | Bundler | Dev Port |
-|-----|------|---------|----------|
-| `react-vite` | `REACT_VITE` | Vite | 3000 |
-| `react-vite-starter` | `REACT_VITE_STARTER` | Vite | 3000 |
-| `react-rsbuild` | `REACT_RSBUILD` | Rsbuild | 3000 |
-| `react-rsbuild-kibo` | `REACT_RSBUILD_KIBO` | Rsbuild | 3000 |
-| `nextjs` | `NEXTJS` | Next.js | 3000 |
+| Key | Enum | Bundler | Router | Dev port |
+|-----|------|---------|--------|----------|
+| `react-vite` | `REACT_VITE` | Vite | TanStack Router | 3000 |
+| `react-vite-starter` | `REACT_VITE_STARTER` | Vite | React Router | 3000 |
+| `react-rsbuild` | `REACT_RSBUILD` | Rsbuild | TanStack Router | 3000 |
+| `react-rsbuild-kibo` | `REACT_RSBUILD_KIBO` | Rsbuild | TanStack Router | 3000 |
+| `nextjs` | `NEXTJS` | Next.js | App Router | 3000 |
+
+Use `FrontendLayout` for dependency, bundler, router, alias, and transport
+detection. Keep UI route inventory in `parsers/frontend_routes.py`; use
+`tanstack_route_id()` for generation and source alignment. Do not treat SPA
+pages or client guards as backend endpoints or authorization. Next.js API
+discovery requires a package that declares `next`.
+
+Keep React Router registration inside `FilePlan` so validation finishes before
+any write. Support the scanned JSX structure and refuse ambiguous mutations.
+Preserve existing package exports through the backend export planner.
+
+## Development tools and security gate
+
+Run `uv sync --locked --extra dev` to install the existing development tools,
+including mypy, Bandit, and PyYAML stubs. CI selects each matrix interpreter
+explicitly and uses the committed lockfile.
+
+Keep the Bandit gate blocking at every severity. Do not add global rule skips,
+a blanket baseline, or a lower severity threshold. Use an exact rule-ID
+annotation with a reason only after you review its trust boundary.
+
+Existing scoped waivers cover trusted project/tool execution, XML serialization
+without parsing, public token-storage names, explicit environment examples,
+an internal process-pipe invariant, and container-internal listeners. Execute
+project scripts, dependencies, hooks, and tools only when you trust the project,
+your `PATH`, and your environment. An argv list does not make an untrusted
+project safe. Re-review a waiver when you change its command or data flow.
+
+Publish development services on loopback. Replace production placeholders
+with real secrets; the examples do not prove secret strength.
 
 ## Monorepo Port Assignment
 

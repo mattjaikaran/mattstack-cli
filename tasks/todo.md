@@ -716,3 +716,50 @@ Do not hide static collection errors. Both Django production images build and
 serve their API surfaces; verify Django Ninja uses production settings with
 `DEBUG=False`. Push grouped commits to a feature branch and PR, not directly
 to main, as selected by the user.
+
+## Merge readiness and boilerplate contracts (2026-10-01)
+
+- [x] Scan the local Vite/TanStack, Rsbuild/Kibo, React Router starter/b2b, and
+      Django Ninja source contracts with scoped subagents.
+- [x] Declare mypy as a development tool and use locked, explicit CI interpreters.
+- [x] Implement TanStack route inventory and shared route IDs, React Router
+      page/CRUD registration, and dependency-gated Next.js API discovery.
+- [x] Implement Ninja camelCase schemas, field-name ORM writes, package exports,
+      required cache services, and production environment modes.
+- [x] Preserve optional Django apps during cleanup and accept documented audit filters.
+- [x] Record follow-up issues instead of inferring app authorization or adding
+      unrelated service and deployment capabilities.
+
+Keep the security gate blocking at every severity. The user selects exact,
+documented waivers for reviewed findings; do not lower thresholds or add global
+rule skips. Bind development host ports to loopback. Trust project scripts,
+dependencies, hooks, PATH, and environment before executing them.
+
+Verification: run all eight quick gauntlet gates with the strict security policy.
+Install locked development tools in clean Python 3.12 and 3.13 environments.
+Build and observe generated TanStack/Vite, React Router/Vite, and Kibo pages;
+check signed-out protected-route redirects. Build generated Ninja CRUD and
+exercise camelCase Decimal/FK writes, partial updates, null rejection, package
+imports, Postgres migrations, and Redis cache access. Keep Next.js page generation.
+Build and serve the Ninja production image with `DEBUG=False` and both production
+mode variables. Exclude dotenv secrets and the host virtual environment from its
+Docker context; verify their absence in the image. Serve `/api/docs` successfully.
+
+### Next work
+
+- [ ] [Resource ownership, service layers, and model lifecycle (#6)](https://github.com/mattjaikaran/mattstack-cli/issues/6):
+      define explicit scope and verify cross-user isolation and soft-delete behavior.
+- [ ] [Task backends (#7)](https://github.com/mattjaikaran/mattstack-cli/issues/7):
+      select a real worker/backend independently from Celery and never drop jobs silently.
+- [ ] [Realtime profile (#8)](https://github.com/mattjaikaran/mattstack-cli/issues/8):
+      make Centrifugo opt-in and verify token issuance and publish/subscribe.
+- [ ] [Deployment contracts (#9)](https://github.com/mattjaikaran/mattstack-cli/issues/9):
+      require production secrets/modes and use actual Dockerfile paths for every provider.
+- [ ] [Advanced routing (#10)](https://github.com/mattjaikaran/mattstack-cli/issues/10):
+      support custom TanStack configuration and React Router data/lazy route modules.
+- [ ] [Frontend source drift (#11)](https://github.com/mattjaikaran/mattstack-cli/issues/11):
+      fix stale generated trees, missing links, ignored route components, and b2b source mapping.
+- [ ] [Backend quality tooling (#12)](https://github.com/mattjaikaran/mattstack-cli/issues/12):
+      reconcile component hooks/rules with root consolidation without merging PR #1.
+- [ ] [OpenAPI and optional S3 setup (#13)](https://github.com/mattjaikaran/mattstack-cli/issues/13):
+      discover documented schema exports and document explicit storage prerequisites.
