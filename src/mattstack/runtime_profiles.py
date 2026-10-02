@@ -13,6 +13,7 @@ import shlex
 import tomllib
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import Path
 from typing import Any
 
 from mattstack.config import BackendFramework, MediaStorage, ProjectConfig, TaskBackend
@@ -79,6 +80,26 @@ def task_backend_extra(config: ProjectConfig) -> str | None:
     Celery is a base dependency of every Python boilerplate.
     """
     return _NINJA_EXTRAS.get(config.task_backend) if _ninja(config) else None
+
+
+def backend_sync_args(config: ProjectConfig, backend_dir: Path) -> list[str]:
+    """Select runtime and quality dependencies from the backend manifest."""
+    data = tomllib.loads((backend_dir / "pyproject.toml").read_text(encoding="utf-8"))
+    extras = data.get("project", {}).get("optional-dependencies", {})
+    args = ["uv", "sync"]
+    task_extra = task_backend_extra(config)
+    if task_extra:
+        if task_extra not in extras:
+            raise ValueError(
+                f"{backend_dir}/pyproject.toml has no '{task_extra}' extra for "
+                f"TASK_BACKEND={config.task_backend.value}"
+            )
+        args.extend(("--extra", task_extra))
+    if "dev" in extras:
+        args.extend(("--extra", "dev"))
+    if "dev" in data.get("dependency-groups", {}):
+        args.extend(("--group", "dev"))
+    return args
 
 
 def task_backend_env(config: ProjectConfig) -> dict[str, str]:

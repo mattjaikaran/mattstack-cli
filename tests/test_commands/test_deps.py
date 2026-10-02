@@ -95,3 +95,35 @@ def test_failed_frontend_check_does_not_treat_error_payload_as_packages(
     monkeypatch.setattr(deps, "_run", tool_result)
     result = CliRunner().invoke(app, ["deps", "check", "--path", str(tmp_path)])
     assert result.exit_code == 1
+
+
+def test_update_refuses_undeclared_selected_task_extra(project: Path) -> None:
+    (project / "mattstack.yml").write_text(
+        "project:\n  backend:\n    framework: django-ninja\n    task_backend: huey\n"
+    )
+    lock = project / "backend" / "uv.lock"
+    lock.write_text("unchanged lock")
+    result = CliRunner().invoke(app, ["deps", "update", "--path", str(project)])
+    assert result.exit_code == 1
+    assert lock.read_text() == "unchanged lock"
+
+
+@pytest.mark.parametrize("command", ["check", "update", "audit"])
+def test_clean_frontend_does_not_hide_nestjs_failure(
+    tmp_path: Path, command: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    backend = tmp_path / "backend"
+    frontend = tmp_path / "frontend"
+    backend.mkdir()
+    frontend.mkdir()
+    (backend / "package.json").write_text('{"dependencies":{"@nestjs/core":"^11.0.0"}}')
+    (frontend / "package.json").write_text('{"name":"frontend"}')
+
+    def tool_result(cmd: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+        if cwd == backend:
+            return subprocess.CompletedProcess(cmd, 2, "", "backend dependency tool failed")
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(deps, "_run", tool_result)
+    result = CliRunner().invoke(app, ["deps", command, "--path", str(tmp_path)])
+    assert result.exit_code == 1

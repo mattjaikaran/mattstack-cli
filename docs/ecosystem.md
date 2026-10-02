@@ -126,10 +126,16 @@ Commands that run frontend tools, such as `client`, `deps`, `dev`, `lint`, and
 project's lockfile, this default, then `bun`. Run `mattstack client which` to
 see the choice and its reason. Generated Makefiles use Bun.
 
-The template from `mattstack config init` also lists `deployment`,
-`task_backend`, `use_redis`, and `init_git` under `defaults`. The CLI does not
-read them. Set those values per project with a preset, a scaffold YAML file, or
-`init` flags.
+The config template advertises only `package_manager` under `defaults`.
+Set scaffold choices per project with a preset, a scaffold YAML file, or
+`init` flags. Unsupported keys in `defaults` do not select scaffold features.
+Choose either a preset or scaffold YAML; `init` refuses to combine them.
+Explicit task, realtime, and media flags override the selected preset, YAML,
+or wizard values. `--ios` enables iOS only for fullstack projects.
+Other scaffold fields come from that mode and `ProjectConfig` defaults.
+Package-manager defaults do not change scaffold fields. An invalid package
+manager default fails when selected; an explicit manager or project lockfile
+retains precedence.
 
 ## Config commands
 
@@ -148,11 +154,12 @@ mattstack config init   # Write the template config
 exists. For a Django Ninja task backend other than Celery, it adds that
 backend's extra, for example `uv sync --extra huey`.
 
-`mattstack deps update` runs `uv lock --upgrade`, then a plain `uv sync`. That
-sync can remove those extras from the virtual environment. Run
-`make setup` again after a backend update. `--major` affects only the frontend;
-`uv lock --upgrade` already upgrades backend packages as far as `pyproject.toml`
-allows.
+`mattstack deps update` runs `uv lock --upgrade`, then syncs the selected
+task-backend extra and declared `dev` extra or dependency group. It removes
+unselected extras; it does not retain obsolete packages with `--inexact`.
+For NestJS, it runs the backend's JavaScript package manager.
+`--major` affects JavaScript components; Python upgrades stay within
+`pyproject.toml` constraints.
 
 Review both lockfiles before you commit. Generated Bun installs use
 `--frozen-lockfile` and fail on drift. The uv installs in the backend image and

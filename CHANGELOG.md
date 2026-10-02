@@ -32,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Preserve selected task extras and declared development extras/groups during Python dependency updates; remove unselected extras.
+- Include NestJS APIs in dependency checks, updates, and audits, with backend selection and finding labels.
+- Advertise only supported package-manager defaults and reject invalid selected values without overriding explicit choices or lockfiles.
+- Provision pinned full-gate tools without adding project dependencies; audit the selected project interpreter's installed packages.
+- Publish reviewed frontend route fixes and real Ninja-backed Kibo authentication; retain source warning and provider verification limits.
+- Remove the obsolete Ninja Compose source-text test in its owning source and delete the CLI's test-rewriting workaround.
 - Prevent dry-run writes and cleanup of directories the generator does not own.
 - Return failure exits for failed commands, audit errors, and unverifiable Git scope.
 - Load root environment values without overriding exported shell values.

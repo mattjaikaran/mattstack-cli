@@ -22,9 +22,12 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
+import signal
 import subprocess
 import sys
+import sysconfig
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -49,14 +52,28 @@ class Gate:
 
 def _run(cmd: list[str], cwd: Path | None = None, timeout: int = 120) -> tuple[int, str]:
     """Run a command, return (exit_code, combined_output)."""
-    result = subprocess.run(
-        cmd,
-        cwd=cwd or PROJECT_ROOT,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
-    return result.returncode, result.stdout + result.stderr
+    try:
+        process = subprocess.Popen(
+            cmd,
+            cwd=cwd or PROJECT_ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            start_new_session=True,
+        )
+    except FileNotFoundError:
+        return 127, f"Missing tool '{cmd[0]}'. Install it, then retry the gate."
+    try:
+        output, _ = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGTERM)
+        try:
+            output, _ = process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL)
+            output, _ = process.communicate()
+        return 124, f"{output}\nGate exceeded {timeout}s; no completed gate result."
+    return process.returncode, output
 
 
 def _gate_ruff_format() -> bool:
@@ -125,21 +142,50 @@ def _gate_test() -> bool:
     return code == 0
 
 
+def _project_tool_args(package: str) -> list[str]:
+    """Provision a pinned gate tool over the selected project environment."""
+    environment = Path(sys.prefix).resolve()
+    if environment == Path(sys.base_prefix).resolve():
+        raise ValueError("Run gates with `uv run --extra dev python scripts/gauntlet.py`")
+    print(f"Project interpreter: {sys.executable}")
+    return [
+        "uv",
+        "run",
+        "--no-sync",
+        "--python",
+        sys.executable,
+        "--with",
+        package,
+        "python",
+        "-m",
+    ]
+
+
 def _gate_mutation() -> bool:
-    """Gate 8: mutmut mutation testing."""
-    bin_ = shutil.which("uv") or "uv"
-    code, out = _run([bin_, "run", "mutmut", "run"], timeout=600)
-    if code != 0:
-        print(out)
+    """Gate 8: provision mutmut without replacing project dependencies."""
+    code, out = _run(
+        [*_project_tool_args("mutmut==3.8.0"), "mutmut", "run", "--max-children", "2"],
+        timeout=600,
+    )
+    print(out)
     return code == 0
 
 
 def _gate_audit() -> bool:
-    """Gate 9: pip-audit dependency audit."""
-    bin_ = shutil.which("uv") or "uv"
-    code, out = _run([bin_, "run", "pip-audit"])
-    if code != 0:
-        print(out)
+    """Gate 9: audit only the selected project's installed packages."""
+    site_packages = sysconfig.get_path("purelib")
+    print(f"Audit target: {site_packages}")
+    code, out = _run(
+        [
+            *_project_tool_args("pip-audit==2.10.1"),
+            "pip_audit",
+            "--path",
+            site_packages,
+            "--skip-editable",
+        ],
+        timeout=300,
+    )
+    print(out)
     return code == 0
 
 
@@ -198,7 +244,11 @@ def main() -> None:
     passed = 0
     failed = 0
     for gate in gates:
-        status = "PASS" if gate.run() else "FAIL"
+        try:
+            status = "PASS" if gate.run() else "FAIL"
+        except ValueError as error:
+            print(f"Prerequisite error: {error}")
+            status = "FAIL"
         if status == "PASS":
             passed += 1
         else:

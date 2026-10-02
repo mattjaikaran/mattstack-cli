@@ -436,3 +436,17 @@ instead. See the [plugin guide](plugin-guide.md).
    `register_scaffold_commands()` in `cli_scaffold.py` or
    `register_project_commands()` in `cli_project.py`.
 3. Document the command in the [CLI reference](commands.md).
+
+## CLI full-gate tooling
+
+Run `uv sync --extra dev`, then `make gauntlet-quick` for blocking quick gates.
+Run `make gauntlet-gate GATE=audit` or `GATE=mutation` for full-gate tools.
+The runner provisions pinned `pip-audit==2.10.1` and `mutmut==3.8.0` with
+`uv run --with`; it does not add runtime or development dependencies to the
+project manifest. Provisioning needs network access or a populated uv cache.
+
+The audit receives the selected project interpreter's `purelib` path.
+The mutation runner overlays that project's environment so baseline tests
+can import its dependencies. Mutation uses two children and a 600-second
+deadline. A timeout is a failed, incomplete gate, not a mutation score.
+Keep surviving mutants, partial results, and tool warnings visible.

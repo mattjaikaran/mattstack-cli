@@ -210,7 +210,11 @@ def which_pm(
     root = (path or Path.cwd()).resolve()
     frontend_dir = resolve_project(root).frontend_dir
     work_dir = frontend_dir if (frontend_dir / "package.json").exists() else root
-    resolution = resolve_package_manager_source(work_dir)
+    try:
+        resolution = resolve_package_manager_source(work_dir)
+    except ValueError as error:
+        print_error(str(error))
+        raise typer.Exit(code=2) from None
 
     console.print(f"[bold cyan]Package manager:[/bold cyan] {resolution.manager.value}")
     console.print(f"[dim]Source:[/dim] {escape(resolution.source)}")

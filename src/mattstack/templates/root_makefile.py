@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
-import tomllib
+import shlex
 
 from mattstack.config import BackendFramework, ProjectConfig
 from mattstack.runtime_profiles import (
     REALTIME_PROFILE,
+    backend_sync_args,
     task_backend_extra,
     task_processes,
     task_profile,
@@ -41,7 +42,7 @@ def generate_makefile(config: ProjectConfig) -> str:
         sections.append(_setup_frontend(config))
         sections.append(_frontend_targets(config))
 
-    return "\n".join(sections)
+    return "\n".join(sections).rstrip() + "\n"
 
 
 def _header() -> str:
@@ -78,15 +79,11 @@ def _backend_install(config: ProjectConfig) -> str:
     """
     if config.is_nestjs_backend:
         return "bun install"
-    task_extra = task_backend_extra(config)
-    command = f"uv sync --extra {task_extra}" if task_extra else "uv sync"
-    pyproject = config.backend_dir / "pyproject.toml"
     try:
-        data = tomllib.loads(pyproject.read_text())
-    except (OSError, tomllib.TOMLDecodeError):
-        return command
-    extras = data.get("project", {}).get("optional-dependencies", {})
-    return f"{command} --extra dev" if "dev" in extras else command
+        return shlex.join(backend_sync_args(config, config.backend_dir))
+    except (OSError, ValueError):
+        task_extra = task_backend_extra(config)
+        return f"uv sync --extra {task_extra}" if task_extra else "uv sync"
 
 
 def _setup_fullstack(config: ProjectConfig) -> str:

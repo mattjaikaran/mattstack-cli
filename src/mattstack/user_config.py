@@ -28,12 +28,9 @@ TEMPLATE_CONFIG = """\
 #     task_backend: huey    # celery | huey | django_q | django_rq | dramatiq | none
 #     use_realtime: false   # Centrifugo profile (django-ninja only)
 
-# Default settings
+# Default package manager for commands without an explicit choice or lockfile.
+# Set scaffold choices with presets, scaffold YAML, or init flags, not defaults.
 # defaults:
-#   deployment: docker
-#   task_backend: celery
-#   use_redis: true
-#   init_git: true
 #   package_manager: bun    # bun | npm | yarn | pnpm
 """
 
@@ -64,10 +61,14 @@ def get_user_presets() -> dict[str, object]:
 
 
 def get_user_defaults() -> dict[str, object]:
-    """Get default settings from user config."""
+    """Get supported command defaults; reject a malformed defaults section."""
     config = load_user_config()
     defaults = config.get("defaults", {})
-    return defaults if isinstance(defaults, dict) else {}
+    if defaults is None:
+        return {}
+    if not isinstance(defaults, dict):
+        raise ValueError("Set defaults in ~/.mattstack/config.yaml to a YAML mapping")
+    return defaults
 
 
 def init_user_config() -> Path:

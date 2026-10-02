@@ -99,16 +99,21 @@ def detect_python_package_manager(backend_dir: Path) -> str:
 
 def _get_user_pm_override() -> PackageManager | None:
     """Return the user's default package manager from ~/.mattstack/config.yaml."""
-    try:
-        from mattstack.user_config import load_user_config
+    from mattstack.user_config import get_user_defaults
 
-        config = load_user_config()
-        pm_value = config.get("defaults", {}).get("package_manager")  # type: ignore
-        if pm_value and isinstance(pm_value, str):
-            return PackageManager(pm_value)
-    except (ValueError, ImportError):
-        pass
-    return None
+    pm_value = get_user_defaults().get("package_manager")
+    if pm_value is None:
+        return None
+    try:
+        if not isinstance(pm_value, str):
+            raise ValueError
+        return PackageManager(pm_value)
+    except (ValueError, TypeError):
+        valid = ", ".join(pm.value for pm in PackageManager)
+        raise ValueError(
+            f"Invalid defaults.package_manager '{pm_value}' in ~/.mattstack/config.yaml. "
+            f"Set it to one of: {valid}"
+        ) from None
 
 
 def resolve_package_manager_source(

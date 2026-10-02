@@ -760,46 +760,40 @@ a frontend-only project.
 - [x] [Advanced routing (#10)](https://github.com/mattjaikaran/mattstack-cli/issues/10):
       custom TanStack tokens/groups/dynamic routes, guards/pending/errors, React Router
       data/lazy transitions, and grouped Next.js CRUD build and navigate.
-- [ ] [Frontend source drift (#11)](https://github.com/mattjaikaran/mattstack-cli/issues/11):
-      local owning-source route/component fixes and dependency pins pass the
-      scoped build checks, but remain unpublished. Preserve unrelated source edits.
-      Known source convention/lint findings and real Kibo auth remain unresolved.
-- [ ] [Backend quality tooling (#12)](https://github.com/mattjaikaran/mattstack-cli/issues/12):
-      root hook installation and prerequisite refusals are exercised. The real
-      generated pre-push entry passes blocking gates and 245 tests in a fixture
-      that includes local canonical-source fixes. Publish those fixes before you
-      claim fresh-clone acceptance. Keep cross-stack warnings visible and PR #1 untouched.
+- [x] [Frontend source drift (#11)](https://github.com/mattjaikaran/mattstack-cli/issues/11):
+      publish the reviewed source fixes and verify fresh-clone typechecks,
+      builds, and browser pages. Keep unrelated source edits and the backup.
+- [x] [Backend quality tooling (#12)](https://github.com/mattjaikaran/mattstack-cli/issues/12):
+      publish canonical gate fixes and verify fresh-clone root hooks and
+      `cd backend && just gauntlet-quick`. Report warnings separately.
+      Leave Ninja PR #1 untouched.
 - [x] [OpenAPI and optional S3 setup (#13)](https://github.com/mattjaikaran/mattstack-cli/issues/13):
       real schema export generates a compiling local Hey API client; actual Django S3
       storage uploads and independent reads succeed through production Compose.
 
-### Source limits found during follow-up proof
+### Published source checks
 
-- React Vite's convention gate still reports 13 pre-existing findings outside the
-  route-source fixes: auth casts/redirects, inline navigation, form state, and
-  DataTable length. Its build, typecheck, and dependency checks pass.
-- Kibo's login route logs submitted credentials instead of calling authentication.
-  Its store fabricates mock tokens, and transport/store token keys differ.
-  Track the real authentication cutover in
-  [Kibo authentication (#20)](https://github.com/mattjaikaran/mattstack-cli/issues/20).
-  Browser routing proof uses controlled API fixtures and source store state;
-  it does not prove real Kibo login integration.
-- React Vite Starter post-login navigation can return to `/login`
-  ([INFERENCE] auth state timing). Keep this separate from generator routing proof.
-- Next.js's existing `app/todos` logs `location is not defined` during prerender.
-  Grouped generated CRUD builds and serves. Kibo's existing full eslint scan has
-  five errors; do not report all source gates green.
-- Ninja's cross-stack scanner reports 75 project findings in the exercised
-  consolidated fixture. Fixes remove its path traceback and dependency-tree
-  scanning. The source gauntlet reports these as nonblocking warnings, not
-  passed gates; JSON preserves the distinction.
+- React Vite's source convention check reports zero findings. Its fresh-clone
+  typecheck and build pass; all four settings tabs load in Chromium.
+- Kibo uses real Ninja login, registration, refresh, and logout. Its fresh-clone
+  strict lint, typecheck, and build pass. Real HTTP/browser proof covers an
+  authenticated account, reload, a 401 followed by refresh and retry, rejected
+  credentials, and logout that revokes refresh and clears shared token storage.
+- React Vite Starter's published source contains neither `src/routeTree.gen.ts`
+  nor `.tanstack`. Its typecheck/build pass; home and login pages load.
+- B2B's `/organizations?create=1` opens its registered create form.
+  Next.js's production `/todos` redirects signed-out users to `/login` without
+  a prerender exception. Both fresh-clone typechecks/builds pass.
+- Ninja's explicit sibling-frontend scan reports 62 existing parity/naming/rule
+  findings without a path traceback or dependency-tree scan. Keep them visible;
+  a successful blocking-gate run is not an all-clear cross-stack result.
 - Preserve the user's stale starter route-tree backup at
   `~/dev/mattstack-source-backups/issue-11/react-vite-starter/src/routeTree.gen.ts`.
 - Review intentionally global public GETs in Ninja's `PUBLIC_OPERATIONS` before
   pushing. Generation prints exact paths and the security-test file; it never
   adds an automatic security waiver.
 
-### Final follow-up checks
+### Earlier follow-up checks
 
 - CLI `make gauntlet-quick`: all eight gates pass, including strict mypy,
   all-severity Bandit, architecture, the 400-line limit, tests, and installation.
@@ -810,13 +804,13 @@ a frontend-only project.
   production settings file on an HTTPS target fails with its exact path.
 - Local verification commands include provider-controlled TLS mode. The real
   container preflight rejects missing TLS mode and accepts the corrected override.
-- Kibo's pinned local React Doctor runs with no telemetry or supply-chain check:
-  zero errors and nine warnings. Keep those warnings; do not call this all-clear.
+- Kibo's pinned React Doctor runs under supported Node 22 without telemetry or
+  supply-chain checks: zero errors and 25 warnings. Keep those warnings visible.
 - Backend `check --deploy` uses the proof's test settings and prints five security
   warnings. Do not treat this gate as production security approval. The separate
   production-image smoke verifies TLS redirects, host checks, HSTS, and health.
-- Keep owning-source fixes local until you publish them. Fresh GitHub clones do
-  not contain unpublished frontend pins, source routes, or canonical gate fixes.
+- Publish only reviewed owning-source paths. The publication evidence below
+  replaces the earlier fixture-only proof; preserve unrelated source changes.
 
 ### Documentation review for PR #14
 
@@ -880,23 +874,73 @@ a frontend-only project.
   preset, repository, and test totals from developer guidance. Preserve the
   user's separate README source-link rows outside the commit.
 
-### Remaining bugs and prerequisites
+### Completed follow-up audit (2026-10-02)
 
-| Priority | Issue | Required work |
-|---|---|---|
-| P1 | [Selected extras (#17)](https://github.com/mattjaikaran/mattstack-cli/issues/17) | Preserve selected runtime extras in `deps update`. A real successful update removes Huey and breaks its import. Run `make setup` afterward until fixed. |
-| P1 | [Kibo authentication (#20)](https://github.com/mattjaikaran/mattstack-cli/issues/20) | Replace credential logging and mock tokens with real backend auth; align token storage and prove reload, refresh, and logout. |
-| P1 | [Source publication (#11)](https://github.com/mattjaikaran/mattstack-cli/issues/11) | Publish reviewed frontend source fixes; resolve the recorded source gates. All five inspected source HEADs equal their published remote HEADs, while local fixes remain uncommitted. |
-| P1 | [Canonical quality gates (#12)](https://github.com/mattjaikaran/mattstack-cli/issues/12) | Publish Ninja's cross-stack path/warning fixes and prove a fresh-clone hook. The 245-test fixture proof includes local source changes. |
-| P2 | [NestJS dependencies (#18)](https://github.com/mattjaikaran/mattstack-cli/issues/18) | Select and dispatch dependency operations for the NestJS backend, including API-only projects. |
-| P2 | [Scaffold defaults (#19)](https://github.com/mattjaikaran/mattstack-cli/issues/19) | Consume or remove advertised defaults for tasks, deployment, Redis, and Git; define precedence against explicit input. |
-| P2 | [Full-gate tooling (#21)](https://github.com/mattjaikaran/mattstack-cli/issues/21) | Make tools and their target interpreter reproducible. The standard audit gate cannot find its selected pip-audit; mutation's isolated Python 3.13 cannot import project httpx and fails during baseline collection. No mutation result is available. |
-| Account prerequisite | [Live deployments (#9)](https://github.com/mattjaikaran/mattstack-cli/issues/9) | Authorize provider accounts, Flycast/IAM checks, realtime public routing, production secrets, and S3 provisioning. No billable deployments run in this audit. |
+- [x] [Selected extras (#17)](https://github.com/mattjaikaran/mattstack-cli/issues/17):
+  resolve declared runtime and development extras/groups before syncing.
+  A real isolated dependency update preserves the selected Huey and quality
+  imports and removes an unselected obsolete extra. Reject undeclared selections
+  before changing the lockfile. Use the same resolution in generated setup.
+- [x] [NestJS dependencies (#18)](https://github.com/mattjaikaran/mattstack-cli/issues/18):
+  dispatch backend checks, updates, and audits through its JavaScript manager.
+  Actual Bun operations pass for the isolated NestJS manifest. Preserve
+  component-only selection and labels; a passing frontend cannot hide API failure.
+- [x] [Scaffold defaults (#19)](https://github.com/mattjaikaran/mattstack-cli/issues/19):
+  remove unsupported scaffold settings from the public user-config template.
+  Keep only the package-manager default. Init retains its preset, YAML, and
+  explicit-flag behavior. Isolated-HOME command proof verifies invalid selected
+  defaults fail while explicit choices and detected lockfiles retain precedence.
+- [x] [Full-gate tooling (#21)](https://github.com/mattjaikaran/mattstack-cli/issues/21):
+  provision pinned tools using the selected project interpreter and its installed
+  packages, without adding runtime dependencies. The actual audit gate exits 0.
+  Mutation starts with project development tools but exceeds the 600-second
+  deadline: exit 124, no completed mutation score and no pass claim.
+  A real one-second process-tree timeout returns 124 and cleans up its children.
+- [x] [Source publication (#11)](https://github.com/mattjaikaran/mattstack-cli/issues/11):
+  publish React Vite `32b1b52`, B2B `408efb6`, Next.js `9a0f2a0`, and Kibo
+  `e141d9c` plus runtime guidance `ae9f401`. Starter already publishes the clean
+  source at `ca2226767d0b21623b766319174659e0903d426a`.
+  Run frozen installs, each source typecheck/build, and actual browser navigation.
+  Vite/B2B routing fixtures do not claim backend authentication.
+- [x] [Kibo authentication (#20)](https://github.com/mattjaikaran/mattstack-cli/issues/20):
+  publish the real Ninja contract in Kibo `e141d9c`; remove mock credentials and
+  credential logging. Verify the published source against an actual newly
+  generated Ninja API, including account creation, login, reload, refresh, and
+  logout with rejected replay of the revoked refresh token.
+- [x] [Canonical quality gates (#12)](https://github.com/mattjaikaran/mattstack-cli/issues/12):
+  publish Ninja `35e8629`, `b487220`, `c1158fd`, and `b95a40b`.
+  Scaffold again from GitHub after publication, run `make setup`, install root
+  hooks through the CLI, and invoke the actual pre-push entry with a real ref
+  range: exit 0. Run `cd backend && just gauntlet-quick`: 241 tests pass;
+  cross-stack and development deployment checks remain explicit warnings.
+  Retain canonical rule/skill sources and remove duplicate harness adapters.
+  Remove the obsolete Compose source-text test in its owning source and delete
+  the CLI's test-rewriting workaround. Do not merge or change Ninja PR #1.
 
-Close only the verified generator/runtime contracts in #6, #7, #8, #10, and #13
-with the merged PR #14 evidence. Keep #9, #11, and #12 open. A related-issue
-reference does not close an issue; use a closing keyword only for completed
-acceptance criteria. Link the direct-main fixes to #15, #16, and #22.
+### Remaining deployment prerequisites
+
+- [ ] [Live deployments (#9)](https://github.com/mattjaikaran/mattstack-cli/issues/9):
+  retain the verified local provider inventory, schema, image, and TLS proof.
+  Publish Ninja's production public-health exemption in `b95a40b`.
+  The actual production Gunicorn process returns 200 for health/liveness,
+  503 for readiness with unavailable local dependencies, 301 for protected
+  HTTP paths, 400 for an invalid Host, and HSTS on forwarded HTTPS.
+  These checks do not prove live provider access, Flycast/IAM, public realtime
+  routing, production secrets, or S3 provisioning. No billable deployment runs.
+  Keep this issue open until you supply and authorize those prerequisites.
+
+Close #11, #12, #17, #18, #19, #20, and #21 only with published commit and
+verification evidence. Keep #9 open; do not equate a local smoke with deployment.
+
+### Final CLI verification
+
+- Run `make gauntlet-quick` after the source cutover and final formatting:
+  all eight gates pass, zero fail. Keep all-severity Bandit blocking.
+- The focused dependency, package-manager, user-config, runtime-profile, and
+  template suite passes 450 tests with two upstream Typer/Click warnings.
+- Stop owned browser/API proof services and remove temporary clones, launchers,
+  and mutation artifacts. Preserve the user's README edits, source working-tree
+  changes, stash `320b7c21af0fe5ffa7cc675bcdacf0bb186557f2`, and starter backup.
 
 ### Existing support boundaries
 

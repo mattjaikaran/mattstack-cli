@@ -99,6 +99,16 @@ class TestResolvePackageManager:
         (tmp_path / "pnpm-lock.yaml").write_text("")
         assert resolve_package_manager(tmp_path, override="npm") == PackageManager.NPM
 
+    @pytest.mark.parametrize("value", ["invalid", False, ["bun"]])
+    def test_invalid_user_default_requires_correction(self, tmp_path: Path, value: object) -> None:
+        with patch("mattstack.user_config.load_user_config") as config:
+            config.return_value = {"defaults": {"package_manager": value}}
+            with pytest.raises(ValueError, match="defaults.package_manager"):
+                resolve_package_manager(tmp_path)
+            assert resolve_package_manager(tmp_path, override="bun") == PackageManager.BUN
+            (tmp_path / "bun.lock").write_text("")
+            assert resolve_package_manager(tmp_path) == PackageManager.BUN
+
     def test_component_dir_uses_workspace_root_lockfile(self, tmp_path: Path) -> None:
         frontend = tmp_path / "frontend"
         frontend.mkdir()

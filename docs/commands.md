@@ -559,17 +559,16 @@ package, but treat unverified third-party package records as incomplete.
 `deps audit` exits with code 1 for vulnerabilities, missing tools, failed
 scans, or invalid reports. A clean frontend cannot hide a failed backend scan.
 
-Component selection currently recognizes Python backends and JavaScript
-frontends, but omits NestJS backends. Track that gap in
-[NestJS dependency coverage (#18)](https://github.com/mattjaikaran/mattstack-cli/issues/18).
+Component selection includes Python backends, NestJS backends, and JavaScript
+frontends. NestJS uses its own resolved JavaScript package manager for all
+three operations. Audit findings retain the `backend` source label.
 
 `deps update` is not interactive and rewrites lockfiles. It accepts
-`--backend-only`, `--frontend-only`, and `--major`. `--major` affects only the
-frontend; `uv lock --upgrade` already upgrades backend packages as far as
-`pyproject.toml` allows. The backend step ends with a plain `uv sync`, which can
-remove the task-backend and `dev` extras that `make setup` installs. Run
-`make setup` afterward, then review both lockfiles before you commit. Each
-command accepts `-p, --path`.
+`--backend-only`, `--frontend-only`, and `--major`. `--major` affects JavaScript
+components; `uv lock --upgrade` already upgrades Python packages as far as
+`pyproject.toml` allows. Backend sync preserves the selected task extra and
+declared `dev` extra or dependency group, but removes unselected extras.
+Review both lockfiles before you commit. Each command accepts `-p, --path`.
 
 ---
 
