@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-02
+
 ### Added
 
 - Persist nonsecret project metadata and resolve nested commands consistently.
@@ -69,12 +71,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Keep Ninja cache services independent from Celery and select both production environment modes.
 - Preserve Django apps during consolidation and accept comma-separated audit filters.
 - Exclude dotenv secrets and host dependencies from root Docker build contexts.
-- Remove the published Ninja throttle test that read the deleted `backend/docker-compose.yml` as text during consolidation; keep the throttle behavior tests.
 - Emit generated Django code that passes Ruff format, isort, and mypy without a formatter run: typed model fields, explicit admin exports, and sorted imports.
 - Align FastAPI Celery broker/result databases across host and container environments.
 - Fail dependency checks and audits when tools, scans, or reports are incomplete; report vulnerabilities with a failure exit.
 - Audit Python dependencies through the selected backend interpreter instead of a global executable.
 - Refresh existing Click, Pygments, and pytest lock entries to remove three distinct reported advisories.
+
+### Verification limits
+
+- Live provider deployment remains unverified. Keep [deployment issue #9](https://github.com/mattjaikaran/mattstack-cli/issues/9) open until you authorize provider access and supply the required infrastructure and secrets.
+- Mutation verification reaches the 600-second deadline with exit 124. No completed mutation score or full-gauntlet pass is available.
+- Frontend tooling and canonical cross-stack findings remain visible warnings. A blocking-gate pass does not mean that every source check is clear.
 
 ## [0.7.0] - 2026-08-12
 

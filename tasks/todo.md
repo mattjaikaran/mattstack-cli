@@ -948,3 +948,17 @@ verification evidence. Keep #9 open; do not equate a local smoke with deployment
 supply business logic. Linear, Jira, and Hermes board adapters remain explicit
 stubs; use Axis or the disabled `none` backend. Do not call these existing
 boundaries complete endpoint behavior or working third-party integrations.
+
+## Release v0.8.0 (2026-10-02)
+
+- Set package, module, and lockfile versions to `0.8.0`; retain dependency pins.
+- Move Unreleased entries into the dated release and remove the obsolete
+  consolidation-test workaround entry. Keep deployment and mutation limits.
+- Build the sdist and wheel from a clean staged snapshot. Use the committed
+  README in both artifacts; exclude the user's uncommitted source-link edits.
+- Install the wheel in an isolated environment. Verify package/module version
+  `0.8.0`, root help, preset info, a no-write dry-run, and a real `starter-api`
+  scaffold from the published source with its emitted backend Dockerfile.
+- Run the release quick gauntlet: eight gates pass, zero fail.
+- Publish the annotated tag and GitHub release with both artifacts only after
+  the release commit passes CI. Do not claim a PyPI publication.
