@@ -56,7 +56,7 @@ mattstack dev --mode host
 
 Run application commands from the generated project root. `make up` starts the
 shared infrastructure; host mode runs the selected applications on your machine.
-Use `mattstack dev --mode docker` for container application development instead.
+Use `mattstack dev --mode container` for container application development instead.
 Do not run both modes on the same ports.
 
 For unattended scaffolding, use a preset or a

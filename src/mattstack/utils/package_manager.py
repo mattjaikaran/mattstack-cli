@@ -282,24 +282,28 @@ def _json_lines(stdout: str) -> list[dict[str, Any]]:
 
 
 def _json_object(stdout: str) -> dict[str, Any]:
-    try:
-        data = json.loads(stdout or "{}")
-    except json.JSONDecodeError:
-        return {}
-    return data if isinstance(data, dict) else {}
+    data = json.loads(stdout)
+    if not isinstance(data, dict):
+        raise ValueError("Expected a JSON object from the package manager")
+    return data
 
 
 def parse_outdated(pm: PackageManager, stdout: str) -> list[OutdatedRow]:
     """Parse the output of ``build_outdated_cmd(pm)``."""
     if pm in (PackageManager.NPM, PackageManager.PNPM):
+        packages = _json_object(stdout)
+        if any(not isinstance(info, dict) or "latest" not in info for info in packages.values()):
+            raise ValueError("Expected package versions from the outdated report")
         return [
-            (name, str(info.get("current", "?")), str(info.get("latest", "?")))
-            for name, info in _json_object(stdout).items()
-            if isinstance(info, dict)
+            (name, str(info.get("current", "?")), str(info["latest"]))
+            for name, info in packages.items()
         ]
     rows: list[OutdatedRow] = []
     if pm == PackageManager.YARN:
-        for record in _json_lines(stdout):
+        records = _json_lines(stdout)
+        if not records:
+            raise ValueError("Expected JSON records from yarn outdated")
+        for record in records:
             if record.get("type") == "table":
                 for row in record.get("data", {}).get("body", []):
                     rows.append((str(row[0]), str(row[1]), str(row[3])))
@@ -318,12 +322,17 @@ def parse_outdated(pm: PackageManager, stdout: str) -> list[OutdatedRow]:
 def parse_audit(pm: PackageManager, stdout: str) -> list[Advisory]:
     """Parse the JSON output of ``build_audit_cmd(pm)`` for npm, pnpm, and yarn."""
     if pm == PackageManager.YARN:
+        records = _json_lines(stdout)
+        if not any(record.get("type") in {"auditAdvisory", "auditSummary"} for record in records):
+            raise ValueError("Expected an audit summary or advisories from yarn")
         return [
             _advisory(record.get("data", {}).get("advisory", {}))
-            for record in _json_lines(stdout)
+            for record in records
             if record.get("type") == "auditAdvisory"
         ]
     data = _json_object(stdout)
+    if not any(isinstance(data.get(key), dict) for key in ("advisories", "vulnerabilities")):
+        raise ValueError("Expected advisory or vulnerability mappings from the package manager")
     # pnpm (and npm 6) report `advisories`; npm 7+ reports `vulnerabilities`.
     findings = [_advisory(advisory) for advisory in (data.get("advisories") or {}).values()]
     for name, vuln in (data.get("vulnerabilities") or {}).items():

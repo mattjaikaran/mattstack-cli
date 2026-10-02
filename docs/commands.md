@@ -546,6 +546,23 @@ For production settings, see the
 | `mattstack deps update` | Run `uv lock --upgrade` and `uv sync` for the backend, and the package manager's update for the frontend. |
 | `mattstack deps audit` | Run `pip-audit` and the frontend package manager's audit. |
 
+Backend checks use the backend virtual environment: `UV_PROJECT_ENVIRONMENT`
+when set, or `.venv` otherwise. Create that environment before you check it;
+the CLI's active environment does not count as the backend environment.
+
+Backend audits run `python -m pip_audit` through the backend's uv project
+without syncing or removing installed runtime extras. Install the auditor in
+that project's development environment with `uv add --dev pip-audit`; a global
+executable does not verify the backend. Audits skip your editable application
+package, but treat unverified third-party package records as incomplete.
+`deps check` exits with code 1 if a selected component cannot be checked.
+`deps audit` exits with code 1 for vulnerabilities, missing tools, failed
+scans, or invalid reports. A clean frontend cannot hide a failed backend scan.
+
+Component selection currently recognizes Python backends and JavaScript
+frontends, but omits NestJS backends. Track that gap in
+[NestJS dependency coverage (#18)](https://github.com/mattjaikaran/mattstack-cli/issues/18).
+
 `deps update` is not interactive and rewrites lockfiles. It accepts
 `--backend-only`, `--frontend-only`, and `--major`. `--major` affects only the
 frontend; `uv lock --upgrade` already upgrades backend packages as far as

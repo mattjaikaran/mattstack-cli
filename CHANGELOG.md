@@ -65,6 +65,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Exclude dotenv secrets and host dependencies from root Docker build contexts.
 - Remove the published Ninja throttle test that read the deleted `backend/docker-compose.yml` as text during consolidation; keep the throttle behavior tests.
 - Emit generated Django code that passes Ruff format, isort, and mypy without a formatter run: typed model fields, explicit admin exports, and sorted imports.
+- Align FastAPI Celery broker/result databases across host and container environments.
+- Fail dependency checks and audits when tools, scans, or reports are incomplete; report vulnerabilities with a failure exit.
+- Audit Python dependencies through the selected backend interpreter instead of a global executable.
+- Refresh existing Click, Pygments, and pytest lock entries to remove three distinct reported advisories.
 
 ## [0.7.0] - 2026-08-12
 

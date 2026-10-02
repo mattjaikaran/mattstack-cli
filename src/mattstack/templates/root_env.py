@@ -12,7 +12,12 @@ import json
 import secrets
 
 from mattstack.config import MediaStorage, ProjectConfig
-from mattstack.runtime_profiles import CENTRIFUGO_PORT, REALTIME_SECRETS, task_backend_env
+from mattstack.runtime_profiles import (
+    CENTRIFUGO_PORT,
+    REALTIME_SECRETS,
+    celery_env,
+    task_backend_env,
+)
 from mattstack.templates.frontend_runtime import (
     FRONTEND_PORT,
     PROD_API_SERVICE,
@@ -106,13 +111,7 @@ def generate_env_example(
                 )
             if config.use_redis:
                 lines.append(f"REDIS_URL={redis}/0")
-            if config.use_celery:
-                lines.extend(
-                    [
-                        f"CELERY_BROKER_URL={redis}/0",
-                        f"CELERY_RESULT_BACKEND={redis}/0",
-                    ]
-                )
+            lines.extend(f"{key}={value}" for key, value in celery_env(config, redis).items())
             lines.extend(_task_lines(config))
             if config.use_realtime:
                 lines.extend(_realtime_lines(realtime_secrets or {}))
@@ -232,13 +231,9 @@ def generate_env_production_example(config: ProjectConfig) -> str:
                 )
             if config.use_redis:
                 lines.append("REDIS_URL=redis://redis:6379/0")
-            if config.use_celery:
-                lines.extend(
-                    [
-                        "CELERY_BROKER_URL=redis://redis:6379/0",
-                        "CELERY_RESULT_BACKEND=redis://redis:6379/0",
-                    ]
-                )
+            lines.extend(
+                f"{key}={value}" for key, value in celery_env(config, "redis://redis:6379").items()
+            )
             lines.extend(_task_lines(config))
             if config.use_realtime:
                 lines.extend(

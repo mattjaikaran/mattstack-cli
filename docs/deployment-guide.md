@@ -24,6 +24,12 @@ Run `mattstack init --config project.yaml`. Deployment values: `docker`,
 variable names, image paths, and secret setup. For task backends, realtime, and
 S3, see [choose runtime services](commands.md#choose-runtime-services).
 
+Keep FastAPI's Celery broker on Redis database 1 and its result backend on
+database 2 in host and container modes. Generated `.env` files and Compose
+environments now use the same databases. Django backends keep database 0 for
+both. Do not connect a host worker to database 0 while its FastAPI producer
+publishes to database 1.
+
 ## Request path
 
 A generated project has at most one selected frontend and one selected backend.

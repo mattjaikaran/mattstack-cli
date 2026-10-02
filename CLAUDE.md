@@ -4,12 +4,12 @@ CLI to scaffold fullstack monorepos, generate components, sync types, and audit 
 
 ## Stack
 - Python 3.12+, uv (never pip), ruff, hatchling, Apache-2.0
-- 26 commands, 6 subgroups, 12 presets, 7 source repos
+- Inspect commands with `uv run mattstack --help`; inspect presets and source mappings with `uv run mattstack info`.
 
 ## Dev
 ```bash
 uv sync --extra dev            # Install
-uv run pytest -x -q            # 596 tests
+uv run pytest -x -q            # Run the current test suite
 uv run ruff check src/ tests/  # Lint
 ```
 
@@ -21,7 +21,7 @@ mattstack generate model Product --fields "title:str price:decimal"
 mattstack generate component ProductCard --with-test
 mattstack db migrate | seed | reset          # Database ops
 mattstack sync types | zod | api-client      # Pydantic → TS/Zod
-mattstack dev                                # Start all services
+mattstack dev                                # Start applications and infrastructure
 mattstack test --parallel                    # Run tests
 mattstack lint --parallel --fix              # Lint + fix
 mattstack fmt                                # Format all
@@ -34,9 +34,9 @@ mattstack info                               # Show presets/repos
 ```
 
 ## Presets
-starter-fullstack, b2b-fullstack, starter-api, b2b-api, starter-frontend, simple-frontend, rsbuild-fullstack, rsbuild-frontend, kibo-fullstack, kibo-frontend, nextjs-fullstack, nextjs-frontend
+Run `uv run mattstack info` for the current Django Ninja, Django Matt, FastAPI, NestJS, and frontend-only presets.
 
-## Frameworks
+## Frontend frameworks
 `react-vite` | `react-vite-starter` | `react-rsbuild` | `react-rsbuild-kibo` | `nextjs`
 
 ## Rules

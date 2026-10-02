@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess  # nosec B404 # Required CLI subprocess support.
 import time
 from pathlib import Path
@@ -65,33 +66,46 @@ def _print_raw(text: str) -> None:
     console.print(text, markup=False, highlight=False)
 
 
-def _check_backend(backend_dir: Path) -> Outdated:
-    """Return list of (package, current, latest) for outdated backend deps."""
-    result = _run(["uv", "run", "pip", "list", "--outdated", "--format", "json"], backend_dir)
+def _check_backend(backend_dir: Path) -> Outdated | None:
+    """Return outdated packages, or None when the check cannot complete."""
+    environment = backend_dir / os.environ.get("UV_PROJECT_ENVIRONMENT", ".venv")
+    result = _run(
+        ["uv", "pip", "list", "--python", str(environment), "--outdated", "--format", "json"],
+        backend_dir,
+    )
     if result is None:
-        return []
+        return None
     if result.returncode != 0:
-        print_warning(f"Backend outdated check failed: {result.stderr.strip()}")
-        return []
+        print_error(f"Backend outdated check failed: {result.stderr.strip()}")
+        return None
     try:
         packages = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        print_warning("Failed to parse backend outdated output")
-        return []
+        if not isinstance(packages, list) or any(
+            not isinstance(package, dict) or not isinstance(package.get("name"), str)
+            for package in packages
+        ):
+            raise ValueError("Expected a package list with names")
+    except (ValueError, TypeError):
+        print_error("Failed to parse backend outdated output; the check is incomplete")
+        return None
     return [(p["name"], p.get("version", "?"), p.get("latest_version", "?")) for p in packages]
 
 
-def _check_frontend(frontend_dir: Path, pm: PackageManager) -> Outdated:
-    """Return list of (package, current, latest) for outdated frontend deps."""
+def _check_frontend(frontend_dir: Path, pm: PackageManager) -> Outdated | None:
+    """Return outdated packages, or None when the check cannot complete."""
     result = _run(build_outdated_cmd(pm).full, frontend_dir)
     if result is None:
-        return []
-    # npm, yarn, and pnpm exit 1 when packages are outdated, so only an
-    # empty stdout means the check itself failed.
-    if result.returncode != 0 and not result.stdout.strip():
-        print_warning(f"Frontend outdated check failed: {result.stderr.strip()}")
-        return []
-    return parse_outdated(pm, result.stdout)
+        return None
+    try:
+        rows = parse_outdated(pm, result.stdout)
+    except (ValueError, TypeError, AttributeError, IndexError):
+        print_error(f"Cannot parse {pm.value} outdated output; the check is incomplete")
+        return None
+    # JSON package managers exit 1 for outdated packages, not just tool errors.
+    if result.returncode != 0 and not rows:
+        print_error(f"Frontend outdated check failed: {result.stderr.strip()}")
+        return None
+    return rows
 
 
 def _print_outdated(title: str, rows: Outdated) -> None:
@@ -121,11 +135,14 @@ def check(
     console.print()
 
     total_outdated = 0
+    failed = False
 
     if backend is not None:
         print_info("Checking backend dependencies...")
         be_outdated = _check_backend(backend)
-        if be_outdated:
+        if be_outdated is None:
+            failed = True
+        elif be_outdated:
             _print_outdated("Backend — Outdated Packages", be_outdated)
             total_outdated += len(be_outdated)
         else:
@@ -137,7 +154,9 @@ def check(
         pm = resolve_package_manager(frontend)
         print_info(f"Checking frontend dependencies with {pm.value}...")
         fe_outdated = _check_frontend(frontend, pm)
-        if fe_outdated:
+        if fe_outdated is None:
+            failed = True
+        elif fe_outdated:
             _print_outdated("Frontend — Outdated Packages", fe_outdated)
             total_outdated += len(fe_outdated)
         else:
@@ -150,6 +169,8 @@ def check(
     if total_outdated:
         print_warning(f"{total_outdated} outdated package(s) found")
     console.print(f"[dim]({elapsed:.1f}s)[/dim]")
+    if failed:
+        raise typer.Exit(code=1)
 
 
 def _update_backend(backend_dir: Path) -> bool:
@@ -243,28 +264,54 @@ def update(
         raise typer.Exit(code=1)
 
 
-def _audit_backend(backend_dir: Path) -> list[Finding]:
+def _audit_backend(backend_dir: Path) -> tuple[list[Finding], bool]:
+    """Return vulnerabilities and whether the scanner failed to verify the backend."""
     print_info("Auditing backend dependencies...")
-    result = _run(["uv", "run", "pip-audit", "--format", "json"], backend_dir)
+    result = _run(
+        [
+            "uv",
+            "run",
+            "--no-sync",
+            "python",
+            "-m",
+            "pip_audit",
+            "--skip-editable",
+            "--format",
+            "json",
+        ],
+        backend_dir,
+    )
     if result is None:
-        return []
-    if result.returncode == 127 or "No module named" in result.stderr:
-        print_warning("pip-audit not available — install with: uv add --dev pip-audit")
-        return []
-    if not result.stdout.strip():
-        return []
+        return [], True
     try:
         data = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        if result.returncode != 0:
-            print_warning(f"pip-audit returned errors:\n{result.stderr.strip()}")
-        return []
-    findings: list[Finding] = []
-    for dep in data.get("dependencies", []):
-        for vuln in dep.get("vulns", []):
-            fixes = vuln.get("fix_versions") or ["?"]
-            findings.append(("backend", dep["name"], fixes[0], vuln.get("id", "unknown")))
-    return findings
+        dependencies = data["dependencies"]
+        if not isinstance(dependencies, list):
+            raise ValueError("Expected a dependency list")
+        if any(
+            not isinstance(dep, dict)
+            or not isinstance(dep.get("name"), str)
+            or not isinstance(dep.get("vulns"), list)
+            or dep.get("skip_reason")
+            for dep in dependencies
+        ):
+            raise ValueError("Incomplete dependency records")
+        findings = [
+            ("backend", dep["name"], (vuln.get("fix_versions") or ["?"])[0], vuln["id"])
+            for dep in dependencies
+            for vuln in dep.get("vulns", [])
+        ]
+    except (ValueError, KeyError, TypeError, AttributeError):
+        print_error(
+            "Backend audit is incomplete. Install pip-audit with `uv add --dev pip-audit` "
+            "and retry `mattstack deps audit`."
+        )
+        _print_raw(result.stderr.strip() or result.stdout.strip())
+        return [], True
+    failed = result.returncode != 0 and not findings
+    if failed:
+        print_error(f"Backend audit failed: {result.stderr.strip()}")
+    return findings, failed
 
 
 def _audit_frontend(frontend_dir: Path) -> tuple[list[Finding], bool]:
@@ -276,9 +323,14 @@ def _audit_frontend(frontend_dir: Path) -> tuple[list[Finding], bool]:
     if result is None:
         return [], True
     if pm != PackageManager.BUN:
-        findings: list[Finding] = [
-            ("frontend", *advisory) for advisory in parse_audit(pm, result.stdout)
-        ]
+        try:
+            findings: list[Finding] = [
+                ("frontend", *advisory) for advisory in parse_audit(pm, result.stdout)
+            ]
+        except (ValueError, TypeError, AttributeError):
+            print_error(f"Cannot parse {pm.value} audit output; the audit is incomplete")
+            _print_raw(result.stderr.strip() or result.stdout.strip())
+            return [], True
         if result.returncode != 0 and not findings:
             print_warning(f"{cmd} failed: {result.stderr.strip() or result.stdout.strip()}")
             return [], True
@@ -313,10 +365,13 @@ def audit(
     findings: list[Finding] = []
     unparsed_issues = False
     if backend is not None:
-        findings.extend(_audit_backend(backend))
+        be_findings, be_failed = _audit_backend(backend)
+        findings.extend(be_findings)
+        unparsed_issues |= be_failed
     if frontend is not None:
-        fe_findings, unparsed_issues = _audit_frontend(frontend)
+        fe_findings, fe_failed = _audit_frontend(frontend)
         findings.extend(fe_findings)
+        unparsed_issues |= fe_failed
 
     elapsed = time.perf_counter() - start
 
@@ -333,3 +388,5 @@ def audit(
         print_success("No vulnerabilities found")
 
     console.print(f"[dim]({elapsed:.1f}s)[/dim]")
+    if findings or unparsed_issues:
+        raise typer.Exit(code=1)

@@ -86,6 +86,17 @@ def task_backend_env(config: ProjectConfig) -> dict[str, str]:
     return {"TASK_BACKEND": config.task_backend.value} if _ninja(config) else {}
 
 
+def celery_env(config: ProjectConfig, redis_url: str) -> dict[str, str]:
+    """Keep API producers and workers on the same broker and result databases."""
+    if not config.has_backend or not config.use_celery:
+        return {}
+    broker_db, result_db = (1, 2) if config.is_fastapi_backend else (0, 0)
+    return {
+        "CELERY_BROKER_URL": f"{redis_url}/{broker_db}",
+        "CELERY_RESULT_BACKEND": f"{redis_url}/{result_db}",
+    }
+
+
 def task_profile(config: ProjectConfig) -> str | None:
     """Return the dev Compose profile that starts the task processes."""
     return _PROFILES.get(config.task_backend) if config.has_backend else None

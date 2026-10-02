@@ -15,6 +15,7 @@ from mattstack.runtime_profiles import (
     CENTRIFUGO_CONTAINER_PORT,
     CENTRIFUGO_SERVICE,
     REALTIME_SECRETS,
+    celery_env,
     task_backend_env,
 )
 from mattstack.templates.frontend_runtime import FRONTEND_PORT
@@ -156,9 +157,7 @@ def backend_env(config: ProjectConfig, *, production: bool) -> dict[str, str]:
                 env["CENTRIFUGO_TOKEN_SECRET"] = secret("CENTRIFUGO_TOKEN_SECRET", "")
     if config.use_redis:
         env["REDIS_URL"] = "redis://redis:6379/0"
-        if config.is_fastapi_backend and config.use_celery:
-            env["CELERY_BROKER_URL"] = "redis://redis:6379/1"
-            env["CELERY_RESULT_BACKEND"] = "redis://redis:6379/2"
+        env.update(celery_env(config, "redis://redis:6379"))
     env.update(task_backend_env(config))
     env.update(_optional_service_env(config, production=production))
     return env
