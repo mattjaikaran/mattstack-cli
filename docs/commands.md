@@ -470,6 +470,24 @@ and `-p, --path`. `lint` accepts `--fix`, `--format-check`, `--backend-only`,
 Parallel lint includes format checks. Both runners return nonzero when any
 selected job fails. Child output and labels render as literal text.
 
+Generated React frontends use Oxlint (`lint`, `lint:strict`, `lint:fix`) and
+Oxfmt (`format`, `format:check`). Run `make setup` after generation to refresh
+the cloned lockfile and format frontend files changed by postprocessing. Use frozen
+installs only after that refresh. Root hooks run frontend lint and a read-only format check, scoped
+to `frontend/`. Next.js retains its existing lint workflow.
+
+React Doctor is an application check, distinct from `mattstack doctor`:
+`cd frontend && bun run doctor` uses the pinned local package, disables telemetry
+and supply-chain scanning, and blocks on errors. Add `--json` for machine output.
+The cloned frontend's `DESIGN.md`, theme tokens, and starter composition are
+preserved; use its edit map when changing the visual design.
+When an older React source has no Oxlint configuration, the CLI seeds explicit
+Hooks, unused-variable, prefer-const, and accessibility rules rather than enabling
+the entire correctness category. React Compiler-only checks are not enabled:
+these templates do not use React Compiler. Existing upstream Oxlint/Oxfmt
+configurations remain authoritative and are preserved.
+
+
 ---
 
 ## Audit

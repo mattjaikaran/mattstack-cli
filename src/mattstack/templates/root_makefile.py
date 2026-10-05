@@ -88,13 +88,14 @@ def _backend_install(config: ProjectConfig) -> str:
 
 def _setup_fullstack(config: ProjectConfig) -> str:
     ios_setup = "\n\t@echo 'iOS setup: open ios/ in Xcode'" if config.include_ios else ""
+    frontend_format = "" if config.is_nextjs else " && bun run format"
     return f"""
 .PHONY: setup
 setup: ## Install all dependencies and refresh lockfiles
 \t@echo 'Setting up backend...'
 \tcd backend && {_backend_install(config)}
 \t@echo 'Setting up frontend...'
-\tcd frontend && bun install{ios_setup}
+\tcd frontend && bun install{frontend_format}{ios_setup}
 \t@echo 'Copying .env.example to .env (if needed)...'
 \t@test -f .env || cp .env.example .env
 \t@echo 'Setup complete!'"""
@@ -111,11 +112,12 @@ setup: ## Install backend dependencies
 
 
 def _setup_frontend(config: ProjectConfig) -> str:
-    return """
+    frontend_format = "" if config.is_nextjs else " && bun run format"
+    return f"""
 .PHONY: setup
 setup: ## Install frontend dependencies and refresh the lockfile
 \t@echo 'Setting up frontend...'
-\tcd frontend && bun install
+\tcd frontend && bun install{frontend_format}
 \t@echo 'Setup complete!'"""
 
 

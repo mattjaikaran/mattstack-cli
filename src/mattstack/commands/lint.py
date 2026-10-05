@@ -69,6 +69,15 @@ def _frontend_lint_cmd(frontend_dir: Path, fix: bool) -> list[str] | None:
     return build_run_cmd(pm, script).full
 
 
+def _frontend_format_cmd(frontend_dir: Path, fix: bool) -> list[str] | None:
+    """Use the frontend's own formatter, without assuming a specific binary."""
+    scripts = json.loads((frontend_dir / "package.json").read_text()).get("scripts", {})
+    script = "format" if fix else "format:check"
+    if script not in scripts:
+        return None
+    return build_run_cmd(resolve_package_manager(frontend_dir), script).full
+
+
 def _run_steps(steps: Sequence[Sequence[str]], cwd: Path) -> subprocess.CompletedProcess[str]:
     """Run ``steps`` in order with captured output; combine their results."""
     results: list[subprocess.CompletedProcess[str]] = []
@@ -128,13 +137,18 @@ def run_lint(
     frontend_cmd = _frontend_lint_cmd(frontend_dir, fix) if run_frontend else None
     if run_frontend and frontend_cmd is None:
         print_error(_missing_script_message(fix))
+    frontend_steps = [frontend_cmd] if frontend_cmd is not None else []
+    if run_frontend and format_check:
+        format_cmd = _frontend_format_cmd(frontend_dir, fix)
+        if format_cmd is not None:
+            frontend_steps.append(format_cmd)
 
     if parallel and run_backend and run_frontend and frontend_cmd is not None:
         print_info("Linting backend and frontend in parallel...")
         be_code, fe_code = run_labeled_jobs(
             [
                 LabeledJob("[backend]", backend_steps, path / "backend"),
-                LabeledJob("[frontend]", [frontend_cmd], frontend_dir),
+                LabeledJob("[frontend]", frontend_steps, frontend_dir),
             ]
         )
         results = [("backend", be_code), ("frontend", fe_code)]
@@ -148,7 +162,7 @@ def run_lint(
                 results.append(("frontend", 1))
             else:
                 print_info("Linting frontend...")
-                results.append(("frontend", _report(_run_steps([frontend_cmd], frontend_dir))))
+                results.append(("frontend", _report(_run_steps(frontend_steps, frontend_dir))))
 
     elapsed = time.perf_counter() - start
 

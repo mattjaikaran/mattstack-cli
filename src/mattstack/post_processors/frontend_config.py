@@ -12,6 +12,7 @@ import re
 from pathlib import Path
 
 from mattstack.config import FrontendFramework, ProjectConfig
+from mattstack.post_processors.frontend_tooling import configure_frontend_tooling
 from mattstack.post_processors.tanstack_router import align_tanstack_router
 from mattstack.templates.frontend_runtime import (
     FRONTEND_PORT,
@@ -36,7 +37,7 @@ def setup_frontend_monorepo(config: ProjectConfig) -> None:
     """
     if not config.has_frontend or not config.frontend_dir.is_dir():
         return
-    _configure_react_doctor(config)
+    configure_frontend_tooling(config)
 
     if config.frontend_framework == FrontendFramework.REACT_VITE:
         align_tanstack_router(config)
@@ -75,34 +76,6 @@ def _align_rsbuild_typescript(frontend_dir: Path) -> None:
     if changed:
         path.write_text(json.dumps(data, indent=2) + "\n")
         print_info("Aligned Rsbuild TypeScript libraries with ES2023 array helpers")
-
-
-def _configure_react_doctor(config: ProjectConfig) -> None:
-    """Replace upstream's network-fetching doctor script with a local command."""
-    manifest = config.frontend_dir / "package.json"
-    if not manifest.is_file():
-        return
-    package = json.loads(manifest.read_text())
-    scripts = package.get("scripts", {})
-    doctor = scripts.get("doctor", "")
-    if not isinstance(doctor, str) or "react-doctor" not in doctor:
-        return
-    changed_dependency = False
-    for section in ("dependencies", "devDependencies"):
-        if "react-doctor" in package.get(section, {}):
-            changed_dependency |= package[section]["react-doctor"] != "0.9.14"
-            package[section]["react-doctor"] = "0.9.14"
-    scripts["doctor"] = (
-        "./node_modules/.bin/react-doctor . --yes --json "
-        "--no-telemetry --no-supply-chain --blocking error"
-    )
-    manifest.write_text(json.dumps(package, indent=2) + "\n")
-    print_info("Configured a local, privacy-aware React Doctor script; install the tool to opt in")
-    if changed_dependency:
-        print_info(
-            "Updated frontend/package.json: react-doctor to 0.9.14. Run `make setup` "
-            "to update frontend/bun.lock before you use frozen dependency installs."
-        )
 
 
 def _seed_generated_types(config: ProjectConfig) -> None:

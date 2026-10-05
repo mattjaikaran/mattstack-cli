@@ -16,7 +16,7 @@ Which component tools survive:
 - Other Python backends: ruff from the pre-commit mirror, scoped to ``backend/``,
   because they do not all declare ruff as a dependency.
 - NestJS: the backend's own ``lint`` script (Biome).
-- Frontends: prettier from the frontend's dependencies.
+- React frontends: locked Oxlint and Oxfmt scripts; Next.js: its own lint script.
 """
 
 from __future__ import annotations
@@ -112,15 +112,27 @@ def generate_pre_commit_config(config: ProjectConfig) -> str:
         repos.append(_backend_hooks(config))
 
     if config.has_frontend:
-        repos.append("""\
+        format_hook = (
+            ""
+            if config.is_nextjs
+            else """
+      - id: frontend-format
+        name: frontend format (Oxfmt)
+        entry: bash -c 'cd frontend && bun run format:check'
+        language: system
+        files: ^frontend/
+        pass_filenames: false"""
+        )
+        repos.append(f"""\
   - repo: local
     hooks:
-      - id: prettier
-        name: prettier
-        entry: bash -c 'cd frontend && bun run prettier --check .'
+      - id: frontend-lint
+        name: frontend lint
+        entry: bash -c 'cd frontend && bun run lint'
         language: system
-        types_or: [javascript, jsx, ts, tsx, css, json, markdown]
-        pass_filenames: false""")
+        files: ^frontend/
+        types_or: [javascript, jsx, ts, tsx]
+        pass_filenames: false{format_hook}""")
 
     repos_block = "\n".join(repos)
     header = ""

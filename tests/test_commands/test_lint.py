@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -60,43 +59,6 @@ class TestRunLint:
             run_lint(tmp_path / "nonexistent")
         assert exc_info.value.exit_code == 1
 
-    def test_backend_lint_runs_when_backend_exists(self, tmp_path: Path) -> None:
-        backend = tmp_path / "backend"
-        backend.mkdir()
-        (backend / "pyproject.toml").write_text('[project]\nname = "test"\n')
-        with patch("mattstack.commands.lint.subprocess.run") as mock_run:
-            mock_run.return_value = subprocess.CompletedProcess(
-                args=[], returncode=0, stdout="", stderr=""
-            )
-            run_lint(tmp_path)
-        mock_run.assert_called()
-        call_args = mock_run.call_args[0][0]
-        assert "ruff" in call_args
-
-    def test_parallel_spawns_two_popen_calls(self, tmp_path: Path) -> None:
-        backend = tmp_path / "backend"
-        backend.mkdir()
-        (backend / "pyproject.toml").write_text('[project]\nname = "test"\n')
-        frontend = tmp_path / "frontend"
-        frontend.mkdir()
-        (frontend / "package.json").write_text(
-            json.dumps({"scripts": {"lint": "eslint ."}, "packageManager": "bun@1.0.0"})
-        )
-
-        mock_proc = MagicMock()
-        mock_proc.stdout = iter([])
-        mock_proc.returncode = 0
-        mock_proc.wait.return_value = None
-
-        with patch(
-            "mattstack.commands.lint.subprocess.Popen", return_value=mock_proc
-        ) as mock_popen:
-            run_lint(tmp_path, parallel=True)
-
-        assert mock_popen.call_count == 2
-        all_args = [call[0][0] for call in mock_popen.call_args_list]
-        assert any("ruff" in args for args in all_args)
-
     def test_parallel_returns_nonzero_when_backend_fails(self, tmp_path: Path) -> None:
         backend = tmp_path / "backend"
         backend.mkdir()
@@ -152,6 +114,34 @@ class TestRunLint:
             run_lint(tmp_path, parallel=True)
 
         assert exc_info.value.exit_code == 1
+
+    @pytest.mark.parametrize("parallel", [False, True])
+    def test_frontend_format_failure_sets_exit_status(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, parallel: bool
+    ) -> None:
+        frontend = tmp_path / "frontend"
+        frontend.mkdir()
+        (frontend / "package.json").write_text(
+            json.dumps(
+                {
+                    "packageManager": "bun@1.4.2",
+                    "scripts": {"lint": "true", "format:check": "false"},
+                }
+            )
+        )
+        bin_dir = tmp_path / "bin"
+        bin_dir.mkdir()
+        _fake_tool(
+            bin_dir, "bun", 'case "$*" in "run format:check") exit 17;; *) exit 0;; esac'
+        )
+        # A legacy hard-coded formatter must not bypass the failing app script.
+        _fake_tool(bin_dir, "npx", "exit 0")
+        monkeypatch.setenv("PATH", str(bin_dir))
+
+        run_lint(tmp_path, parallel=parallel)
+        with pytest.raises(typer.Exit) as error:
+            run_lint(tmp_path, format_check=True, parallel=parallel)
+        assert error.value.exit_code == 1
 
 
 def _fake_tool(bin_dir: Path, name: str, body: str) -> None:

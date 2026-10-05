@@ -77,15 +77,15 @@ def browser_env(config: ProjectConfig) -> dict[str, str]:
     if framework == FrontendFramework.REACT_VITE:
         env.update(
             {
-                "VITE_AUTH_TOKEN_KEY": "access_token",  # nosec B105 # Public key name, not a secret.
-                "VITE_AUTH_REFRESH_TOKEN_KEY": "refresh_token",  # nosec B105 # Public key name, not a secret.
+                "VITE_AUTH_STORAGE_KEY": "access_token",  # Public storage name, not a credential.
+                "VITE_AUTH_REFRESH_STORAGE_KEY": "refresh_token",  # Public storage name.
             }
         )
         if config.is_django_backend:
             env.update(
                 {
                     "VITE_MODE": "django-spa",
-                    "VITE_DJANGO_CSRF_TOKEN_NAME": "csrftoken",  # nosec B105 # Public key name, not a secret.
+                    "VITE_DJANGO_CSRF_COOKIE_NAME": "csrftoken",  # Public cookie name.
                     "VITE_DJANGO_STATIC_URL": "/static/",
                     "VITE_DJANGO_MEDIA_URL": "/media/",
                     "VITE_DJANGO_API_PREFIX": prefix,

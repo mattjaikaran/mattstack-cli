@@ -189,7 +189,7 @@ def test_tanstack_router_alignment_never_downgrades(tmp_path: Path) -> None:
 
 
 def test_aligned_react_vite_source_is_left_unchanged(tmp_path: Path) -> None:
-    """A boilerplate already on the router line keeps its manifest and build order."""
+    """Tooling adoption must preserve the aligned router's versions and build order."""
     config = _make_config(tmp_path)
     package = json.dumps(
         {
@@ -205,7 +205,11 @@ def test_aligned_react_vite_source_is_left_unchanged(tmp_path: Path) -> None:
     _frontend(config, {"package.json": package, "src/routes/__root.tsx": root})
     setup_frontend_monorepo(config)
 
-    assert (config.frontend_dir / "package.json").read_text() == package
+    result = json.loads((config.frontend_dir / "package.json").read_text())
+    original = json.loads(package)
+    assert result["dependencies"] == original["dependencies"]
+    assert result["devDependencies"]["@tanstack/router-plugin"] == "1.167.34"
+    assert result["scripts"]["build"] == original["scripts"]["build"]
     assert (config.frontend_dir / "src/routes/__root.tsx").read_text() == root
 
 
@@ -254,7 +258,8 @@ def test_react_router_starter_is_left_on_react_router(tmp_path: Path) -> None:
     _frontend(config, {"package.json": package})
     setup_frontend_monorepo(config)
 
-    assert (config.frontend_dir / "package.json").read_text() == package
+    result = json.loads((config.frontend_dir / "package.json").read_text())
+    assert result["dependencies"] == {"react-router-dom": "7.1.0"}
 
 
 def test_setup_frontend_monorepo_noop_for_backend_only(tmp_path: Path) -> None:

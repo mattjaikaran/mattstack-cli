@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Generated React frontends now use pinned Oxlint 1.87.0, Oxfmt 0.72.0, and React Doctor 0.9.14, with local quality scripts and frontend-scoped hooks. Next.js retains its own linter.
+- React postprocessing preserves the cloned starter UI, theme tokens, and `DESIGN.md`; obsolete ESLint/Prettier dependencies and configurations are removed.
+- Frontend lint format checks use the application's `format:check` script in both sequential and parallel runs.
+- React `make setup` formats postprocessed frontend files after installing dependencies, so fresh scaffolds pass Oxfmt checks without manual formatting.
+- Generated Vite public configuration now uses `VITE_AUTH_STORAGE_KEY`, `VITE_AUTH_REFRESH_STORAGE_KEY`, and `VITE_DJANGO_CSRF_COOKIE_NAME`, matching the starter's non-secret storage/cookie-name contract.
+
 ## [0.8.0] - 2026-10-02
 
 ### Added
