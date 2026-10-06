@@ -9,19 +9,12 @@ from mattstack.post_processors.b2b import print_b2b_instructions
 from mattstack.post_processors.consolidate import consolidate_backend
 from mattstack.post_processors.customizer import customize_backend
 from mattstack.templates.backend_entrypoint import generate_backend_entrypoint
-from mattstack.templates.cursorrules import generate_cursorrules
 from mattstack.templates.deploy_files import deployment_files
 from mattstack.templates.docker_compose import generate_docker_compose
 from mattstack.templates.docker_compose_override import generate_docker_compose_override
 from mattstack.templates.docker_compose_prod import generate_docker_compose_prod
 from mattstack.templates.dockerfiles import generate_backend_dockerfile
 from mattstack.templates.pre_commit_config import generate_pre_commit_config
-from mattstack.templates.root_claude_md import generate_claude_md
-from mattstack.templates.root_env import (
-    generate_env_example,
-    generate_env_file,
-    generate_env_production_example,
-)
 from mattstack.templates.root_gitignore import generate_gitignore
 from mattstack.templates.root_makefile import generate_makefile
 from mattstack.templates.root_readme import generate_readme
@@ -69,13 +62,9 @@ class BackendOnlyGenerator(BaseGenerator):
                 "docker-compose.override.yml.example",
                 generate_docker_compose_override(self.config),
             )
-            self.write_file(".env.example", generate_env_example(self.config))
-            self.write_file(".env", generate_env_file(self.config))
-            self.write_file(".env.production.example", generate_env_production_example(self.config))
-            self.write_file(".env.production", generate_env_production_example(self.config))
+            self.write_env_files()
             self.write_file("README.md", generate_readme(self.config))
-            self.write_file("CLAUDE.md", generate_claude_md(self.config))
-            self.write_file(".cursorrules", generate_cursorrules(self.config))
+            self.write_agent_files()
             self.write_file(".gitignore", generate_gitignore(self.config))
             self.write_file("tasks/todo.md", f"# {self.config.display_name} TODO\n")
             self.write_file("docker/backend/Dockerfile", generate_backend_dockerfile(self.config))

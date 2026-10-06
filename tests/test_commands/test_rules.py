@@ -49,14 +49,14 @@ def test_agent_files_describe_the_actual_backend(
 ) -> None:
     _backend(tmp_path, files)
     run_rules(tmp_path, gsd=True)
-    for name in ("CLAUDE.md", ".cursorrules", ".planning/PROJECT.md"):
+    for name in ("AGENTS.md", ".planning/PROJECT.md"):
         text = (tmp_path / name).read_text(encoding="utf-8")
         for phrase in forbidden:
             assert phrase not in text, f"{name} mentions {phrase!r}"
-    assert expected in (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
+    assert expected in (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
 
 
-def test_claude_md_points_at_existing_component_guidance(tmp_path: Path) -> None:
+def test_agents_md_points_at_existing_component_guidance(tmp_path: Path) -> None:
     _backend(
         tmp_path,
         {
@@ -66,11 +66,11 @@ def test_claude_md_points_at_existing_component_guidance(tmp_path: Path) -> None
         },
     )
     run_rules(tmp_path)
-    claude = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
-    assert "`backend/AGENTS.md`" in claude
-    assert "`cd backend && just gauntlet-quick`" in claude
+    agents = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
+    assert "`backend/AGENTS.md`" in agents
+    assert "`cd backend && just gauntlet-quick`" in agents
     # Guidance that is absent on disk is never named.
-    assert "backend/.omp/rules" not in claude
+    assert "backend/.omp/rules" not in agents
 
 
 def test_agent_files_name_the_lockfile_package_manager(tmp_path: Path) -> None:
@@ -80,9 +80,8 @@ def test_agent_files_name_the_lockfile_package_manager(tmp_path: Path) -> None:
     (frontend / "package.json").write_text('{"devDependencies": {"vite": "6"}}')
     (frontend / "pnpm-lock.yaml").write_text("")
     run_rules(tmp_path)
-    claude = (tmp_path / "CLAUDE.md").read_text(encoding="utf-8")
-    assert "ALWAYS use `pnpm`" in claude
-    assert "pnpm run test" in claude
+    agents = (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
+    assert "use `pnpm`" in agents
 
 
 def test_unknown_backend_refuses_to_write(tmp_path: Path) -> None:
@@ -90,7 +89,7 @@ def test_unknown_backend_refuses_to_write(tmp_path: Path) -> None:
     with pytest.raises(typer.Exit) as exc:
         run_rules(tmp_path)
     assert exc.value.exit_code == 1
-    assert not (tmp_path / "CLAUDE.md").exists()
+    assert not (tmp_path / "AGENTS.md").exists()
 
 
 def test_dry_run_shows_status_tags(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

@@ -9,8 +9,7 @@ import typer
 from rich.markup import escape
 
 from mattstack.stack import load_stack, unknown_framework_message
-from mattstack.templates.cursorrules import generate_cursorrules
-from mattstack.templates.root_claude_md import generate_claude_md
+from mattstack.templates.agent_files import agent_files
 from mattstack.utils.console import console, print_error, print_info, print_success
 
 
@@ -51,12 +50,8 @@ def run_rules(
     tools = stack.toolchain()
 
     files_to_write: list[tuple[Path, str, str]] = [
-        (
-            root / "CLAUDE.md",
-            generate_claude_md(config, tools),
-            "AI agent context (Claude Code, Cursor)",
-        ),
-        (root / ".cursorrules", generate_cursorrules(config, tools), "Cursor IDE agent rules"),
+        (root / relative, content, "AI agent configuration")
+        for relative, content in agent_files(config, tools).items()
     ]
 
     if gsd:

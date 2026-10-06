@@ -7,14 +7,16 @@ those live once at the project root, so this module removes the per-subdirectory
 copies. Removal is defensive: missing paths are tolerated.
 
 Agent guidance follows one rule: canonical, component-scoped sources stay, and
-per-harness adapters go. ``AGENTS.md``, ``SKILLS.md``, ``.agents/skills/``,
+files that duplicate them go. ``AGENTS.md``, ``SKILLS.md``, ``.agents/skills/``,
 ``.omp/`` (rules, ``APPEND_SYSTEM.md``, skills), and ``.context/`` stay in the
 component: the Ninja gauntlet's cross-stack rules check and
 ``scripts/export_rules.py`` read ``.omp/``, and ``AGENTS.md`` points at the
-rest. ``CLAUDE.md``, ``.cursorrules``, and the ``.claude/``, ``.cursor/``,
-``.windsurf/``, ``.kiro/``, and ``.continue/`` adapters go: they copy the
-canonical sources, and the generated root ``CLAUDE.md`` and ``.cursorrules``
-replace them.
+rest. Committed ``.claude/skills/<name>/`` stay unless ``.agents/skills/`` or
+``.omp/skills/`` holds the same skill; everything else in ``.claude/`` (local
+settings, worktrees) goes. ``CLAUDE.md`` and ``.cursorrules`` go only when the
+component has an ``AGENTS.md`` they duplicate; without one they are the
+canonical guidance and stay. The ``.cursor/``, ``.windsurf/``, ``.kiro/``, and
+``.continue/`` adapters go; the generated root ``AGENTS.md`` replaces them.
 """
 
 from __future__ import annotations
@@ -36,8 +38,6 @@ _BACKEND_GLOBS: list[str] = [
     "docker-compose*.yaml",
     "Dockerfile*",
     ".env*",
-    "CLAUDE.md",
-    ".cursorrules",
     ".gitignore",
     ".dockerignore",
     ".pre-commit-config.yaml",
@@ -55,7 +55,6 @@ _FRONTEND_GLOBS: list[str] = [
     # Parallel bundler configs drift from the real one, which the generator
     # patches in place; `bun run dev` never loads these.
     "*.config.monorepo.*",
-    "CLAUDE.md",
     ".gitignore",
     ".dockerignore",
     "DEPLOYMENT.md",
@@ -64,7 +63,6 @@ _FRONTEND_GLOBS: list[str] = [
 
 # Per-harness adapters and editor settings, removed from either side.
 _EDITOR_DIRS: list[str] = [
-    ".claude",
     ".cursor",
     ".vscode",
     ".continue",
@@ -121,6 +119,36 @@ def _consolidate(root: Path, globs: list[str], dirs: list[str]) -> None:
         if _is_django_app(path):
             continue
         _remove(path)
+    _drop_agent_duplicates(root)
+
+
+def _drop_agent_duplicates(root: Path) -> None:
+    if (root / "AGENTS.md").is_file():
+        for name in ("CLAUDE.md", ".cursorrules"):
+            _remove(root / name)
+    claude = root / ".claude"
+    if not claude.is_dir() or claude.is_symlink():
+        _remove(claude)
+        return
+    for path in claude.iterdir():
+        if path.name != "skills" or not path.is_dir():
+            _remove(path)
+    skills = claude / "skills"
+    if skills.is_dir():
+        for skill in skills.iterdir():
+            if _skill_is_duplicate(root, skill.name):
+                _remove(skill)
+        if not any(skills.iterdir()):
+            skills.rmdir()
+    if not any(claude.iterdir()):
+        claude.rmdir()
+
+
+def _skill_is_duplicate(root: Path, name: str) -> bool:
+    if (root / ".agents" / "skills" / name).is_dir():
+        return True
+    omp_skills = root / ".omp" / "skills"
+    return omp_skills.is_dir() and any(path.is_dir() for path in omp_skills.rglob(name))
 
 
 def _is_django_app(path: Path) -> bool:

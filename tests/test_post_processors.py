@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from mattstack.config import FrontendFramework, ProjectConfig, ProjectType, Variant
 from mattstack.post_processors.b2b import print_b2b_instructions
 from mattstack.post_processors.consolidate import consolidate_backend, consolidate_frontend
@@ -198,7 +200,10 @@ def test_aligned_react_vite_source_is_left_unchanged(tmp_path: Path) -> None:
                 "@tanstack/react-router": "1.169.2",
                 "@tanstack/react-router-devtools": "1.166.13",
             },
-            "devDependencies": {"@tanstack/router-plugin": "1.167.34"},
+            "devDependencies": {
+                "@tanstack/router-plugin": "1.167.34",
+                "@hey-api/openapi-ts": "0.98.0",
+            },
         }
     )
     root = "import { TanStackRouterDevtools } from '@tanstack/react-router-devtools';\n"
@@ -211,6 +216,23 @@ def test_aligned_react_vite_source_is_left_unchanged(tmp_path: Path) -> None:
     assert result["devDependencies"]["@tanstack/router-plugin"] == "1.167.34"
     assert result["scripts"]["build"] == original["scripts"]["build"]
     assert (config.frontend_dir / "src/routes/__root.tsx").read_text() == root
+
+
+@pytest.mark.parametrize(
+    ("declared", "pinned"),
+    [(None, "0.99.0"), ("^0.98.0", "0.99.0"), ("0.98.0", "0.98.0")],
+)
+def test_openapi_generator_is_pinned_exactly(
+    tmp_path: Path, declared: str | None, pinned: str
+) -> None:
+    """`sync check` needs a reproducible generator; an existing exact pin is kept."""
+    config = _make_config(tmp_path)
+    dev = {"@hey-api/openapi-ts": declared} if declared else {}
+    _frontend(config, {"package.json": json.dumps({"devDependencies": dev})})
+    setup_frontend_monorepo(config)
+
+    data = json.loads((config.frontend_dir / "package.json").read_text())
+    assert data["devDependencies"]["@hey-api/openapi-ts"] == pinned
 
 
 _CUSTOM_ROUTES_VITE = (
@@ -389,6 +411,7 @@ def _populate_backend_standalone(backend: Path) -> None:
         "Dockerfile",
         "Dockerfile.uv",
         "README.md",
+        "AGENTS.md",
         "CLAUDE.md",
         ".cursorrules",
         ".gitignore",
@@ -416,6 +439,10 @@ def _populate_backend_standalone(backend: Path) -> None:
         ".tanstack",
     ]:
         (backend / d).mkdir(parents=True, exist_ok=True)
+    # A .claude skill that .agents/skills already holds is a duplicate.
+    (backend / ".claude" / "skills" / "django-ninja-dev").mkdir(parents=True)
+    (backend / ".agents" / "skills" / "django-ninja-dev").mkdir(parents=True)
+    (backend / ".claude" / "settings.local.json").write_text("{}")
     # Files that must be preserved
     (backend / "pyproject.toml").write_text("[project]\n")
     (backend / "manage.py").write_text("x")
@@ -445,6 +472,10 @@ def _populate_frontend_standalone(frontend: Path) -> None:
         (frontend / f).write_text("x")
     for d in ["nginx", "docs", "dist", ".claude", ".cursor", ".vscode", ".omp"]:
         (frontend / d).mkdir(parents=True, exist_ok=True)
+    # The committed copy of a skill, with no AGENTS.md or .agents/ duplicate.
+    (frontend / ".claude" / "skills" / "react-doctor").mkdir(parents=True)
+    (frontend / ".claude" / "skills" / "react-doctor" / "SKILL.md").write_text("x")
+    (frontend / ".claude" / "settings.local.json").write_text("{}")
     # Files that must be preserved
     (frontend / "package.json").write_text('{"name": "test"}\n')
     (frontend / "src").mkdir()
@@ -469,6 +500,7 @@ def test_consolidate_backend_removes_standalone_files(tmp_path: Path) -> None:
         "Dockerfile",
         "Dockerfile.uv",
         "CLAUDE.md",
+        ".cursorrules",
         ".gitignore",
         ".dockerignore",
         ".pre-commit-config.yaml",
@@ -480,6 +512,7 @@ def test_consolidate_backend_removes_standalone_files(tmp_path: Path) -> None:
     # and scripts/export_rules.py read .omp/, and AGENTS.md names .agents/.
     for d in [".omp", ".agents"]:
         assert (config.backend_dir / d).is_dir(), f"{d}/ should be kept"
+    assert (config.backend_dir / "AGENTS.md").is_file()
     for d in [".cursor", ".windsurf", ".kiro", ".continue"]:
         assert not (config.backend_dir / d).exists(), f"{d}/ adapter should be removed"
     assert (config.backend_dir / "pyproject.toml").exists()
@@ -520,15 +553,19 @@ def test_consolidate_frontend_removes_standalone_files(tmp_path: Path) -> None:
         "env.example",
         "Dockerfile",
         "Dockerfile.dev",
-        "CLAUDE.md",
         ".gitignore",
         ".dockerignore",
         "DEPLOYMENT.md",
         "nginx.conf",
     ]:
         assert not (config.frontend_dir / f).exists(), f"{f} should be removed"
-    for d in ["nginx", "docs", "dist", ".claude"]:
+    for d in ["nginx", "docs", "dist"]:
         assert not (config.frontend_dir / d).exists(), f"{d}/ should be removed"
+    # Without an AGENTS.md, CLAUDE.md is the canonical guidance; committed
+    # skills stay, personal settings go.
+    assert (config.frontend_dir / "CLAUDE.md").exists()
+    assert (config.frontend_dir / ".claude" / "skills" / "react-doctor" / "SKILL.md").exists()
+    assert not (config.frontend_dir / ".claude" / "settings.local.json").exists()
     assert (config.frontend_dir / ".omp").is_dir()
     assert (config.frontend_dir / "package.json").exists()
     assert (config.frontend_dir / "src").exists()

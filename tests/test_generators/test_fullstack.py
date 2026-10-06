@@ -21,12 +21,21 @@ def _make_config(tmp_path: Path, **kwargs) -> ProjectConfig:
     return ProjectConfig(**defaults)
 
 
+# Stands in for the boilerplate's scripts/env_secrets.py: copy the template.
+_FAKE_SECRETS = (
+    "import shutil, sys\na = sys.argv\n"
+    "shutil.copy(a[a.index('--template') + 1], a[a.index('--env-file') + 1])\n"
+)
+
+
 def _mock_clone(url: str, dest: Path, branch: str = "main", depth: int = 1) -> bool:
     """Simulate a git clone by creating directory with expected files."""
     dest.mkdir(parents=True, exist_ok=True)
     if "django" in url:
         (dest / "pyproject.toml").write_text("[project]\nname = 'test'\n")
         (dest / "manage.py").write_text("#!/usr/bin/env python\n")
+        (dest / "scripts").mkdir()
+        (dest / "scripts" / "env_secrets.py").write_text(_FAKE_SECRETS)
         for f in [
             "Makefile",
             "docker-compose.yml",
@@ -89,7 +98,6 @@ def test_fullstack_consolidates_boilerplate_files(mock_clone, tmp_path: Path) ->
         "docker-compose.yml",
         ".env",
         "Dockerfile",
-        "CLAUDE.md",
         ".gitignore",
     ]:
         assert not (config.backend_dir / f).exists(), f"backend/{f} should be removed"
@@ -98,7 +106,6 @@ def test_fullstack_consolidates_boilerplate_files(mock_clone, tmp_path: Path) ->
         "Makefile",
         "docker-compose.yml",
         "Dockerfile",
-        "CLAUDE.md",
         ".gitignore",
     ]:
         assert not (config.frontend_dir / f).exists(), f"frontend/{f} should be removed"

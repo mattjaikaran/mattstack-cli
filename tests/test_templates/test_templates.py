@@ -4,7 +4,7 @@ from mattstack.config import ProjectConfig, TaskBackend
 from mattstack.templates.docker_compose import generate_docker_compose
 from mattstack.templates.docker_compose_override import generate_docker_compose_override
 from mattstack.templates.docker_compose_prod import generate_docker_compose_prod
-from mattstack.templates.root_claude_md import generate_claude_md
+from mattstack.templates.root_agents_md import generate_agents_md
 from mattstack.templates.root_env import generate_env_example
 from mattstack.templates.root_gitignore import generate_gitignore
 from mattstack.templates.root_makefile import generate_makefile
@@ -89,17 +89,17 @@ def test_readme_b2b(b2b_config: ProjectConfig):
 # --- Feature 1: Conditional template cleanup ---
 
 
-def test_claude_md_frontend_only_no_backend_dev(frontend_only_config: ProjectConfig):
+def test_agents_md_frontend_only_no_backend_dev(frontend_only_config: ProjectConfig):
     """Frontend-only project should not include make backend-dev."""
-    content = generate_claude_md(frontend_only_config)
+    content = generate_agents_md(frontend_only_config)
     assert "make backend-dev" not in content
     assert "make frontend-dev" in content
     assert "make up" not in content
 
 
-def test_claude_md_backend_only_no_frontend_dev(backend_only_config: ProjectConfig):
+def test_agents_md_backend_only_no_frontend_dev(backend_only_config: ProjectConfig):
     """Backend-only project should not include make frontend-dev."""
-    content = generate_claude_md(backend_only_config)
+    content = generate_agents_md(backend_only_config)
     assert "make frontend-dev" not in content
     assert "make backend-dev" in content
     assert "make up" in content

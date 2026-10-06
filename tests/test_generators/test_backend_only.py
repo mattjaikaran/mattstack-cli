@@ -21,10 +21,19 @@ def _make_config(tmp_path: Path, **kwargs) -> ProjectConfig:
     return ProjectConfig(**defaults)
 
 
+# Stands in for the boilerplate's scripts/env_secrets.py: copy the template.
+_FAKE_SECRETS = (
+    "import shutil, sys\na = sys.argv\n"
+    "shutil.copy(a[a.index('--template') + 1], a[a.index('--env-file') + 1])\n"
+)
+
+
 def _mock_clone(url: str, dest: Path, branch: str = "main", depth: int = 1) -> bool:
     dest.mkdir(parents=True, exist_ok=True)
     (dest / "pyproject.toml").write_text("[project]\nname = 'test'\n")
     (dest / "manage.py").write_text("#!/usr/bin/env python\n")
+    (dest / "scripts").mkdir()
+    (dest / "scripts" / "env_secrets.py").write_text(_FAKE_SECRETS)
     for f in [
         "Makefile",
         "docker-compose.yml",
@@ -63,7 +72,6 @@ def test_backend_consolidates_boilerplate_files(mock_clone, tmp_path: Path) -> N
         "docker-compose.yml",
         ".env",
         "Dockerfile",
-        "CLAUDE.md",
         ".gitignore",
     ]:
         assert not (config.backend_dir / f).exists(), f"{f} should be removed"

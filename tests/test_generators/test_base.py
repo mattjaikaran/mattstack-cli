@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from pathlib import Path
 
-from mattstack.config import ProjectConfig, ProjectType
+import pytest
+
+from mattstack.config import BackendFramework, ProjectConfig, ProjectType
 from mattstack.generators.base import BaseGenerator
+from mattstack.utils.env_secrets import SecretsScriptError
 
 
 class _ConcreteGenerator(BaseGenerator):
@@ -157,3 +161,47 @@ def test_create_root_directory_dry_run(tmp_path: Path) -> None:
     result = gen.create_root_directory()
     assert result is True
     assert not config.path.exists()
+
+
+def _env(path: Path) -> dict[str, str]:
+    pairs = (line.split("=", 1) for line in path.read_text().splitlines() if "=" in line)
+    return {key: value for key, value in pairs if not key.startswith("#")}
+
+
+def test_env_files_get_private_distinct_secrets(tmp_path: Path) -> None:
+    """Backends without their own script get mattstack's generated values."""
+    config = _make_config(tmp_path, backend_framework=BackendFramework.FASTAPI)
+    config.path.mkdir(parents=True)
+    _ConcreteGenerator(config).write_env_files()
+
+    dev, prod = _env(config.path / ".env"), _env(config.path / ".env.production")
+    example = _env(config.path / ".env.example")
+    for name in ("SECRET_KEY", "JWT_SECRET_KEY", "DB_PASSWORD", "REDIS_PASSWORD"):
+        assert example[name] == "", f"{name} is committed with a value"
+        assert re.fullmatch(r"[A-Za-z0-9]{32,}", dev[name])
+        assert dev[name] != prod[name], f"{name} is reused across environments"
+    for name in (".env", ".env.production"):
+        assert (config.path / name).stat().st_mode & 0o777 == 0o600
+
+
+def test_ninja_without_secret_script_stops_init(tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    (config.path / "backend").mkdir(parents=True)
+    with pytest.raises(SecretsScriptError, match="scripts/env_secrets.py is missing"):
+        _ConcreteGenerator(config).write_env_files()
+    assert not (config.path / ".env").exists()
+
+
+def test_ninja_env_files_come_from_backend_script(tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    scripts = config.path / "backend" / "scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "env_secrets.py").write_text(
+        "import shutil, sys\na = sys.argv\n"
+        "shutil.copy(a[a.index('--template') + 1], a[a.index('--env-file') + 1])\n"
+    )
+    _ConcreteGenerator(config).write_env_files()
+    for name in (".env", ".env.production"):
+        private = (config.path / name).stat().st_mode & 0o777 == 0o600
+        assert private, f"{name} is not mode 0600"
+    assert not (config.path / "backend" / ".gitignore").exists()

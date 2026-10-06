@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
 import typer
 from rich.markup import escape
@@ -24,7 +25,7 @@ from mattstack.config import (
     get_repo_urls,
 )
 from mattstack.post_processors.task_runtime import prepare_runtime
-from mattstack.project import save_project_config
+from mattstack.project import CONFIG_FILENAME, save_project_config
 from mattstack.stack import ProjectStack, load_stack, unknown_framework_message
 from mattstack.utils.console import (
     console,
@@ -35,6 +36,7 @@ from mattstack.utils.console import (
     print_warning,
 )
 from mattstack.utils.git import clone_repo, remove_git_history
+from mattstack.utils.sources import record_sources, redact_repo, source_revision
 
 VALID_COMPONENTS = ("frontend", "backend", "ios")
 NEW_FILE_SUFFIX = ".mattstack-new"
@@ -78,7 +80,13 @@ def _build_config(stack: ProjectStack, adding: str, framework: str | None) -> Pr
     return config
 
 
-def _clone_component(component: str, config: ProjectConfig, *, dry_run: bool) -> bool:
+def _clone_component(
+    component: str,
+    config: ProjectConfig,
+    *,
+    dry_run: bool,
+    sources: dict[str, dict[str, Any]],
+) -> bool:
     """Clone the appropriate repo for the given component."""
     if component == "frontend":
         repo_key = config.frontend_repo_key
@@ -93,12 +101,15 @@ def _clone_component(component: str, config: ProjectConfig, *, dry_run: bool) ->
     url = get_repo_urls()[repo_key]
 
     if dry_run:
-        print_info(f"[dry-run] Would clone {repo_key} ({url}) into {dest.name}/")
+        print_info(f"[dry-run] Would clone {repo_key} ({redact_repo(url)}) into {dest.name}/")
         return True
 
     if not clone_repo(url, dest):
         return False
+    record = source_revision(url, dest)
     remove_git_history(dest)
+    if record and dest.name in ("backend", "frontend"):
+        sources[dest.name] = record
     print_success(f"Cloned {component} ({repo_key}) into {dest.name}/")
     return True
 
@@ -125,7 +136,9 @@ def _customize_component(component: str, config: ProjectConfig, *, dry_run: bool
 
 
 def _root_files(config: ProjectConfig) -> list[tuple[str, str]]:
+    from mattstack.templates.agent_files import agent_files
     from mattstack.templates.docker_compose import generate_docker_compose
+    from mattstack.templates.gauntlet_toml import generate_gauntlet_toml
     from mattstack.templates.root_env import generate_env_example
     from mattstack.templates.root_makefile import generate_makefile
     from mattstack.templates.root_readme import generate_readme
@@ -137,6 +150,9 @@ def _root_files(config: ProjectConfig) -> list[tuple[str, str]]:
     ]
     if config.has_backend:
         files.append(("docker-compose.yml", generate_docker_compose(config)))
+    # The root AGENTS.md names each component, so a new component changes it.
+    files.extend(agent_files(config).items())
+    files.append(("gauntlet.toml", generate_gauntlet_toml(config)))
     return files
 
 
@@ -167,6 +183,7 @@ def _update_root_files(config: ProjectConfig, *, dry_run: bool, force: bool) -> 
             continue
         if exists:
             print_warning(f"Overwriting {filename} (--force)")
+        filepath.parent.mkdir(parents=True, exist_ok=True)
         filepath.write_text(content, encoding="utf-8")
 
     if staged:
@@ -178,13 +195,16 @@ def _update_root_files(config: ProjectConfig, *, dry_run: bool, force: bool) -> 
     return True
 
 
-def _save_metadata(config: ProjectConfig, *, dry_run: bool) -> bool:
-    """Persist the post-add stack so later commands do not re-guess it."""
+def _save_metadata(
+    config: ProjectConfig, *, dry_run: bool, sources: dict[str, dict[str, Any]]
+) -> bool:
+    """Persist the post-add stack and its source commit so later commands do not re-guess."""
     if dry_run:
         print_info("[dry-run] Would record the new stack in mattstack.yml")
         return True
     try:
         save_project_config(config)
+        record_sources(config.path / CONFIG_FILENAME, sources)
     except ValueError as exc:
         print_error(f"Could not update mattstack.yml: {exc}")
         return False
@@ -265,9 +285,13 @@ def run_add(
         console.print(f"[dim]Project root:[/dim] {escape(str(stack.root))}")
 
     config = _build_config(stack, component, framework)
+    sources: dict[str, dict[str, Any]] = {}
 
     steps: list[tuple[str, Callable[[], bool]]] = [
-        (f"Cloning {component}", lambda: _clone_component(component, config, dry_run=dry_run)),
+        (
+            f"Cloning {component}",
+            lambda: _clone_component(component, config, dry_run=dry_run, sources=sources),
+        ),
         (
             f"Customizing {component}",
             lambda: _customize_component(component, config, dry_run=dry_run),
@@ -281,7 +305,7 @@ def run_add(
             "Updating root files",
             lambda: _update_root_files(config, dry_run=dry_run, force=force),
         ),
-        ("Recording stack", lambda: _save_metadata(config, dry_run=dry_run)),
+        ("Recording stack", lambda: _save_metadata(config, dry_run=dry_run, sources=sources)),
     ]
 
     with create_progress() as progress:
