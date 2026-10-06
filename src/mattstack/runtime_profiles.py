@@ -16,7 +16,14 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from mattstack.config import BackendFramework, MediaStorage, ProjectConfig, TaskBackend
+from mattstack.config import (
+    AiStore,
+    BackendFramework,
+    GraphStore,
+    MediaStorage,
+    ProjectConfig,
+    TaskBackend,
+)
 from mattstack.stack_detection import mentions_package
 
 # Centrifugo: image, config file inside the backend, and ports from the
@@ -95,6 +102,10 @@ def backend_sync_args(config: ProjectConfig, backend_dir: Path) -> list[str]:
                 f"TASK_BACKEND={config.task_backend.value}"
             )
         args.extend(("--extra", task_extra))
+    if config.use_ai:
+        if "ai" not in extras:
+            raise ValueError(f"{backend_dir}/pyproject.toml has no 'ai' extra for --ai/--graph")
+        args.extend(("--extra", "ai"))
     if "dev" in extras:
         args.extend(("--extra", "dev"))
     if "dev" in data.get("dependency-groups", {}):
@@ -242,6 +253,10 @@ def runtime_kwargs(
         "task_backend": task_backend,
         "use_realtime": realtime,
         "media_storage": _metadata_choice(MediaStorage, f"{prefix}.media_storage", media),
+        "ai_store": _metadata_choice(AiStore, f"{prefix}.ai", backend_meta.get("ai", "none")),
+        "graph_store": _metadata_choice(
+            GraphStore, f"{prefix}.graph", backend_meta.get("graph", "cte")
+        ),
         # Unchanged legacy rule: an explicit bool wins, else detect Redis.
         "use_redis": (
             redis
@@ -257,6 +272,8 @@ def apply_runtime_metadata(backend_meta: dict[str, Any], config: ProjectConfig) 
     backend_meta["task_backend"] = config.task_backend.value
     backend_meta["realtime"] = config.use_realtime
     backend_meta["media_storage"] = config.media_storage.value
+    backend_meta["ai"] = config.ai_store.value
+    backend_meta["graph"] = config.graph_store.value
 
 
 def runtime_prerequisite_errors(config: ProjectConfig, *, task_checks: bool = True) -> list[str]:
@@ -303,4 +320,10 @@ def runtime_prerequisite_errors(config: ProjectConfig, *, task_checks: bool = Tr
                     f"Centrifugo integration (docs/REALTIME.md). Restore it or remove "
                     f"--realtime. Verify: test -f backend/{relative}"
                 )
+    if config.use_ai and not (backend / "core" / "ai").is_dir():
+        errors.append(
+            "backend/core/ai is missing; --ai and --graph need the boilerplate's AI layer "
+            "(docs/AI_LAYER.md). Update the backend or remove the flags. "
+            "Verify: test -d backend/core/ai"
+        )
     return errors

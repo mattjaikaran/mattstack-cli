@@ -72,8 +72,7 @@ def test_makefile_ships_a_read_only_gauntlet_target(tmp_path: Path) -> None:
     assert "\tmattstack audit --no-todo\n" in makefile
 
 
-def test_makefile_sync_types_uses_the_real_command(tmp_path: Path) -> None:
-    """`--output` takes a file, and the command reports schemas from the root."""
+def test_makefile_sync_api_uses_the_openapi_command(tmp_path: Path) -> None:
+    """The Makefile regenerates the client through the OpenAPI contract."""
     makefile = generate_makefile(_config(tmp_path, FrontendFramework.REACT_VITE))
-    assert "\tmattstack sync types\n" in makefile
-    assert "manage.py sync_types" not in makefile
+    assert "\tmattstack sync openapi\n" in makefile

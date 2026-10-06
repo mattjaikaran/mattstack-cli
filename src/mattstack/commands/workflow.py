@@ -1,13 +1,13 @@
-"""Workflow command: CI/CD workflow generation for fullstack monorepos.
+"""Workflow command: opt-in hosted CI generation for fullstack monorepos.
+
+Generated projects run every gate locally (``make gauntlet`` and the pre-push
+hook). Hosted runners cost build minutes, so this command writes a workflow
+only for an explicit ``--ci github`` or ``--ci gitlab``.
 
 Job names are part of the contract. `mattstack protect` requires the
 `gauntlet` status check by default, so this generator emits a job with that
-exact name for every project type.
-
-Backend and frontend jobs follow the project's resolved frameworks: Python
-backends run uv, ruff, and pytest; a NestJS backend runs its package scripts.
-JavaScript jobs use the package manager that the committed lockfile names;
-a project without a lockfile keeps the scaffold default, Bun.
+exact name for every project type. Backend and frontend jobs follow the
+resolved frameworks, and every action, image, and tool version is pinned.
 """
 
 from __future__ import annotations
@@ -21,9 +21,14 @@ from rich.markup import escape
 from mattstack.config import ProjectConfig
 from mattstack.stack import load_stack, unknown_framework_message
 from mattstack.templates.ci_toolchain import (
+    CHECKOUT,
+    NODE_VERSION,
+    SETUP_UV,
     CiLayout,
+    CiTools,
     JsCi,
     backend_test_env,
+    ci_tools,
     github_js_setup,
     in_dir,
     js_ci,
@@ -37,24 +42,24 @@ from mattstack.utils.console import (
     print_error,
     print_info,
     print_success,
+    print_warning,
 )
 from mattstack.utils.package_manager import PackageManager
 
 
-def _gauntlet_job() -> str:
-    """Build the Gauntlet verification job.
+def _gauntlet_job(tools: CiTools) -> str:
+    """Build the Gauntlet job; its name is the status check `mattstack protect` requires.
 
-    The job name is the status check that `mattstack protect` requires, so
-    do not rename it. mattstack is not on PyPI yet, so the job installs it
-    from git. It runs `mattstack audit --no-todo`: the built-in auditors
-    (no external binary), which exit 1 when any error-severity finding
-    exists. `--no-todo` keeps CI from writing tasks/todo.md.
+    It installs mattstack from git and runs the built-in auditors, which exit 1
+    on any error-severity finding. `--no-todo` keeps CI from writing tasks/todo.md.
     """
-    return """  gauntlet:
+    return f"""  gauntlet:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: {CHECKOUT}
+      - uses: {SETUP_UV}
+        with:
+          version: {yaml_str(tools.uv)}
       - name: Install mattstack
         run: uv tool install git+https://github.com/mattjaikaran/mattstack-cli
       - name: Run the Gauntlet gate
@@ -75,16 +80,17 @@ def _generate_github_actions(
     """
     layout = layout or _default_layout(config)
     backend_dir, frontend_dir = layout.rel(layout.backend), layout.rel(layout.frontend)
+    tools = ci_tools(layout.root)
     jobs: list[str] = []
 
     if with_gauntlet:
-        jobs.append(_gauntlet_job())
+        jobs.append(_gauntlet_job(tools))
 
     if config.has_backend:
         backend = backend_facts(config.backend_framework)
         if backend.is_python:
-            jobs.append(_backend_lint_job(backend, backend_dir))
-            jobs.append(_backend_test_job(backend, backend_dir))
+            jobs.append(_backend_lint_job(backend, backend_dir, tools))
+            jobs.append(_backend_test_job(backend, backend_dir, tools))
         else:
             js = js_ci(layout.backend, layout.root)
             jobs.append(_js_job("backend-lint", js.run(backend.lint), js, backend_dir))
@@ -118,37 +124,33 @@ jobs:
 """
 
 
-def _backend_lint_job(backend: BackendFacts, directory: str) -> str:
+def _python_steps(backend: BackendFacts, tools: CiTools) -> str:
+    return f"""      - uses: {CHECKOUT}
+      - uses: {SETUP_UV}
+        with:
+          version: {yaml_str(tools.uv)}
+          enable-cache: true
+      - run: uv sync --frozen --python {tools.python}{backend.ci_sync_args}"""
+
+
+def _backend_lint_job(backend: BackendFacts, directory: str, tools: CiTools) -> str:
     return f"""  backend-lint:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.12", "3.13"]
     defaults:
       run:
         working-directory: {yaml_str(directory)}
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
-        with:
-          enable-cache: true
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{{{ matrix.python-version }}}}
-      - run: uv sync --frozen{backend.ci_sync_args}
+{_python_steps(backend, tools)}
       - run: uv run ruff check .
       - run: uv run ruff format --check ."""
 
 
-def _backend_test_job(backend: BackendFacts, directory: str) -> str:
+def _backend_test_job(backend: BackendFacts, directory: str, tools: CiTools) -> str:
     return f"""  backend-test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.12", "3.13"]
     services:
       postgres:
-        image: postgres:17
+        image: postgres:{tools.postgres}
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -161,11 +163,11 @@ def _backend_test_job(backend: BackendFacts, directory: str) -> str:
           --health-timeout 5s
           --health-retries 5
       redis:
-        image: redis:7
+        image: valkey/valkey:{tools.valkey}
         ports:
           - 6379:6379
         options: >-
-          --health-cmd "redis-cli ping"
+          --health-cmd "valkey-cli ping"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -175,14 +177,7 @@ def _backend_test_job(backend: BackendFacts, directory: str) -> str:
     env:
 {yaml_mapping(backend_test_env(backend, "localhost", "localhost"), 6)}
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
-        with:
-          enable-cache: true
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{{{ matrix.python-version }}}}
-      - run: uv sync --frozen{backend.ci_sync_args}
+{_python_steps(backend, tools)}
       - run: uv run pytest -x -q"""
 
 
@@ -194,7 +189,7 @@ def _js_job(name: str, command: str, js: JsCi, directory: str) -> str:
       run:
         working-directory: {yaml_str(directory)}
     steps:
-      - uses: actions/checkout@v4
+      - uses: {CHECKOUT}
 {github_js_setup(js)}
       - run: {js.install}
       - run: {command}"""
@@ -206,17 +201,18 @@ def _generate_gitlab_ci(
     """Generate GitLab CI configuration. See _generate_github_actions for ``layout``."""
     layout = layout or _default_layout(config)
     backend_dir, frontend_dir = layout.rel(layout.backend), layout.rel(layout.frontend)
+    tools = ci_tools(layout.root)
     stages: list[str] = []
     jobs: list[str] = []
 
     if with_gauntlet:
         stages.append("verify")
-        jobs.append("""
+        jobs.append(f"""
 gauntlet:
   stage: verify
-  image: python:3.13-slim
+  image: {tools.uv_image}
   before_script:
-    - pip install uv && uv tool install git+https://github.com/mattjaikaran/mattstack-cli
+    - uv tool install git+https://github.com/mattjaikaran/mattstack-cli
   script:
     - mattstack audit --no-todo""")
 
@@ -224,7 +220,7 @@ gauntlet:
         stages.extend(["lint", "test"])
         backend = backend_facts(config.backend_framework)
         if backend.is_python:
-            jobs.extend(_gitlab_python_jobs(backend, backend_dir))
+            jobs.extend(_gitlab_python_jobs(backend, backend_dir, tools))
         else:
             js = js_ci(layout.backend, layout.root)
             for name, stage, command in (
@@ -259,33 +255,30 @@ gauntlet:
 """
 
 
-def _gitlab_python_jobs(backend: BackendFacts, directory: str) -> list[str]:
-    install = yaml_str(in_dir(directory, f"uv sync --frozen{backend.ci_sync_args}"))
+def _gitlab_python_jobs(backend: BackendFacts, directory: str, tools: CiTools) -> list[str]:
+    sync = f"uv sync --frozen --python {tools.python}{backend.ci_sync_args}"
+    head = f"""
+  image: {tools.uv_image}
+  before_script:
+    - {yaml_str(in_dir(directory, sync))}"""
     lint = f"""
 backend-lint:
-  stage: lint
-  image: python:3.13-slim
-  before_script:
-    - pip install uv
-    - {install}
+  stage: lint{head}
   script:
     - uv run ruff check .
     - uv run ruff format --check ."""
     test = f"""
 backend-test:
-  stage: test
-  image: python:3.13-slim
+  stage: test{head}
   services:
-    - postgres:17
-    - redis:7
+    - postgres:{tools.postgres}
+    - name: valkey/valkey:{tools.valkey}
+      alias: redis
   variables:
     POSTGRES_DB: test_db
     POSTGRES_USER: postgres
     POSTGRES_PASSWORD: postgres
 {yaml_mapping(backend_test_env(backend, "postgres", "redis"), 4)}
-  before_script:
-    - pip install uv
-    - {install}
   script:
     - uv run pytest -x -q"""
     return [lint, test]
@@ -293,7 +286,7 @@ backend-test:
 
 def _gitlab_js_job(name: str, stage: str, command: str, js: JsCi, directory: str) -> str:
     """Build one GitLab job that installs and runs ``command`` in ``directory``."""
-    image = "oven/bun:latest" if js.pm == PackageManager.BUN else "node:22"
+    image = f"oven/bun:{js.bun}" if js.pm == PackageManager.BUN else f"node:{NODE_VERSION}"
     corepack = "corepack enable && " if js.pm in (PackageManager.PNPM, PackageManager.YARN) else ""
     return f"""
 {name}:
@@ -305,17 +298,31 @@ def _gitlab_js_job(name: str, stage: str, command: str, js: JsCi, directory: str
     - {command}"""
 
 
+_CI_TARGETS = {
+    "github": (_generate_github_actions, Path(".github") / "workflows" / "ci.yml"),
+    "gitlab": (_generate_gitlab_ci, Path(".gitlab-ci.yml")),
+}
+
+
 def run_generate_workflow(
     path: Path,
-    platform: str = "github-actions",
+    ci: str | None = None,
     dry_run: bool = False,
     force: bool = False,
 ) -> None:
-    """Generate CI/CD workflow configuration.
+    """Generate an opt-in hosted CI workflow; without ``ci``, explain the local gates.
 
     An existing workflow file is a user file: it is replaced only with
     ``force``. Without it, a differing file stops the command with exit 1.
     """
+    target = _CI_TARGETS.get(ci or "")
+    if target is None:
+        print_error(
+            "Hosted CI is opt-in. Gates run locally: `make gauntlet` and the "
+            "pre-push hook (`mattstack hooks install`)."
+        )
+        print_info("To generate a workflow anyway, pass --ci github or --ci gitlab.")
+        raise typer.Exit(code=2)
     path = path.resolve()
     if not path.is_dir():
         print_error(f"Directory not found: {path}")
@@ -344,17 +351,10 @@ def run_generate_workflow(
     if config.has_frontend:
         stack_desc.append(f"frontend {config.frontend_framework.value}")
     print_info(f"Detected stack: {', '.join(stack_desc)}")
-    print_info(f"Platform: {platform}")
-
-    if platform == "github-actions":
-        content = _generate_github_actions(config, with_gauntlet=True, layout=layout)
-        output_path = stack.root / ".github" / "workflows" / "ci.yml"
-    elif platform == "gitlab-ci":
-        content = _generate_gitlab_ci(config, with_gauntlet=True, layout=layout)
-        output_path = stack.root / ".gitlab-ci.yml"
-    else:
-        print_error(f"Unknown platform: {platform}. Use: github-actions, gitlab-ci")
-        raise typer.Exit(code=1)
+    print_warning(f"--ci {ci}: every push and pull request will spend hosted CI minutes.")
+    generate, relative = target
+    content = generate(config, with_gauntlet=True, layout=layout)
+    output_path = stack.root / relative
 
     exists = output_path.exists()
     if exists and output_path.read_text(encoding="utf-8", errors="replace") == content:

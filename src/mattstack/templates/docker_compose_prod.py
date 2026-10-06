@@ -9,6 +9,7 @@ from __future__ import annotations
 from mattstack.config import ProjectConfig
 from mattstack.runtime_profiles import TaskProcess, task_processes
 from mattstack.templates.compose_env import (
+    backend_build,
     backend_env,
     db_service,
     depends_block,
@@ -42,7 +43,7 @@ def generate_docker_compose_prod(config: ProjectConfig) -> str:
         volumes.append("  postgres_data:")
 
         if config.use_redis:
-            services.append(redis_service(production=True))
+            services.append(redis_service(config, production=True))
             volumes.append("  redis_data:")
 
         services.append(_api_service(config))
@@ -76,10 +77,7 @@ def _api_service(config: ProjectConfig) -> str:
         }
     return f"""\
   {PROD_API_SERVICE}:
-    build:
-      context: .
-      dockerfile: docker/backend/Dockerfile
-      target: production
+{backend_build(config, "production")}
     ports:
       - "${{API_PORT:-{port}}}:{port}"
 {service_environment(extra)}
@@ -90,10 +88,7 @@ def _api_service(config: ProjectConfig) -> str:
 def _task_service(config: ProjectConfig, process: TaskProcess) -> str:
     return f"""\
   {process.service}:
-    build:
-      context: .
-      dockerfile: docker/backend/Dockerfile
-      target: production
+{backend_build(config, "production")}
     command: {process.command}
 {service_environment({})}
 {depends_block(config)}

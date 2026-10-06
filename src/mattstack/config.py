@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
@@ -65,6 +66,21 @@ class MediaStorage(StrEnum):
     S3 = "s3"
 
 
+class AiStore(StrEnum):
+    """Vector store for the django-ninja AI layer (docs/AI_LAYER.md)."""
+
+    NONE = "none"
+    PGVECTOR = "pgvector"
+    QDRANT = "qdrant"
+
+
+class GraphStore(StrEnum):
+    """Graph queries for the django-ninja AI layer; ``cte`` needs no service."""
+
+    CTE = "cte"
+    NEO4J = "neo4j"
+
+
 def supported_task_backends(
     backend: BackendFramework, project_type: ProjectType
 ) -> tuple[TaskBackend, ...]:
@@ -98,12 +114,25 @@ REPO_URLS: dict[str, str] = {
 }
 
 
+def source_env_var(repo_key: str) -> str:
+    """Return the variable that overrides ``repo_key``'s source (``MATTSTACK_SOURCE_NEXTJS``)."""
+    return "MATTSTACK_SOURCE_" + re.sub(r"[^A-Z0-9]", "_", repo_key.upper())
+
+
 def get_repo_urls() -> dict[str, str]:
-    """Get repo URLs merged with user config overrides."""
+    """Get repo URLs merged with user config, then ``MATTSTACK_SOURCE_<KEY>`` overrides.
+
+    A local directory override copies its working tree, including uncommitted
+    changes; see ``utils.git.copy_worktree``.
+    """
     from mattstack.user_config import get_user_repos
 
     urls = dict(REPO_URLS)
     urls.update(get_user_repos())  # type: ignore[arg-type]
+    for key in list(urls):
+        override = os.environ.get(source_env_var(key), "").strip()
+        if override:
+            urls[key] = override
     return urls
 
 
@@ -137,6 +166,9 @@ class ProjectConfig:
     # Opt-in Centrifugo service (django-ninja only).
     use_realtime: bool = False
     media_storage: MediaStorage = MediaStorage.LOCAL
+    # AI layer (django-ninja only): any vector store selects the pgvector image.
+    ai_store: AiStore = AiStore.NONE
+    graph_store: GraphStore = GraphStore.CTE
     use_redis: bool = True
     deployment: DeploymentTarget = DeploymentTarget.DOCKER
     init_git: bool = True
@@ -146,6 +178,9 @@ class ProjectConfig:
     # URL prefix where the backend API is mounted. The Django boilerplates
     # mount the API with ``path("api/", api.urls)``.
     api_prefix: str = "/api"
+    # Versions and image tags read from the cloned backend before consolidation
+    # removes its Compose files and Dockerfile (utils.versions.snapshot_pins).
+    source_pins: dict[str, str] = field(default_factory=dict, repr=False)
 
     def __post_init__(self) -> None:
         self.name = normalize_name(self.name)
@@ -155,6 +190,8 @@ class ProjectConfig:
             self.path = Path(self.path)
         self.task_backend = TaskBackend(self.task_backend)
         self.media_storage = MediaStorage(self.media_storage)
+        self.ai_store = AiStore(self.ai_store)
+        self.graph_store = GraphStore(self.graph_store)
         # Frontend-only projects don't need backend features
         if self.project_type == ProjectType.FRONTEND_ONLY:
             self.task_backend = TaskBackend.NONE
@@ -162,6 +199,8 @@ class ProjectConfig:
             self.include_ios = False
             self.use_realtime = False
             self.media_storage = MediaStorage.LOCAL
+            self.ai_store = AiStore.NONE
+            self.graph_store = GraphStore.CTE
         # NestJS uses Bull (Redis-based queues) not Celery; Redis still needed.
         # The legacy default (Celery on) means "the backend's own queue".
         if self.backend_framework == BackendFramework.NESTJS:
@@ -202,6 +241,17 @@ class ProjectConfig:
                 f"media_storage 's3' needs the django-ninja backend; {backend} has no "
                 "S3 media settings. Use --media-storage local"
             )
+        optional_ai = self.ai_store != AiStore.NONE or self.graph_store != GraphStore.CTE
+        if optional_ai and not (ninja and self.has_backend):
+            raise ValueError(
+                f"--ai and --graph need the django-ninja backend (docs/AI_LAYER.md); "
+                f"{backend} has no AI layer. Use --ai none --graph cte"
+            )
+
+    @property
+    def use_ai(self) -> bool:
+        """Whether the AI layer (``ai`` extra, pgvector image) is selected."""
+        return self.ai_store != AiStore.NONE or self.graph_store != GraphStore.CTE
 
     @property
     def use_celery(self) -> bool:

@@ -20,7 +20,7 @@ from mattstack.config import ProjectConfig, ProjectType, TaskBackend
 from mattstack.runtime_profiles import task_backend_extra
 from mattstack.templates.docker_compose import generate_docker_compose
 from mattstack.templates.docker_compose_prod import generate_docker_compose_prod
-from mattstack.templates.root_env import generate_env_example, generate_env_file
+from mattstack.templates.root_env import generate_env_example
 from mattstack.templates.root_makefile import generate_makefile
 
 WORKERS = {
@@ -156,10 +156,6 @@ def test_realtime_profile_shares_secrets_without_committing_them(tmp_path: Path)
     example = generate_env_example(config)
     assert "CENTRIFUGO_API_KEY=\n" in example
     assert "CENTRIFUGO_TOKEN_SECRET=\n" in example
-    local = generate_env_file(config)
-    for key in ("CENTRIFUGO_API_KEY", "CENTRIFUGO_TOKEN_SECRET"):
-        assert re.search(rf"^{key}=[0-9a-f]{{64}}$", local, re.M)
-    assert generate_env_file(config) != local  # fresh secrets per project
 
     prod = _services(generate_docker_compose_prod(config))
     assert "profiles" not in prod["centrifugo"]

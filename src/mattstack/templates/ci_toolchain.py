@@ -3,7 +3,8 @@
 `mattstack workflow` reads the committed lockfile, so CI uses the package
 manager the project already chose. A project without a lockfile keeps the
 scaffold default, Bun. Component directories come from mattstack.yml, so
-every path is quoted for both the shell and YAML.
+every path is quoted for both the shell and YAML. Every action, image, and
+tool is pinned; a floating ``latest`` changes CI without a commit.
 """
 
 from __future__ import annotations
@@ -16,6 +17,43 @@ from pathlib import Path
 
 from mattstack.templates.stack_facts import BackendFacts
 from mattstack.utils.package_manager import LOCKFILE_MAP, PackageManager
+from mattstack.utils.versions import BUN_FALLBACK, UV_FALLBACK, bun_pin, major, read_versions
+
+CHECKOUT = "actions/checkout@v4"
+SETUP_UV = "astral-sh/setup-uv@v5"
+SETUP_BUN = "oven-sh/setup-bun@v2"
+SETUP_NODE = "actions/setup-node@v4"
+NODE_VERSION = "22"
+
+
+@dataclass(frozen=True)
+class CiTools:
+    """Tool and service versions for Python CI jobs, read from the project."""
+
+    uv: str
+    python: str
+    postgres: str
+    valkey: str
+
+    @property
+    def uv_image(self) -> str:
+        """Return Astral's uv image with the pinned uv and Python versions.
+
+        The image puts ``uv tool install`` executables on ``PATH``.
+        """
+        return f"ghcr.io/astral-sh/uv:{self.uv}-python{self.python}-trixie-slim"
+
+
+def ci_tools(root: Path) -> CiTools:
+    """Read pins from the components and generated root files, else the fallbacks."""
+    found = read_versions(root)
+    python = ".".join(found.get("python", "3.13").split(".")[:2])
+    return CiTools(
+        uv=found.get("uv", UV_FALLBACK),
+        python=python if "." in python else "3.13",
+        postgres=major(found.get("postgres")) or "17",
+        valkey=major(found.get("valkey")) or "8",
+    )
 
 
 def yaml_str(value: str) -> str:
@@ -62,6 +100,7 @@ class JsCi:
 
     pm: PackageManager
     install: str
+    bun: str = BUN_FALLBACK
 
     def run(self, command: str) -> str:
         """Translate a Bun command from frontend_commands to this package manager."""
@@ -105,11 +144,12 @@ def js_ci(component_dir: Path, root: Path) -> JsCi:
     """Resolve CI install for ``component_dir`` from its committed lockfile.
 
     A user default package manager does not apply: CI can only use what the
-    repository records. Without a lockfile, keep Bun.
+    repository records. Without a lockfile, keep Bun, pinned by ``packageManager``.
     """
+    bun = bun_pin(component_dir) or bun_pin(root) or BUN_FALLBACK
     found = _lockfile(component_dir, root)
     if found is None or found[0] == PackageManager.BUN:
-        return JsCi(PackageManager.BUN, "bun install --frozen-lockfile")
+        return JsCi(PackageManager.BUN, "bun install --frozen-lockfile", bun)
     pm, lockfile = found
     if pm == PackageManager.NPM:
         install = "npm ci"
@@ -130,12 +170,12 @@ def js_ci(component_dir: Path, root: Path) -> JsCi:
 def github_js_setup(js: JsCi) -> str:
     """Return the GitHub Actions steps that provide ``js.pm``."""
     if js.pm == PackageManager.BUN:
-        return """      - uses: oven-sh/setup-bun@v2
+        return f"""      - uses: {SETUP_BUN}
         with:
-          bun-version: latest"""
-    setup = """      - uses: actions/setup-node@v4
+          bun-version: {yaml_str(js.bun)}"""
+    setup = f"""      - uses: {SETUP_NODE}
         with:
-          node-version: 22"""
+          node-version: {yaml_str(NODE_VERSION)}"""
     if js.pm in (PackageManager.PNPM, PackageManager.YARN):
         setup += "\n      - run: corepack enable"
     return setup

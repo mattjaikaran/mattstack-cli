@@ -5,6 +5,8 @@ from __future__ import annotations
 from mattstack.config import ProjectConfig
 from mattstack.runtime_profiles import TaskProcess, task_processes, task_profile, uv_run
 from mattstack.templates.compose_env import (
+    ai_services,
+    backend_build,
     backend_env,
     db_service,
     depends_block,
@@ -35,7 +37,7 @@ def generate_docker_compose(config: ProjectConfig) -> str:
         volumes.append("  postgres_data:")
 
         if config.use_redis:
-            services.append(redis_service(production=False))
+            services.append(redis_service(config, production=False))
             volumes.append("  redis_data:")
 
         services.append(_api_dev_service(config))
@@ -45,6 +47,13 @@ def generate_docker_compose(config: ProjectConfig) -> str:
         services.extend(_task_service(config, process) for process in dev_processes)
         if config.use_realtime:
             services.append(centrifugo_service(production=False))
+        extra_services = ai_services(config)
+        services.extend(extra_services)
+        volumes.extend(
+            f"  {name}_data:"
+            for name in ("qdrant", "neo4j")
+            if any(service.startswith(f"  {name}:") for service in extra_services)
+        )
 
     if config.has_frontend:
         services.append(_frontend_dev_service(config))
@@ -72,10 +81,7 @@ def _api_dev_service(config: ProjectConfig) -> str:
         volumes = "      - ./backend:/app"
     return f"""\
   {DEV_API_SERVICE}:
-    build:
-      context: .
-      dockerfile: docker/backend/Dockerfile
-      target: development
+{backend_build(config, "development")}
     command: {command}
     ports:
       - "127.0.0.1:${{API_PORT:-{port}}}:{port}"
@@ -89,10 +95,7 @@ def _task_service(config: ProjectConfig, process: TaskProcess) -> str:
     """Render a task worker on the backend's Compose profile (celery, huey, ...)."""
     return f"""\
   {process.service}:
-    build:
-      context: .
-      dockerfile: docker/backend/Dockerfile
-      target: development
+{backend_build(config, "development")}
     command: {uv_run(config)} {process.command}
     volumes:
       - ./backend:/app

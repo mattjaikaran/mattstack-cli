@@ -11,7 +11,9 @@ import questionary
 import typer
 
 from mattstack.config import (
+    AiStore,
     BackendFramework,
+    GraphStore,
     MediaStorage,
     ProjectConfig,
     ProjectType,
@@ -42,7 +44,11 @@ def _choice(enum_type: type[StrEnum], flag: str, value: str | None) -> Any:
 
 
 def runtime_overrides(
-    task_backend: str | None, realtime: bool | None, media_storage: str | None
+    task_backend: str | None,
+    realtime: bool | None,
+    media_storage: str | None,
+    ai: str | None = None,
+    graph: str | None = None,
 ) -> dict[str, Any]:
     """Parse the CLI flags into ProjectConfig overrides; exit 2 on a bad value."""
     overrides: dict[str, Any] = {}
@@ -54,6 +60,19 @@ def runtime_overrides(
     media = _choice(MediaStorage, "--media-storage", media_storage)
     if media is not None:
         overrides["media_storage"] = media
+    if graph == "age":
+        print_error(
+            "--graph age is not supported: the apache/age image has no pgvector "
+            "(backend docs/AI_LAYER.md). Use --graph cte or --graph neo4j"
+        )
+        raise typer.Exit(code=2)
+    for key, enum_type, flag, value in (
+        ("ai_store", AiStore, "--ai", ai),
+        ("graph_store", GraphStore, "--graph", graph),
+    ):
+        choice = _choice(enum_type, flag, value)
+        if choice is not None:
+            overrides[key] = choice
     return overrides
 
 

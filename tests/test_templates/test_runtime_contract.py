@@ -71,7 +71,7 @@ def test_dev_api_keeps_redis_and_cors(tmp_path: Path) -> None:
     """A regression dropped these two keys with every test still green."""
     compose = generate_docker_compose(_fullstack(tmp_path))
     env = _service_env(compose, "api-dev")
-    assert env["REDIS_URL"] == "redis://redis:6379/0"
+    assert env["REDIS_URL"] == "redis://:${REDIS_PASSWORD:-}@redis:6379/0"
     assert "localhost:3000" in _interpolate(env["CORS_ALLOWED_ORIGINS"], {})
 
 

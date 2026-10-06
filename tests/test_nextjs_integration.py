@@ -179,22 +179,13 @@ class TestNextjsReadme:
         assert "Next.js App" in readme
 
 
-class TestNextjsClaudeMd:
-    def test_claude_md_nextjs(self, tmp_path: Path) -> None:
-        from mattstack.templates.root_claude_md import generate_claude_md
+class TestNextjsAgentsMd:
+    def test_agents_md_names_nextjs_api_variable(self, tmp_path: Path) -> None:
+        from mattstack.templates.root_agents_md import generate_agents_md
 
-        config = _nextjs_config(tmp_path)
-        md = generate_claude_md(config)
+        md = generate_agents_md(_nextjs_config(tmp_path))
         assert "Next.js" in md
-        assert "App Router" in md
         assert "NEXT_PUBLIC_API_BASE_URL" in md
-
-    def test_claude_md_nextjs_dev_server(self, tmp_path: Path) -> None:
-        from mattstack.templates.root_claude_md import generate_claude_md
-
-        config = _nextjs_config(tmp_path)
-        md = generate_claude_md(config)
-        assert "Next.js dev server" in md
 
 
 # --- Post Processors ---
@@ -285,6 +276,11 @@ class TestNextjsGenerator:
         if "django" in url:
             (dest / "pyproject.toml").write_text("[project]\nname = 'test'\n")
             (dest / "manage.py").write_text("#!/usr/bin/env python\n")
+            (dest / "scripts").mkdir()
+            (dest / "scripts" / "env_secrets.py").write_text(
+                "import shutil, sys\na = sys.argv\n"
+                "shutil.copy(a[a.index('--template') + 1], a[a.index('--env-file') + 1])\n"
+            )
         elif "nextjs" in url:
             (dest / "package.json").write_text('{"name": "nextjs-starter"}\n')
             (dest / "app").mkdir()

@@ -108,7 +108,7 @@ def lint(
 def env(
     action: Annotated[
         str,
-        typer.Argument(help="Action: check, sync, show"),
+        typer.Argument(help="Action: check, sync, show, secrets (create missing .env files)"),
     ] = "check",
     path: Annotated[
         Path | None,
@@ -227,10 +227,14 @@ def workflow(
         Path | None,
         typer.Option("--path", "-p", help="Project path"),
     ] = None,
-    platform: Annotated[
-        str,
-        typer.Option("--platform", help="CI platform: github-actions, gitlab-ci"),
-    ] = "github-actions",
+    ci: Annotated[
+        str | None,
+        typer.Option(
+            "--ci",
+            help="Opt in to hosted CI: github or gitlab. Gates run locally by default"
+            " (make gauntlet, pre-push hook); hosted runners cost build minutes.",
+        ),
+    ] = None,
     dry_run: Annotated[
         bool,
         typer.Option("--dry-run", help="Preview without writing files"),
@@ -240,10 +244,10 @@ def workflow(
         typer.Option("--force", help="Replace an existing workflow file"),
     ] = False,
 ) -> None:
-    """Generate CI/CD workflow files (GitHub Actions, GitLab CI)."""
+    """Generate an opt-in hosted CI workflow (GitHub Actions or GitLab CI)."""
     from mattstack.commands.workflow import run_generate_workflow
 
-    run_generate_workflow(path=path or Path.cwd(), platform=platform, dry_run=dry_run, force=force)
+    run_generate_workflow(path=path or Path.cwd(), ci=ci, dry_run=dry_run, force=force)
 
 
 def protect(

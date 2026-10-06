@@ -16,6 +16,7 @@ from mattstack.runtime_profiles import (
 )
 from mattstack.templates.frontend_commands import frontend_commands
 from mattstack.templates.frontend_runtime import FRONTEND_PORT
+from mattstack.templates.root_gauntlet import gauntlet_target
 
 _PROD = "docker compose -f docker-compose.prod.yml --env-file .env.production"
 
@@ -42,6 +43,7 @@ def generate_makefile(config: ProjectConfig) -> str:
         sections.append(_setup_frontend(config))
         sections.append(_frontend_targets(config))
 
+    sections.append(gauntlet_target(config))
     return "\n".join(sections).rstrip() + "\n"
 
 
@@ -96,8 +98,8 @@ setup: ## Install all dependencies and refresh lockfiles
 \tcd backend && {_backend_install(config)}
 \t@echo 'Setting up frontend...'
 \tcd frontend && bun install{frontend_format}{ios_setup}
-\t@echo 'Copying .env.example to .env (if needed)...'
-\t@test -f .env || cp .env.example .env
+\t@echo 'Creating .env with generated secrets (if missing)...'
+\t@test -f .env || mattstack env secrets
 \t@echo 'Setup complete!'"""
 
 
@@ -107,7 +109,7 @@ def _setup_backend(config: ProjectConfig) -> str:
 setup: ## Install backend dependencies
 \t@echo 'Setting up backend...'
 \tcd backend && {_backend_install(config)}
-\t@test -f .env || cp .env.example .env
+\t@test -f .env || mattstack env secrets
 \t@echo 'Setup complete!'"""
 
 
@@ -346,16 +348,17 @@ def _combined_targets(config: ProjectConfig) -> str:
             "lint": f"cd backend && {run} ruff check . && {run} ruff format --check .",
             "format": f"cd backend && {run} ruff format .",
         }
-    sync_types = (
+    sync_api = (
         ""
         if config.is_nestjs_backend
         else """
 
-sync-types: ## Sync backend types to frontend TypeScript
-\tmattstack sync types"""
+.PHONY: sync-api
+sync-api: ## Regenerate the OpenAPI client (types, SDK, Zod, TanStack Query)
+\tmattstack sync openapi"""
     )
     return f"""
-.PHONY: test lint typecheck format sync-types gauntlet clean clean-volumes
+.PHONY: test lint typecheck format clean clean-volumes
 test: ## Run backend tests and the frontend test suite
 \t@echo 'Running backend tests...'
 \t{backend["test"]}
@@ -371,10 +374,7 @@ typecheck: ## Type-check the frontend
 
 format: ## Format all code
 \t{backend["format"]}
-\tcd frontend && {frontend_format}{sync_types}
-
-gauntlet: ## Run the verification gate (read-only)
-\tmattstack audit --no-todo
+\tcd frontend && {frontend_format}{sync_api}
 
 clean: ## Remove build artifacts; keeps containers' data volumes
 \tdocker compose down

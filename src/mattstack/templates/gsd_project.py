@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from mattstack.config import FrontendFramework, ProjectConfig
+from mattstack.templates.compose_env import service_major
 from mattstack.templates.stack_facts import BackendFacts, Toolchain, backend_facts
 
 _FRONTEND_LABELS: dict[FrontendFramework, str] = {
@@ -45,9 +46,9 @@ def _gsd_stack(config: ProjectConfig, backend: BackendFacts, tools: Toolchain) -
     if config.has_backend:
         runtime = f"{backend.language}, {backend.package_manager}"
         lines.append(f"- Backend: {backend.framework} ({runtime})")
-        lines.append("- Database: PostgreSQL 17 (Docker)")
+        lines.append(f"- Database: PostgreSQL {service_major(config, 'postgres')} (Docker)")
         if config.use_redis:
-            lines.append("- Cache: Redis 7 (Docker)")
+            lines.append(f"- Cache: Valkey {service_major(config, 'valkey/valkey')} (Docker)")
     if config.has_frontend:
         lines.append(f"- Frontend: {_frontend_label(config)} + TypeScript ({tools.js_pm})")
     return "\n".join(lines)

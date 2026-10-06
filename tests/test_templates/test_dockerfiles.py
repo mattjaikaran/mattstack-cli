@@ -69,8 +69,8 @@ def test_task_backend_extra_is_installed_in_the_image() -> None:
         _config(BackendFramework.DJANGO_NINJA, task_backend=TaskBackend.HUEY)
     )
     celery = generate_backend_dockerfile(_config(BackendFramework.DJANGO_NINJA))
-    assert "RUN uv sync --no-dev --extra huey\n" in huey
-    assert "RUN uv sync --no-dev\n" in celery
+    assert "RUN uv sync --no-dev --extra huey $(for extra in $UV_EXTRAS" in huey
+    assert "RUN uv sync --no-dev $(for extra in $UV_EXTRAS" in celery
 
 
 def test_backend_dockerfile_nestjs() -> None:

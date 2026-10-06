@@ -56,6 +56,8 @@ def run_init(
     task_backend: str | None = None,
     realtime: bool | None = None,
     media_storage: str | None = None,
+    ai: str | None = None,
+    graph: str | None = None,
 ) -> None:
     """Main init entry point. Routes to interactive, preset, or config-file mode."""
     if output_dir is None:
@@ -70,7 +72,7 @@ def run_init(
     if not config_file and not preset and not sys.stdin.isatty():
         print_error("Use a project name with --preset, or pass --config, without a terminal")
         raise typer.Exit(code=2)
-    overrides = runtime_overrides(task_backend, realtime, media_storage)
+    overrides = runtime_overrides(task_backend, realtime, media_storage, ai, graph)
     try:
         if config_file:
             _run_from_config(

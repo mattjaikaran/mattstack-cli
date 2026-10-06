@@ -46,7 +46,6 @@ class BackendFacts:
 
     service: str
     structure: str
-    tech: str
     framework: str
     language: str
     is_python: bool
@@ -94,7 +93,6 @@ def _django(tools: Toolchain, *, flavour: str, api_rule: str, docs: str | None) 
     return BackendFacts(
         service="Django API",
         structure=f"Django API ({flavour}, Python 3.12+)",
-        tech=f"Python 3.12+, Django, {flavour}, PostgreSQL 17",
         framework=f"Django + {flavour}",
         language="Python 3.12+",
         is_python=True,
@@ -137,7 +135,6 @@ def backend_facts(framework: BackendFramework, tools: Toolchain | None = None) -
         return BackendFacts(
             service="FastAPI API",
             structure="FastAPI API (SQLAlchemy async, Alembic, Python 3.12+)",
-            tech="Python 3.12+, FastAPI, SQLAlchemy (async), Alembic, PostgreSQL 17",
             framework="FastAPI + SQLAlchemy + Alembic",
             language="Python 3.12+",
             is_python=True,
@@ -159,7 +156,6 @@ def backend_facts(framework: BackendFramework, tools: Toolchain | None = None) -
     return BackendFacts(
         service="NestJS API",
         structure="NestJS API (TypeScript, Fastify, Drizzle ORM)",
-        tech="TypeScript, NestJS v11, Fastify, Drizzle ORM, PostgreSQL 17",
         framework="NestJS v11 + Fastify",
         language="TypeScript (strict)",
         is_python=False,

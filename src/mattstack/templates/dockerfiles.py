@@ -12,6 +12,8 @@ contract (``deploy_runtime``) before any process starts.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from mattstack.config import ProjectConfig
 from mattstack.runtime_profiles import task_backend_extra
 from mattstack.templates.deploy_runtime import (
@@ -25,6 +27,15 @@ from mattstack.templates.frontend_runtime import (
     api_prefix,
     browser_env,
     service_origin,
+)
+from mattstack.utils.versions import BUN_FALLBACK, UV_FALLBACK, bun_pin, read_versions
+
+_PYTHON_FALLBACK = "3.13"  # When the cloned backend records no Python version.
+_NGINX_IMAGE = "nginx:1.29-alpine"
+# Bun's image has no curl or wget; a fetch exits 0 for any non-5xx response.
+_NEXT_HEALTH = (
+    '["bun", "-e", "fetch(\'http://127.0.0.1:3000/\')'
+    '.then(r => process.exit(r.status < 500 ? 0 : 1), () => process.exit(1))"]'
 )
 
 
@@ -77,7 +88,7 @@ def generate_frontend_dev_dockerfile(config: ProjectConfig) -> str:
     """
     host_flag = '"-H", "0.0.0.0"' if config.is_nextjs else '"--host", "0.0.0.0"'
     return f"""\
-FROM oven/bun:1
+FROM {bun_image(config.frontend_dir)}
 WORKDIR /app
 COPY frontend/package.json frontend/bun.lock* ./
 RUN bun install --frozen-lockfile
@@ -168,9 +179,37 @@ map $http_x_forwarded_proto $forwarded_proto {
 
 
 def _uv_sync(config: ProjectConfig) -> str:
-    """Install the runtime dependencies plus the task backend's optional extra."""
-    extra = task_backend_extra(config)
-    return "uv sync --no-dev" + (f" --extra {extra}" if extra else "")
+    """Install runtime dependencies, the selected extras, and any ``UV_EXTRAS``."""
+    extras = [extra for extra in (task_backend_extra(config),) if extra]
+    if config.use_ai:
+        extras.append("ai")
+    selected = "".join(f" --extra {extra}" for extra in extras)
+    return (
+        'ARG UV_EXTRAS=""\n'
+        f"RUN uv sync --no-dev{selected} "
+        """$(for extra in $UV_EXTRAS; do printf -- '--extra %s ' "$extra"; done)"""
+    )
+
+
+def _pin(config: ProjectConfig, key: str) -> str | None:
+    """Return a version from the clone snapshot, else from the files on disk."""
+    return config.source_pins.get(key) or read_versions(config.path).get(key)
+
+
+def _uv_image(config: ProjectConfig) -> str:
+    """Pin uv to the backend Dockerfile's version, else the fallback."""
+    return f"ghcr.io/astral-sh/uv:{_pin(config, 'uv') or UV_FALLBACK}"
+
+
+def _python_minor(config: ProjectConfig) -> str:
+    """Return the backend's ``major.minor`` Python (``.python-version``, pyproject)."""
+    parts = (_pin(config, "python") or "").split(".")
+    return ".".join(parts[:2]) if len(parts) >= 2 else _PYTHON_FALLBACK
+
+
+def bun_image(component: Path) -> str:
+    """Pin Bun to ``packageManager`` in the component's package.json, else the fallback."""
+    return f"oven/bun:{bun_pin(component) or BUN_FALLBACK}"
 
 
 def _production_tail(config: ProjectConfig) -> str:
@@ -188,9 +227,10 @@ def _env_line(env: dict[str, str]) -> str:
     return "ENV " + " ".join(f"{key}={value}" for key, value in env.items())
 
 
-def _python_base(build_packages: str) -> str:
+def _python_base(config: ProjectConfig, build_packages: str) -> str:
+    python = _python_minor(config)
     return f"""\
-FROM python:3.13-slim AS base
+FROM python:{python}-slim AS base
 ENV PYTHONDONTWRITEBYTECODE=1 \\
     PYTHONUNBUFFERED=1 \\
     UV_PROJECT_ENVIRONMENT=/opt/venv \\
@@ -201,13 +241,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends libpq5 curl \\
 
 FROM base AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends {build_packages} \\
-    && curl -LsSf https://astral.sh/uv/install.sh | sh \\
     && rm -rf /var/lib/apt/lists/*
-ENV PATH="/root/.local/bin:$PATH"
+COPY --from={_uv_image(config)} /uv /uvx /bin/
 # Pin the interpreter to the image's Python. A permissive requires-python
 # makes uv provision the newest release, and some wheels, such as
 # pydantic-core, have no build for it.
-ENV UV_PYTHON=3.13
+ENV UV_PYTHON={python}
 COPY backend/ .
 # UV_PROJECT_ENVIRONMENT puts the environment at /opt/venv. Without it, uv
 # creates /app/.venv and the runtime stages below copy an empty directory.
@@ -227,11 +266,11 @@ def _django_backend(config: ProjectConfig) -> str:
 """
     )
     return f"""\
-{_python_base(build_packages)}RUN {_uv_sync(config)}
+{_python_base(config, build_packages)}{_uv_sync(config)}
 
 FROM base AS development
 COPY --from=builder /opt/venv /opt/venv
-COPY --from=builder /root/.local/bin/uv /usr/local/bin/uv
+COPY --from={_uv_image(config)} /uv /uvx /bin/
 COPY backend/ .
 EXPOSE {port}
 CMD ["python", "manage.py", "runserver", "0.0.0.0:{port}"]
@@ -249,11 +288,11 @@ RUN SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(64))')"
 def _fastapi_backend(config: ProjectConfig) -> str:
     port = config.backend_api_port
     return f"""\
-{_python_base("build-essential libpq-dev")}RUN {_uv_sync(config)}
+{_python_base(config, "build-essential libpq-dev")}{_uv_sync(config)}
 
 FROM base AS development
 COPY --from=builder /opt/venv /opt/venv
-COPY --from=builder /root/.local/bin/uv /usr/local/bin/uv
+COPY --from={_uv_image(config)} /uv /uvx /bin/
 COPY backend/ .
 EXPOSE {port}
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "{port}", "--reload"]
@@ -268,7 +307,7 @@ COPY backend/ .
 def _nestjs_backend(config: ProjectConfig) -> str:
     port = config.backend_api_port
     return f"""\
-FROM oven/bun:1 AS base
+FROM {bun_image(config.backend_dir)} AS base
 WORKDIR /app
 COPY backend/package.json backend/bun.lock* ./
 RUN bun install --frozen-lockfile
@@ -310,17 +349,26 @@ def _static_frontend(config: ProjectConfig) -> str:
             f"    API_UPSTREAM={service_origin(config, PROD_API_SERVICE)}\n"
         )
     return f"""\
-FROM oven/bun:1 AS build
+FROM {bun_image(config.frontend_dir)} AS build
 WORKDIR /app
 COPY frontend/package.json frontend/bun.lock* ./
 RUN bun install --frozen-lockfile
 COPY frontend/ .
 {_browser_build_env(config)}RUN bun run build
 
-FROM nginx:alpine AS production
+FROM {_NGINX_IMAGE} AS production
+# Run as the image's nginx user. The file capability keeps port 80, so
+# Compose and the deployment recipes need no port change.
+RUN apk add --no-cache libcap-setcap \\
+    && setcap cap_net_bind_service=+ep /usr/sbin/nginx \\
+    && sed -i -e '/^user /d' -e 's,^pid .*;,pid /tmp/nginx.pid;,' /etc/nginx/nginx.conf \\
+    && chown -R nginx:nginx /var/cache/nginx /etc/nginx/conf.d
 {proxy_env}COPY --from=build /app/dist /usr/share/nginx/html
 COPY docker/frontend/nginx.conf /etc/nginx/templates/default.conf.template
+USER nginx
 EXPOSE 80
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \\
+    CMD wget -q --spider http://127.0.0.1/ || exit 1
 CMD ["nginx", "-g", "daemon off;"]
 """
 
@@ -328,7 +376,7 @@ CMD ["nginx", "-g", "daemon off;"]
 def _nextjs_frontend(config: ProjectConfig) -> str:
     upstream = service_origin(config, PROD_API_SERVICE)
     return f"""\
-FROM oven/bun:1 AS build
+FROM {bun_image(config.frontend_dir)} AS build
 WORKDIR /app
 # next.config.ts reads INTERNAL_API_URL for its API rewrite during the build.
 ARG INTERNAL_API_URL={upstream}
@@ -338,12 +386,15 @@ RUN bun install --frozen-lockfile
 COPY frontend/ .
 {_browser_build_env(config)}RUN bun run build
 
-FROM oven/bun:1 AS production
+FROM {bun_image(config.frontend_dir)} AS production
 WORKDIR /app
 ARG INTERNAL_API_URL={upstream}
 ENV NODE_ENV=production \\
     INTERNAL_API_URL=$INTERNAL_API_URL
-COPY --from=build /app ./
+COPY --from=build --chown=bun:bun /app ./
+USER bun
 EXPOSE 3000
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \\
+    CMD {_NEXT_HEALTH}
 CMD ["bun", "run", "start"]
 """

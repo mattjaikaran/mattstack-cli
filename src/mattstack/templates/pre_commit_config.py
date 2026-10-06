@@ -13,8 +13,8 @@ Which component tools survive:
   and pytest checks. The root config does not carry over the backend's djhtml,
   hadolint, shellcheck, YAML/JSON prettier, commit-message, or pip-audit hooks;
   run ``cd backend && just gauntlet`` for pip-audit.
-- Other Python backends: ruff from the pre-commit mirror, scoped to ``backend/``,
-  because they do not all declare ruff as a dependency.
+- Other Python backends: ``uv run ruff`` inside ``backend/``, so the hook uses
+  the version the backend's lockfile resolves instead of a pinned mirror.
 - NestJS: the backend's own ``lint`` script (Biome).
 - React frontends: locked Oxlint and Oxfmt scripts; Next.js: its own lint script.
 """
@@ -46,6 +46,10 @@ _NINJA_GAUNTLET = (
     '{ echo "backend-gauntlet-quick needs uv: '
     'curl -LsSf https://astral.sh/uv/install.sh | sh" >&2; exit 1; }; '
     "cd backend && uv run --extra dev just gauntlet-quick"
+)
+# Other Python backends: the ruff their lockfile resolves, never a mirror pin.
+_PROJECT_RUFF = (
+    "cd backend && uv run ruff check --fix --exit-non-zero-on-fix . && uv run ruff format ."
 )
 
 
@@ -83,15 +87,15 @@ def _backend_hooks(config: ProjectConfig) -> str:
         files: ^backend/
         types_or: [javascript, jsx, ts, tsx, json]
         pass_filenames: false"""
-    return """\
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.6
+    return f"""\
+  - repo: local
     hooks:
-      - id: ruff
-        args: [--fix]
-        files: ^backend/
-      - id: ruff-format
-        files: ^backend/"""
+      - id: backend-ruff
+        name: backend ruff (project version)
+        entry: {_entry(_PROJECT_RUFF)}
+        language: system
+        files: ^backend/.*\\.pyi?$
+        pass_filenames: false"""
 
 
 def generate_pre_commit_config(config: ProjectConfig) -> str:

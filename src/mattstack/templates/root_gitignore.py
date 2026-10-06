@@ -32,6 +32,7 @@ def _general() -> str:
 *.log
 .vscode/
 .idea/
+.claude/settings.local.json
 *.swp
 *.swo"""
 

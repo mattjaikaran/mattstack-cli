@@ -19,7 +19,7 @@ from mattstack.runtime_profiles import (
     CENTRIFUGO_SERVICE,
     REALTIME_PROFILE,
 )
-from mattstack.templates.compose_env import render_mapping, required
+from mattstack.templates.compose_env import redis_url, render_mapping, required
 from mattstack.templates.frontend_runtime import FRONTEND_PORT
 
 
@@ -36,7 +36,10 @@ def centrifugo_service(*, production: bool) -> str:
         "CENTRIFUGO_API_KEY": required("CENTRIFUGO_API_KEY", env_file),
         "CENTRIFUGO_ADMIN": "false",
         "CENTRIFUGO_ALLOWED_ORIGINS": origins,
-        "CENTRIFUGO_REDIS_ADDRESS": "redis://redis:6379/1",
+        # Admin stays off; generated values keep a later opt-in from using defaults.
+        "CENTRIFUGO_ADMIN_PASSWORD": "${CENTRIFUGO_ADMIN_PASSWORD:-}",  # nosec B105 # Env reference.
+        "CENTRIFUGO_ADMIN_SECRET": "${CENTRIFUGO_ADMIN_SECRET:-}",  # nosec B105 # Env reference.
+        "CENTRIFUGO_REDIS_ADDRESS": f"{redis_url('redis', production=production)}/1",
     }
     bind = "" if production else "127.0.0.1:"
     tail = (

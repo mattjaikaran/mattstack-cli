@@ -55,11 +55,11 @@ def generate_docker_compose_override(config: ProjectConfig) -> str:
     lines.extend(
         [
             "  # --- Add custom services below ---",
-            "  # mailhog:",
-            "  #   image: mailhog/mailhog",
+            "  # mailpit:  # local SMTP catcher; web UI on :8025",
+            "  #   image: axllent/mailpit:v1.31",
             "  #   ports:",
-            '  #     - "8025:8025"',
-            '  #     - "1025:1025"',
+            '  #     - "127.0.0.1:8025:8025"',
+            '  #     - "127.0.0.1:1025:1025"',
         ]
     )
 

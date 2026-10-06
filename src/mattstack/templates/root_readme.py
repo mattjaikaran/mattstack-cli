@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from mattstack.config import FrontendFramework, ProjectConfig
 from mattstack.runtime_profiles import task_summary
+from mattstack.templates.compose_env import service_major
 
 
 def generate_readme(config: ProjectConfig) -> str:
@@ -41,7 +42,7 @@ Install these before you run `make setup`:
 | [uv](https://docs.astral.sh/uv/) | Backend dependencies and Django commands |
 | [bun](https://bun.sh/) | Frontend dependencies and scripts |
 | [Docker](https://docs.docker.com/get-docker/) | `make up` and the database |
-| [mattstack](https://github.com/mattjaikaran/mattstack-cli) | `make sync-types`, `make gauntlet` |
+| [mattstack](https://github.com/mattjaikaran/mattstack-cli) | `make sync-api`, `make gauntlet` |
 
 ```bash
 uv tool install git+https://github.com/mattjaikaran/mattstack-cli
@@ -61,9 +62,9 @@ def _tech_stack(config: ProjectConfig) -> str:
             stack.append("- **ORM**: Drizzle ORM")
         else:
             stack.append("- **Backend**: Django + Django Ninja (Python)")
-        stack.append("- **Database**: PostgreSQL 17")
+        stack.append(f"- **Database**: PostgreSQL {service_major(config, 'postgres')}")
         if config.use_redis:
-            stack.append("- **Cache/Queue**: Redis 7")
+            stack.append(f"- **Cache/Queue**: Valkey {service_major(config, 'valkey/valkey')}")
         if config.is_nestjs_backend:
             stack.append("- **Background Jobs**: Bull (Redis-based)")
         else:

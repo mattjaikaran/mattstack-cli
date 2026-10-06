@@ -68,7 +68,7 @@ class TestGenerateGithubActions:
     def test_fastapi_backend_installs_dev_extra_and_async_driver(self, tmp_path: Path) -> None:
         config = _config(tmp_path, ProjectType.BACKEND_ONLY, BackendFramework.FASTAPI)
         content = _generate_github_actions(config, with_gauntlet=False)
-        assert "uv sync --frozen --extra dev" in content
+        assert "uv sync --frozen --python 3.13 --extra dev" in content
         assert "postgresql+asyncpg://" in content
 
     def test_nestjs_backend_runs_bun_scripts_not_python(self, tmp_path: Path) -> None:
@@ -185,32 +185,35 @@ def _make_fullstack(tmp_path: Path, pyproject_deps: str = '["django-ninja"]') ->
 class TestRunGenerateWorkflow:
     def test_invalid_path_exits_1(self, tmp_path: Path) -> None:
         with pytest.raises(typer.Exit) as exc_info:
-            run_generate_workflow(tmp_path / "does_not_exist")
+            run_generate_workflow(tmp_path / "does_not_exist", ci="github")
         assert exc_info.value.exit_code == 1
 
     def test_unknown_project_type_exits_1(self, tmp_path: Path) -> None:
         with pytest.raises(typer.Exit) as exc_info:
-            run_generate_workflow(tmp_path)
+            run_generate_workflow(tmp_path, ci="github")
         assert exc_info.value.exit_code == 1
 
     def test_unknown_backend_framework_exits_1_without_writing(self, tmp_path: Path) -> None:
         _make_fullstack(tmp_path, pyproject_deps="[]")
         with pytest.raises(typer.Exit) as exc_info:
-            run_generate_workflow(tmp_path)
+            run_generate_workflow(tmp_path, ci="github")
         assert exc_info.value.exit_code == 1
         assert not (tmp_path / ".github").exists()
 
-    def test_unknown_platform_exits_1(self, tmp_path: Path) -> None:
+    @pytest.mark.parametrize("ci", [None, "circleci", "github-actions"])
+    def test_hosted_ci_is_opt_in(self, tmp_path: Path, ci: str | None) -> None:
         _make_fullstack(tmp_path)
         with pytest.raises(typer.Exit) as exc_info:
-            run_generate_workflow(tmp_path, platform="circleci")
-        assert exc_info.value.exit_code == 1
+            run_generate_workflow(tmp_path, ci=ci)
+        assert exc_info.value.exit_code == 2
+        assert not (tmp_path / ".github").exists()
+        assert not (tmp_path / ".gitlab-ci.yml").exists()
 
     def test_dry_run_prints_yaml_verbatim_without_writing(
         self, tmp_path: Path, capsys: pytest.CaptureFixture[str]
     ) -> None:
         _make_fullstack(tmp_path)
-        run_generate_workflow(tmp_path, platform="github-actions", dry_run=True)
+        run_generate_workflow(tmp_path, ci="github", dry_run=True)
         assert not (tmp_path / ".github" / "workflows" / "ci.yml").exists()
         assert "branches: [main]" in capsys.readouterr().out
 
@@ -220,7 +223,7 @@ class TestRunGenerateWorkflow:
         ci_file.parent.mkdir(parents=True)
         ci_file.write_bytes(b"# mine\n")
         with pytest.raises(typer.Exit) as exc_info:
-            run_generate_workflow(tmp_path)
+            run_generate_workflow(tmp_path, ci="github")
         assert exc_info.value.exit_code == 1
         assert ci_file.read_bytes() == b"# mine\n"
 
@@ -228,11 +231,11 @@ class TestRunGenerateWorkflow:
         _make_fullstack(tmp_path)
         ci_file = tmp_path / ".gitlab-ci.yml"
         ci_file.write_text("# mine\n")
-        run_generate_workflow(tmp_path, platform="gitlab-ci", force=True)
+        run_generate_workflow(tmp_path, ci="gitlab", force=True)
         assert "stages:" in ci_file.read_text()
 
     def _workdirs(self, root: Path) -> dict[str, str]:
-        run_generate_workflow(root)
+        run_generate_workflow(root, ci="github")
         jobs = yaml.safe_load((root / ".github" / "workflows" / "ci.yml").read_text())["jobs"]
         return {
             name: job["defaults"]["run"]["working-directory"]
@@ -244,7 +247,7 @@ class TestRunGenerateWorkflow:
         (tmp_path / "pyproject.toml").write_text('[project]\ndependencies = ["django-ninja"]\n')
         (tmp_path / "manage.py").write_text("")
         assert self._workdirs(tmp_path) == {"backend-lint": ".", "backend-test": "."}
-        run_generate_workflow(tmp_path, platform="gitlab-ci")
+        run_generate_workflow(tmp_path, ci="gitlab")
         gitlab = yaml.safe_load((tmp_path / ".gitlab-ci.yml").read_text())
         assert gitlab["backend-test"]["before_script"][-1].startswith("cd . && uv sync")
 
@@ -265,7 +268,7 @@ class TestRunGenerateWorkflow:
             "project:\n  backend:\n    framework: django-ninja\n    dir: 'api server: v2'\n"
         )
         assert self._workdirs(tmp_path)["backend-test"] == "api server: v2"
-        run_generate_workflow(tmp_path, platform="gitlab-ci")
+        run_generate_workflow(tmp_path, ci="gitlab")
         gitlab = yaml.safe_load((tmp_path / ".gitlab-ci.yml").read_text())
         install = gitlab["backend-test"]["before_script"][-1]
         assert install.startswith("cd 'api server: v2' && uv sync")
@@ -293,17 +296,17 @@ class TestRunGenerateWorkflow:
 
     def test_github_actions_uses_detected_backend(self, tmp_path: Path) -> None:
         _make_fullstack(tmp_path, pyproject_deps='["fastapi"]')
-        run_generate_workflow(tmp_path, platform="github-actions")
+        run_generate_workflow(tmp_path, ci="github")
         content = (tmp_path / ".github" / "workflows" / "ci.yml").read_text()
-        assert "uv sync --frozen --extra dev" in content
+        assert "--extra dev" in content
 
     def test_gitlab_ci_creates_gitlab_ci_yml(self, tmp_path: Path) -> None:
         _make_fullstack(tmp_path)
-        run_generate_workflow(tmp_path, platform="gitlab-ci")
+        run_generate_workflow(tmp_path, ci="gitlab")
         assert "stages:" in (tmp_path / ".gitlab-ci.yml").read_text()
 
     def test_nested_path_writes_at_project_root(self, tmp_path: Path) -> None:
         _make_fullstack(tmp_path)
         (tmp_path / "frontend" / "src").mkdir()
-        run_generate_workflow(tmp_path / "frontend" / "src", platform="gitlab-ci")
+        run_generate_workflow(tmp_path / "frontend" / "src", ci="gitlab")
         assert (tmp_path / ".gitlab-ci.yml").exists()
