@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 
-from mattstack.config import MediaStorage, ProjectConfig
+from mattstack.config import AiStore, GraphStore, MediaStorage, ProjectConfig
 from mattstack.runtime_profiles import (
     CENTRIFUGO_CONTAINER_PORT,
     CENTRIFUGO_SERVICE,
@@ -19,8 +19,94 @@ from mattstack.runtime_profiles import (
     task_backend_env,
 )
 from mattstack.templates.frontend_runtime import FRONTEND_PORT
+from mattstack.utils.versions import image_tag, major
 
 ANCHOR = "backend-env"
+# Fallbacks when the backend's own Compose file records no tag; they match
+# django-ninja-boilerplate's docker-compose.yml.
+_IMAGE_DEFAULTS = {
+    "postgres": "17-alpine",
+    "valkey/valkey": "8-alpine",
+    "qdrant/qdrant": "v1.19.2",
+    "neo4j": "5.26.31-community",
+}
+# An empty development password leaves authentication off.
+_REDIS_PING = (
+    '[ -z "$$REDIS_PASSWORD" ] || export REDISCLI_AUTH="$$REDIS_PASSWORD"; '
+    "valkey-cli ping | grep -q PONG"
+)
+
+
+def service_image(config: ProjectConfig, repository: str) -> str:
+    """Return ``repository:tag``; the tag comes from the cloned backend first."""
+    tag = (
+        config.source_pins.get(f"image:{repository}")
+        or image_tag(config.path, repository)
+        or _IMAGE_DEFAULTS[repository]
+    )
+    return f"{repository}:{tag}"
+
+
+def service_major(config: ProjectConfig, repository: str) -> str:
+    """Return the major version of the ``repository`` image that Compose renders."""
+    tag = service_image(config, repository).split(":", 1)[1]
+    return major(tag) or major(_IMAGE_DEFAULTS[repository]) or tag
+
+
+def pgvector_image(config: ProjectConfig) -> str:
+    """Return the pgvector image for the backend's Postgres major version."""
+    return f"pgvector/pgvector:pg{service_major(config, 'postgres')}"
+
+
+def redis_password(*, production: bool) -> str:
+    """Return the Compose reference for ``REDIS_PASSWORD``; production requires it."""
+    return required("REDIS_PASSWORD", ".env.production") if production else "${REDIS_PASSWORD:-}"
+
+
+def redis_url(host: str, *, production: bool) -> str:
+    """Return the authenticated Redis base URL that Compose services use."""
+    return f"redis://:{redis_password(production=production)}@{host}:6379"
+
+
+def backend_build(config: ProjectConfig, target: str) -> str:
+    """Render a backend ``build:`` block; Python images take ``UV_EXTRAS``."""
+    block = f"""\
+    build:
+      context: .
+      dockerfile: docker/backend/Dockerfile
+      target: {target}"""
+    if config.is_nestjs_backend:
+        return block
+    return block + '\n      args:\n        UV_EXTRAS: "${UV_EXTRAS:-}"'
+
+
+def ai_services(config: ProjectConfig) -> list[str]:
+    """Render Qdrant (``ai`` profile) and Neo4j (``graph`` profile) for development."""
+    services = []
+    if config.ai_store == AiStore.QDRANT:
+        services.append(f"""\
+  qdrant:
+    image: {service_image(config, "qdrant/qdrant")}
+    ports:
+      - "127.0.0.1:${{QDRANT_PORT:-6333}}:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    profiles:
+      - ai""")
+    if config.graph_store == GraphStore.NEO4J:
+        services.append(f"""\
+  neo4j:
+    image: {service_image(config, "neo4j")}
+    environment:
+      NEO4J_AUTH: "neo4j/{required("NEO4J_PASSWORD", ".env")}"
+    ports:
+      - "127.0.0.1:${{NEO4J_HTTP_PORT:-7474}}:7474"
+      - "127.0.0.1:${{NEO4J_BOLT_PORT:-7687}}:7687"
+    volumes:
+      - neo4j_data:/data
+    profiles:
+      - graph""")
+    return services
 
 
 def required(name: str, env_file: str) -> str:
@@ -52,7 +138,7 @@ def db_service(config: ProjectConfig, *, production: bool) -> str:
     # check reports ready before the database accepts connections.
     return f"""\
   db:
-    image: postgres:17-alpine
+    image: ${{POSTGRES_IMAGE:-{service_image(config, "postgres")}}}
     environment:
       POSTGRES_DB: "{name}"
       POSTGRES_USER: "{user}"
@@ -66,16 +152,24 @@ def db_service(config: ProjectConfig, *, production: bool) -> str:
       retries: 10{restart}"""
 
 
-def redis_service(*, production: bool) -> str:
+def redis_service(config: ProjectConfig, *, production: bool) -> str:
+    """Render Valkey as ``redis``; ``REDIS_PASSWORD`` turns on authentication.
+
+    An empty development password leaves authentication off.
+    """
     ports = "" if production else '\n    ports:\n      - "127.0.0.1:${REDIS_PORT:-6379}:6379"'
     restart = "\n    restart: unless-stopped" if production else ""
+    password = redis_password(production=production)
     return f"""\
   redis:
-    image: redis:7-alpine{ports}
+    image: {service_image(config, "valkey/valkey")}
+    command: ["sh", "-c", "exec valkey-server --requirepass \\"$$REDIS_PASSWORD\\""]
+    environment:
+      REDIS_PASSWORD: "{password}"{ports}
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", {json.dumps(_REDIS_PING)}]
       interval: 5s
       timeout: 5s
       retries: 5{restart}"""
@@ -103,7 +197,7 @@ def backend_env(config: ProjectConfig, *, production: bool) -> dict[str, str]:
             "CORS_ORIGINS": f"${{CORS_ORIGINS:-{frontend_origin}}}",
         }
         if config.use_redis:
-            env["REDIS_URL"] = "redis://redis:6379"
+            env["REDIS_URL"] = redis_url("redis", production=production)
         return env
 
     scheme = "postgresql+asyncpg" if config.is_fastapi_backend else "postgres"
@@ -156,8 +250,9 @@ def backend_env(config: ProjectConfig, *, production: bool) -> dict[str, str]:
                 env["NINJA_JWT_SIGNING_KEY"] = secret("NINJA_JWT_SIGNING_KEY", "")
                 env["CENTRIFUGO_TOKEN_SECRET"] = secret("CENTRIFUGO_TOKEN_SECRET", "")
     if config.use_redis:
-        env["REDIS_URL"] = "redis://redis:6379/0"
-        env.update(celery_env(config, "redis://redis:6379"))
+        redis = redis_url("redis", production=production)
+        env["REDIS_URL"] = f"{redis}/0"
+        env.update(celery_env(config, redis))
     env.update(task_backend_env(config))
     env.update(_optional_service_env(config, production=production))
     return env
@@ -171,6 +266,8 @@ def _optional_service_env(config: ProjectConfig, *, production: bool) -> dict[st
     """
     env_file = ".env.production" if production else ".env"
     env: dict[str, str] = {}
+    if config.use_ai:
+        env["AI_ENABLED"] = "${AI_ENABLED:-true}"
     if config.use_realtime:
         env["CENTRIFUGO_URL"] = f"http://{CENTRIFUGO_SERVICE}:{CENTRIFUGO_CONTAINER_PORT}"
         env.update({key: required(key, env_file) for key in REALTIME_SECRETS})

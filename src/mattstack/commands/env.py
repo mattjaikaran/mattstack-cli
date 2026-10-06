@@ -8,7 +8,15 @@ import typer
 from rich.markup import escape
 
 from mattstack.project import find_project_root, parse_env_file
+from mattstack.stack import load_stack
 from mattstack.utils.console import console, create_table, print_error, print_info, print_success
+from mattstack.utils.env_secrets import (
+    BACKEND_SCRIPT,
+    SecretsScriptError,
+    fill_secrets,
+    run_backend_script,
+    write_private_file,
+)
 
 
 def _frontend_env_file(frontend: Path) -> Path:
@@ -131,6 +139,42 @@ def run_env_sync(path: Path) -> None:
         print_success(f"{actual_path.relative_to(path)}: added {len(missing)} vars")
 
 
+def run_env_secrets(path: Path) -> None:
+    """Create missing root .env files from their examples with generated secrets.
+
+    Each file gets mode 0600. Existing files stay unchanged; only names print.
+    A backend with ``scripts/env_secrets.py`` generates them itself.
+    """
+    console.print()
+    console.print("[bold cyan]mattstack env secrets[/bold cyan]")
+    console.print()
+    stack = load_stack(path)
+    backend = stack.project.backend_dir
+    ninja = stack.has_backend and stack.config().is_ninja_backend
+    delegate = ninja or (backend / BACKEND_SCRIPT).is_file()
+    found = False
+    for name in (".env", ".env.production"):
+        example = path / f"{name}.example"
+        if not example.is_file():
+            continue
+        found = True
+        if (path / name).exists():
+            print_info(f"Kept existing {name}; generated no new secrets")
+        elif delegate:
+            try:
+                print_success(f"{name}: {run_backend_script(backend, path / name, example)}")
+            except SecretsScriptError as exc:
+                print_error(str(exc))
+                raise typer.Exit(code=1) from exc
+        else:
+            content, names = fill_secrets(example.read_text(encoding="utf-8"))
+            write_private_file(path / name, content)
+            print_success(f"Created {name} (mode 0600): {', '.join(names) or 'no secrets'}")
+    if not found:
+        print_error(f"No .env.example or .env.production.example in {path}")
+        raise typer.Exit(code=1)
+
+
 def run_env_show(path: Path) -> None:
     """Show current .env vars with values masked."""
     path = path.resolve()
@@ -169,10 +213,10 @@ def run_env(
     action: str,
     path: Path,
 ) -> None:
-    """Dispatch to check, sync, or show for the project that contains ``path``."""
+    """Dispatch to check, sync, show, or secrets for the project that contains ``path``."""
     action = action.lower().strip()
-    if action not in ("check", "sync", "show"):
-        print_error(f"Unknown action: {action}. Use: check, sync, show")
+    if action not in ("check", "sync", "show", "secrets"):
+        print_error(f"Unknown action: {action}. Use: check, sync, show, secrets")
         raise typer.Exit(code=1)
     if path.is_dir():
         path = find_project_root(path)
@@ -180,5 +224,7 @@ def run_env(
         run_env_check(path)
     elif action == "sync":
         run_env_sync(path)
+    elif action == "secrets":
+        run_env_secrets(path)
     else:
         run_env_show(path)

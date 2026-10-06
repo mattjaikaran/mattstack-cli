@@ -16,9 +16,11 @@ from mattstack.auditors.quality import CodeQualityAuditor
 from mattstack.auditors.report import print_report, write_todo
 from mattstack.auditors.tests import CoverageAuditor
 from mattstack.auditors.types import TypeSafetyAuditor
+from mattstack.auditors.versions import audit_versions
 from mattstack.auditors.vulnerabilities import VulnerabilityAuditor
 from mattstack.utils.console import (
     console,
+    create_table,
     print_error,
     print_info,
     print_success,
@@ -53,16 +55,21 @@ def run_audit(
     base_url: str = "http://localhost:8000",
     min_severity: str | None = None,
     html_output: bool = False,
+    versions: bool = False,
 ) -> None:
     """Run audit on a project directory.
 
     Exits 1 when any error-severity finding exists, regardless of ``min_severity``.
+    ``versions`` runs only the version drift report, which exits 1 on any drift.
     """
     project_path = path.resolve()
 
     if not project_path.is_dir():
         print_error(f"Not a directory: {project_path}")
         raise typer.Exit(code=1)
+    if versions:
+        _run_version_audit(project_path, json_output=json_output)
+        return
 
     # Parse audit type strings
     types: list[AuditType] | None = None
@@ -190,4 +197,26 @@ def run_audit(
             print_success("Project looks clean!")
 
     if error_count:
+        raise typer.Exit(code=1)
+
+
+def _run_version_audit(root: Path, *, json_output: bool) -> None:
+    """Report each recorded version by source; exit 1 when two sources disagree."""
+    sources, findings = audit_versions(root)
+    if json_output:
+        payload = {"versions": sources, "findings": [f.to_dict() for f in findings]}
+        write_raw(json.dumps(payload, indent=2) + "\n")
+    else:
+        table = create_table("Versions", ["Tool", "Version", "Source"])
+        for key, found in sorted(sources.items()):
+            for source, version in found.items():
+                table.add_row(key, version, escape(source))
+        console.print(table)
+        for finding in findings:
+            print_warning(escape(finding.message))
+        if not sources:
+            print_info("No pinned versions found")
+        elif not findings:
+            print_success(f"{len(sources)} tools agree across their sources")
+    if findings:
         raise typer.Exit(code=1)
