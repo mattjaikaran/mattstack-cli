@@ -1,4 +1,4 @@
-"""Protect project-owned files during optional OpenAPI generation."""
+"""OpenAPI client generation: discovery, the exact pin, drift checks, and owned files."""
 
 from __future__ import annotations
 
@@ -9,10 +9,12 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from mattstack.cli import app
+from mattstack.parsers.openapi_spec import HEY_API_NAME
 
 
-def _project(path: Path) -> Path:
-    binary = path / "frontend/node_modules/.bin/openapi-ts"
+def _project(path: Path, pin: str = "0.99.0") -> Path:
+    frontend = path / "frontend"
+    binary = frontend / "node_modules/.bin/openapi-ts"
     binary.parent.mkdir(parents=True)
     binary.write_text(
         f"#!{sys.executable}\n"
@@ -21,6 +23,9 @@ def _project(path: Path) -> Path:
         "parser = argparse.ArgumentParser()\n"
         "parser.add_argument('-i')\n"
         "parser.add_argument('-o')\n"
+        "parser.add_argument('-c')\n"
+        "parser.add_argument('-p', nargs='+')\n"
+        "parser.add_argument('--no-log-file', action='store_true')\n"
         "args = parser.parse_args()\n"
         "output = Path(args.o)\n"
         "output.mkdir(parents=True, exist_ok=True)\n"
@@ -28,7 +33,11 @@ def _project(path: Path) -> Path:
         "(output / 'types.gen.ts').write_text(f'export const source = {title!r};\\n')\n"
     )
     binary.chmod(0o755)
-    (path / "frontend/package.json").write_text('{"dependencies":{"react":"19.0.0"}}\n')
+    installed = frontend / "node_modules/@hey-api/openapi-ts/package.json"
+    installed.parent.mkdir(parents=True)
+    installed.write_text('{"version": "0.99.0"}\n')
+    package = {"dependencies": {"react": "19.0.0"}, "devDependencies": {HEY_API_NAME: pin}}
+    (frontend / "package.json").write_text(json.dumps(package))
     _schema(path / "openapi.json", "Root")
     return path
 
@@ -124,3 +133,33 @@ def test_openapi_refuses_symlink_output(tmp_path: Path) -> None:
     assert result.exit_code == 1
     assert linked.is_symlink()
     assert owned.read_text() == "export const handwritten = true;\n"
+
+
+def test_check_fails_on_drift_without_touching_output(tmp_path: Path) -> None:
+    project = _project(tmp_path)
+    sync = CliRunner().invoke(app, ["sync", "openapi", "--path", str(project)])
+    assert sync.exit_code == 0, sync.output
+    clean = CliRunner().invoke(app, ["sync", "check", "--path", str(project)])
+    assert clean.exit_code == 0, clean.output
+
+    _schema(project / "openapi.json", "Changed")
+    drift = CliRunner().invoke(app, ["sync", "check", "--path", str(project)])
+    assert drift.exit_code == 1
+    assert "types.gen.ts" in drift.output
+    assert _generated(project) == "export const source = 'Root';\n"
+
+
+def test_generator_must_be_pinned_exactly(tmp_path: Path) -> None:
+    project = _project(tmp_path, pin="^0.99.0")
+    for command in ("openapi", "check"):
+        result = CliRunner().invoke(app, ["sync", command, "--path", str(project)])
+        assert result.exit_code == 1
+        assert "exact version" in result.output
+    assert not (project / "frontend/src/api/generated").exists()
+
+
+def test_regex_sync_commands_are_aliases_for_openapi(tmp_path: Path) -> None:
+    project = _project(tmp_path)
+    result = CliRunner().invoke(app, ["sync", "zod", "--path", str(project)])
+    assert result.exit_code == 0, result.output
+    assert _generated(project) == "export const source = 'Root';\n"

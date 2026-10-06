@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from collections.abc import Callable
 from pathlib import Path
@@ -13,7 +14,6 @@ from typer.testing import CliRunner
 
 from mattstack.commands.codegen.fields import FieldSpecError, parse_fields
 from mattstack.commands.generate import generate_app
-from mattstack.parsers.python_schemas import parse_pydantic_file
 
 runner = CliRunner()
 MakeProject = Callable[..., Path]
@@ -81,15 +81,15 @@ def test_invalid_field_specs_are_rejected(spec: str) -> None:
 
 def _fk_contract(root: Path) -> tuple[str, str, str]:
     """Return (Pydantic FK type, TS FK type, model source) for generated Product."""
-    schemas = {
-        s.name: s for s in parse_pydantic_file(root / "backend" / "core" / "schemas" / "product.py")
-    }
-    fk = next(f for f in schemas["ProductBaseSchema"].fields if f.name.endswith("_id"))
+    schemas = (root / "backend" / "core" / "schemas" / "product.py").read_text()
+    base = schemas.split("class ProductBaseSchema(", 1)[1].split("\nclass ", 1)[0]
+    fk = re.search(r"^\s+\w+_id:\s*([\w.]+)", base, re.M)
+    assert fk is not None
     client = (root / "frontend" / "src" / "api" / "product.ts").read_text()
     ts = client.split("export interface ProductCreateSchema {", 1)[1].split("}", 1)[0]
     ts_type = next(line for line in ts.splitlines() if "_id" in line).split(":")[1].strip(" ;")
     model = (root / "backend" / "core" / "models" / "product.py").read_text()
-    return fk.type_str, ts_type, model
+    return fk.group(1), ts_type, model
 
 
 def test_fk_to_integer_key_model_is_numeric(tmp_path: Path, make_project: MakeProject) -> None:
@@ -263,3 +263,17 @@ def test_fk_target_must_exist(tmp_path: Path, make_project: MakeProject) -> None
     result = crud(root, "-f", "owner:fk:Missing")
     assert result.exit_code == 1
     assert not (root / "backend" / "core" / "models" / "product.py").exists()
+
+
+def test_generate_refuses_paths_outside_the_project(tmp_path: Path) -> None:
+    from mattstack.commands.codegen.backend_layout import GenerateError
+    from mattstack.commands.codegen.plan import FilePlan
+    from mattstack.commands.generate_crud import finish
+
+    root = tmp_path / "proj"
+    root.mkdir()
+    plan = FilePlan(root)
+    plan.create(root / "frontend" / ".." / ".." / "evil.ts", "x")
+    with pytest.raises(GenerateError, match="outside the project"):
+        finish(plan, dry_run=False, force=True)
+    assert not (tmp_path / "evil.ts").exists()

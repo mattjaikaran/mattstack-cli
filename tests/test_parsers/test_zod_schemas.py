@@ -37,7 +37,7 @@ def test_optional_fields(tmp_path: Path) -> None:
     fields = {f.name: f for f in schemas[0].fields}
     assert fields["name"].optional is False
     assert fields["bio"].optional is True
-    assert fields["avatar"].optional is True
+    assert (fields["avatar"].optional, fields["avatar"].nullable) == (False, True)
 
 
 def test_constraints(tmp_path: Path) -> None:

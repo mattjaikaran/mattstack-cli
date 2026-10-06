@@ -1,0 +1,176 @@
+{
+  "components": {
+    "schemas": {
+      "Address": {
+        "properties": {
+          "postalCode": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9]{5}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Postalcode"
+          },
+          "streetLine": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Streetline",
+            "type": "string"
+          }
+        },
+        "required": [
+          "streetLine"
+        ],
+        "title": "Address",
+        "type": "object"
+      },
+      "Product": {
+        "properties": {
+          "createdAt": {
+            "format": "date-time",
+            "title": "Createdat",
+            "type": "string"
+          },
+          "displayName": {
+            "maxLength": 50,
+            "minLength": 2,
+            "title": "Displayname",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "physical",
+              "digital"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "rating": {
+            "anyOf": [
+              {
+                "exclusiveMaximum": 5,
+                "exclusiveMinimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rating"
+          },
+          "schemaVersion": {
+            "const": "v1",
+            "default": "v1",
+            "title": "Schemaversion",
+            "type": "string"
+          },
+          "shippingAddress": {
+            "$ref": "#/components/schemas/Address"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ProductStatus"
+          },
+          "stockCount": {
+            "maximum": 1000,
+            "minimum": 0,
+            "title": "Stockcount",
+            "type": "integer"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 10,
+            "title": "Tags",
+            "type": "array"
+          },
+          "unitPrice": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Unitprice"
+          }
+        },
+        "required": [
+          "displayName",
+          "unitPrice",
+          "stockCount",
+          "status",
+          "kind",
+          "createdAt",
+          "shippingAddress"
+        ],
+        "title": "Product",
+        "type": "object"
+      },
+      "ProductStatus": {
+        "enum": [
+          "draft",
+          "active",
+          "archived"
+        ],
+        "title": "ProductStatus",
+        "type": "string"
+      }
+    }
+  },
+  "info": {
+    "description": "",
+    "title": "Round trip",
+    "version": "1.0.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/products": {
+      "post": {
+        "operationId": "__main___create_product",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Product"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Product"
+                }
+              }
+            },
+            "description": "OK"
+          }
+        },
+        "summary": "Create Product"
+      }
+    }
+  },
+  "servers": []
+}

@@ -27,16 +27,18 @@ def test_empty_test_file(tmp_path: Path) -> None:
 
 
 def test_finds_schema_without_tests(tmp_path: Path) -> None:
-    schemas = tmp_path / "schemas"
-    schemas.mkdir()
-    (schemas / "schemas.py").write_text(
-        "from pydantic import BaseModel\n\nclass UserSchema(BaseModel):\n    name: str\n"
+    (tmp_path / "openapi.json").write_text(
+        '{"openapi": "3.1.0", "paths": {}, "components": {"schemas": '
+        '{"UserSchema": {"type": "object"}, "OrderSchema": {"type": "object"}}}}'
     )
     (tmp_path / "test_app.py").write_text("def test_something():\n    assert True\n")
     auditor = CoverageAuditor(_make_config(tmp_path))
     findings = auditor.run()
-    missing = [f for f in findings if "No tests found for schema" in f.message]
-    assert len(missing) >= 1
+    missing = [f.message for f in findings if "No tests found for schema" in f.message]
+    assert missing == [
+        "No tests found for schema 'UserSchema'",
+        "No tests found for schema 'OrderSchema'",
+    ]
 
 
 def test_feature_coverage(tmp_path: Path) -> None:

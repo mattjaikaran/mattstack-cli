@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from mattstack.auditors.base import AuditFinding, AuditType, BaseAuditor, Severity
-from mattstack.parsers.python_schemas import find_schema_files, parse_pydantic_file
+from mattstack.parsers.openapi_spec import component_schemas, find_contract, load_contract
 from mattstack.parsers.test_files import (
     TestSuite,
     find_test_files,
@@ -72,11 +72,15 @@ class CoverageAuditor(BaseAuditor):
         project: Path,
         suites: list[TestSuite],
     ) -> None:
-        """Check if Pydantic schemas have corresponding tests."""
-        schemas = []
-        for f in find_schema_files(project):
-            schemas.extend(parse_pydantic_file(f))
-
+        """Check that each OpenAPI component schema has a test that names it."""
+        found = find_contract(project)
+        if found is None:
+            return
+        source = found[1]
+        try:
+            schemas = component_schemas(load_contract(source))
+        except (OSError, ValueError):
+            return
         if not schemas:
             return
 
@@ -88,17 +92,17 @@ class CoverageAuditor(BaseAuditor):
                 if tc.class_name:
                     test_names.add(tc.class_name.lower())
 
-        for schema in schemas:
-            name_lower = schema.name.lower().replace("schema", "")
+        for name in schemas:
+            name_lower = name.lower().replace("schema", "")
             # Check if any test references this schema
             has_test = any(name_lower in tn for tn in test_names)
             if not has_test:
                 self.add_finding(
                     Severity.WARNING,
-                    self._rel(schema.file),
-                    schema.line,
-                    f"No tests found for schema '{schema.name}'",
-                    f"Add tests for {schema.name} CRUD and validation",
+                    self._rel(source),
+                    0,
+                    f"No tests found for schema '{name}'",
+                    f"Add tests for {name} CRUD and validation",
                 )
 
     def _check_feature_coverage(self, tested_keywords: set[str]) -> None:

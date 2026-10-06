@@ -70,10 +70,3 @@ def render_request_helper(layout: FrontendLayout, module_file: Path, api_prefix:
         "}",
     ]
     return "\n".join(lines) + "\n"
-
-
-def ts_path_expression(path: str) -> str:
-    """Return a TS expression for an API path whose `{param}`s are in scope."""
-    if "{" not in path:
-        return f'"{path}"'
-    return "`" + path.replace("{", "${encodeURIComponent(").replace("}", ")}") + "`"
