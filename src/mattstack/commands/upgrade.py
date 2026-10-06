@@ -2,9 +2,13 @@
 
 Each component is compared against the upstream boilerplate of its resolved
 framework (mattstack.yml metadata first, manifest detection second), using
-the user's repo overrides. Upgrade previews by default: it writes new or
-modified files only with --force, and never after a failed clone or for a
-component whose framework is unknown.
+the user's repo overrides. When mattstack.yml records the commit a component
+came from, upgrade compares three ways (see ``upgrade_merge``): files that
+upstream did not change are left alone, and both-sides changes are merged or
+reported as conflicts. Without a recorded commit it compares two ways.
+Upgrade previews by default: it writes new, updated, or merged files only with
+--force, and never after a failed clone or for a component whose framework
+is unknown.
 """
 
 from __future__ import annotations
@@ -19,7 +23,9 @@ import typer
 from rich.markup import escape
 from rich.table import Table
 
+from mattstack.commands.upgrade_merge import classify, fetch_revisions
 from mattstack.config import BackendFramework, FrontendFramework, get_repo_urls
+from mattstack.project import CONFIG_FILENAME
 from mattstack.stack import ProjectStack, load_stack, unknown_framework_message
 from mattstack.utils.console import (
     console,
@@ -29,6 +35,7 @@ from mattstack.utils.console import (
     print_warning,
 )
 from mattstack.utils.git import clone_repo, remove_git_history
+from mattstack.utils.sources import advance_sources, recorded_source, redact_repo
 
 COMPONENTS: tuple[str, ...] = ("backend", "frontend")
 
@@ -51,13 +58,18 @@ class UpgradeReport:
     new_files: list[str] = field(default_factory=list)
     modified_files: list[str] = field(default_factory=list)
     deleted_files: list[str] = field(default_factory=list)
+    # Three-way mode only: both sides changed and merged cleanly, or conflicted.
+    merged_files: list[str] = field(default_factory=list)
+    conflict_files: list[str] = field(default_factory=list)
+    base_commit: str = ""
+    upstream_commit: str = ""
     applied: int = 0
     skipped: int = 0
     error: str | None = None
 
     @property
     def total_changes(self) -> int:
-        return len(self.new_files) + len(self.modified_files) + len(self.deleted_files)
+        return self.pending + len(self.deleted_files) + len(self.conflict_files)
 
     @property
     def has_changes(self) -> bool:
@@ -66,7 +78,7 @@ class UpgradeReport:
     @property
     def pending(self) -> int:
         """Upstream files that --force would write."""
-        return len(self.new_files) + len(self.modified_files)
+        return len(self.new_files) + len(self.modified_files) + len(self.merged_files)
 
 
 def run_upgrade(
@@ -117,11 +129,20 @@ def run_upgrade(
                 continue
             _print_changes(plan.report)
             if not apply:
-                _print_diffs(plan.upstream, plan.target, plan.report.modified_files)
+                report = plan.report
+                _print_diffs(
+                    plan.upstream, plan.target, [*report.modified_files, *report.conflict_files]
+                )
+                _print_diffs(plan.merged_root, plan.target, report.merged_files)
 
         if apply:
             for plan in plans:
                 _apply(plan)
+            # The merge base moves forward only for components with no open conflict.
+            advance_sources(
+                stack.root / CONFIG_FILENAME,
+                {r.component: r.upstream_commit for r in reports if not r.conflict_files},
+            )
         else:
             for report in reports:
                 report.skipped = report.pending
@@ -141,11 +162,12 @@ def _detect_components(stack: ProjectStack) -> list[str]:
 
 @dataclass
 class _Plan:
-    """A compared component: its report, fresh upstream clone, and project dir."""
+    """A compared component: its report, upstream tree, merged files, and project dir."""
 
     report: UpgradeReport
     upstream: Path
     target: Path
+    merged_root: Path
 
 
 def _plan_component(stack: ProjectStack, component: str, workdir: Path) -> _Plan:
@@ -157,7 +179,12 @@ def _plan_component(stack: ProjectStack, component: str, workdir: Path) -> _Plan
         framework, target_dir = project.backend_framework, project.backend_dir
     else:
         framework, target_dir = project.frontend_framework, project.frontend_dir
-    plan = _Plan(report=report, upstream=workdir / component, target=target_dir)
+    plan = _Plan(
+        report=report,
+        upstream=workdir / component,
+        target=target_dir,
+        merged_root=workdir / f"{component}-merged",
+    )
 
     if framework is None:
         report.error = f"cannot determine the {component} framework"
@@ -171,32 +198,76 @@ def _plan_component(stack: ProjectStack, component: str, workdir: Path) -> _Plan
         print_error(f"{component}: {report.error}")
         return plan
 
-    print_info(f"Checking {component} against upstream {report.repo_key} ({url})...")
-    if not clone_repo(url, plan.upstream):
-        report.error = f"failed to clone {report.repo_key} from {url}"
+    shown = redact_repo(url)
+    source = recorded_source(stack.root / CONFIG_FILENAME, component)
+    if source:
+        _plan_three_way(plan, url, str(source["commit"]), workdir / f"{component}-git")
+    else:
+        print_info(f"Checking {component} against upstream {report.repo_key} ({shown})...")
+        print_warning(
+            f"{component}: mattstack.yml records no source commit; comparing two ways, so "
+            "--force replaces every file that differs from upstream."
+        )
+        if not clone_repo(url, plan.upstream):
+            report.error = f"failed to clone {report.repo_key} from {shown}"
+        else:
+            remove_git_history(plan.upstream)
+            new, modified, deleted = _compare_directories(plan.upstream, target_dir)
+            report.new_files, report.modified_files, report.deleted_files = new, modified, deleted
+    if report.error:
         print_error(f"{component}: {report.error}")
-        return plan
-    remove_git_history(plan.upstream)
-
-    new_files, modified_files, deleted_files = _compare_directories(plan.upstream, target_dir)
-    report.new_files = new_files
-    report.modified_files = modified_files
-    report.deleted_files = deleted_files
-    if not report.has_changes:
+    elif not report.has_changes:
         print_success(f"{component}: already up to date with {report.repo_key}")
     return plan
 
 
-def _apply(plan: _Plan) -> None:
-    """Copy new and modified upstream files into the project. Deletions are ignored."""
+def _plan_three_way(plan: _Plan, url: str, commit: str, workdir: Path) -> None:
+    """Compare base (recorded commit), upstream, and project; write merges to a temp tree."""
     report = plan.report
-    for rel_path in [*report.new_files, *report.modified_files]:
+    report.base_commit = commit
+    print_info(
+        f"Checking {report.component} against {report.repo_key} ({redact_repo(url)}) "
+        f"since recorded commit {commit[:12]}..."
+    )
+    workdir.mkdir(parents=True)
+    revisions = fetch_revisions(url, commit, workdir)
+    if revisions.error:
+        report.error = revisions.error
+        return
+    plan.upstream = revisions.theirs
+    report.upstream_commit = revisions.upstream_commit
+    result = classify(
+        revisions,
+        plan.target,
+        _comparable,
+        lambda path: not _has_symlink(path, plan.target) and not path.is_dir(),
+    )
+    report.new_files, report.modified_files = result.new, result.updated
+    report.deleted_files, report.conflict_files = result.deleted_upstream, result.conflicts
+    report.merged_files = sorted(result.merged)
+    for rel, content in result.merged.items():
+        merged = plan.merged_root / rel
+        merged.parent.mkdir(parents=True, exist_ok=True)
+        merged.write_bytes(content)
+    if result.removed_locally:
+        print_info(
+            f"{report.component}: {len(result.removed_locally)} upstream-changed file(s) "
+            "were removed from the project and stay removed."
+        )
+
+
+def _apply(plan: _Plan) -> None:
+    """Write new, updated, and cleanly merged files. Deletions and conflicts are skipped."""
+    report = plan.report
+    copies = [(rel, plan.upstream) for rel in [*report.new_files, *report.modified_files]]
+    copies += [(rel, plan.merged_root) for rel in report.merged_files]
+    for rel_path, source_root in copies:
         dst_file = plan.target / rel_path
         if _has_symlink(dst_file, plan.target):
             print_warning(f"Skipping symlink path: {rel_path}")
             continue
         dst_file.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(plan.upstream / rel_path, dst_file)
+        shutil.copy2(source_root / rel_path, dst_file)
         report.applied += 1
 
 
@@ -261,6 +332,10 @@ def _print_changes(report: UpgradeReport) -> None:
         table.add_row("[green]new[/green]", escape(f))
     for f in report.modified_files:
         table.add_row("[yellow]modified[/yellow]", escape(f))
+    for f in report.merged_files:
+        table.add_row("[cyan]merged[/cyan]", escape(f))
+    for f in report.conflict_files:
+        table.add_row("[magenta]conflict[/magenta]", escape(f))
     for f in report.deleted_files:
         table.add_row("[red]deleted[/red]", escape(f))
 
@@ -300,6 +375,11 @@ def _print_summary(
         console.print(f"  New files:      {sum(len(r.new_files) for r in compared)}")
         console.print(f"  Modified files: {sum(len(r.modified_files) for r in compared)}")
         console.print(f"  Deleted files:  {sum(len(r.deleted_files) for r in compared)} (ignored)")
+        merged = sum(len(r.merged_files) for r in compared)
+        conflicts = sum(len(r.conflict_files) for r in compared)
+        if merged or conflicts:
+            console.print(f"  Merged files:   {merged}")
+            console.print(f"  Conflicts:      {conflicts} (never written; merge by hand)")
         pending = sum(r.pending for r in compared)
         if dry_run:
             print_info("Dry run complete. No files were changed.")

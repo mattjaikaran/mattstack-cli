@@ -116,7 +116,11 @@ def resolve_dirs(path: Path | None) -> ProjectDirs:
 
 
 def finish(plan: FilePlan, *, dry_run: bool, force: bool) -> None:
-    """Refuse to overwrite existing files unless forced, then apply the plan."""
+    """Refuse paths outside the project and unforced overwrites, then apply the plan."""
+    outside = plan.outside_root()
+    if outside:
+        listed = "\n".join(f"  {p}" for p in outside)
+        raise GenerateError(f"Refusing to write outside the project {plan.root}:\n{listed}")
     conflicts = plan.conflicts()
     if conflicts and not force:
         listed = "\n".join(f"  {p.relative_to(plan.root)}" for p in conflicts)

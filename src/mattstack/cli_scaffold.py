@@ -55,6 +55,21 @@ def init(
             help="Production media storage: local or s3 (django-ninja only; default local)",
         ),
     ] = None,
+    ai: Annotated[
+        str | None,
+        typer.Option(
+            "--ai",
+            help="AI layer vector store: none, pgvector, or qdrant (django-ninja only;"
+            " any choice uses the pgvector image and the backend's ai extra)",
+        ),
+    ] = None,
+    graph: Annotated[
+        str | None,
+        typer.Option(
+            "--graph",
+            help="AI layer graph: cte (recursive SQL, default) or neo4j (graph profile)",
+        ),
+    ] = None,
 ) -> None:
     """Create a new project from boilerplates."""
     from mattstack.commands.init import run_init
@@ -69,6 +84,8 @@ def init(
         task_backend=task_backend,
         realtime=realtime,
         media_storage=media_storage,
+        ai=ai,
+        graph=graph,
     )
 
 
@@ -127,10 +144,12 @@ def upgrade(
     ] = False,
     force: Annotated[
         bool,
-        typer.Option("--force", help="Apply new and modified files; otherwise only preview"),
+        typer.Option(
+            "--force", help="Apply new, updated, and cleanly merged files; otherwise only preview"
+        ),
     ] = False,
 ) -> None:
-    """Pull latest boilerplate changes into an existing project."""
+    """Preview or apply boilerplate changes since the commit recorded in mattstack.yml."""
     from mattstack.commands.upgrade import run_upgrade
 
     run_upgrade(
@@ -204,6 +223,10 @@ def audit(
         bool,
         typer.Option("--html", help="Generate HTML dashboard report"),
     ] = False,
+    versions: Annotated[
+        bool,
+        typer.Option("--versions", help="Report tool/service versions; exit 1 on drift"),
+    ] = False,
 ) -> None:
     """Run static analysis on a generated project."""
     from mattstack.commands.audit import run_audit
@@ -218,6 +241,7 @@ def audit(
         base_url=base_url,
         min_severity=severity,
         html_output=html,
+        versions=versions,
     )
 
 

@@ -3,13 +3,23 @@
 from __future__ import annotations
 
 import json
+import shutil
+import socket
 import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any
+from urllib.parse import urlsplit
 
 import typer
 from rich.markup import escape
 
+from mattstack.commands.hooks import (
+    git_hooks_dir,
+    is_pre_commit_hook,
+    load_hook_config,
+    required_hook_types,
+)
 from mattstack.project import EnvFileError, ResolvedProject, compose_services, resolve_project
 from mattstack.utils.console import console, create_table, write_raw
 from mattstack.utils.docker import docker_available, docker_compose_available, docker_running
@@ -20,6 +30,7 @@ INSTALL_HINTS: dict[str, str] = {
     "uv": "curl -LsSf https://astral.sh/uv/install.sh | sh",
     "bun": "curl -fsSL https://bun.sh/install | bash",
     "make": "xcode-select --install",
+    "just": "brew install just",
 }
 
 STATUS_STYLE = {
@@ -64,6 +75,82 @@ def _tool_checks() -> list[DoctorCheck]:
             detail = f"not installed — install: {hint}" if hint else "not installed"
             checks.append(DoctorCheck(cmd, "fail", detail))
     return checks
+
+
+def _just_check(project: ResolvedProject) -> DoctorCheck:
+    """`just` runs the backend gates; it is required only when a justfile exists."""
+    if command_available("just"):
+        return DoctorCheck("just", "ok", _first_line(get_command_version("just")))
+    required = (project.backend_dir / "justfile").is_file()
+    return DoctorCheck(
+        "just",
+        "fail" if required else "optional",
+        f"not installed — install: {INSTALL_HINTS['just']}",
+    )
+
+
+def _pre_push_check(root: Path) -> DoctorCheck | None:
+    """The pre-push hook runs the local gates; nothing runs them in CI."""
+    config_file = root / ".pre-commit-config.yaml"
+    if not config_file.is_file() or not (root / ".git").exists() or not command_available("git"):
+        return None
+    try:
+        hook_types = required_hook_types(load_hook_config(config_file))
+    except ValueError as exc:
+        return DoctorCheck("pre-push hook", "fail", str(exc))
+    if "pre-push" not in hook_types:
+        return None
+    hooks_dir = git_hooks_dir(root)
+    if hooks_dir is not None and is_pre_commit_hook(hooks_dir / "pre-push"):
+        return DoctorCheck("pre-push hook", "ok", f"installed ({hooks_dir / 'pre-push'})")
+    return DoctorCheck("pre-push hook", "fail", "not installed — run: mattstack hooks install")
+
+
+def _reachable(host: str, port: int, timeout: float = 2.0) -> bool:
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _mcp_check(name: str, spec: Any) -> DoctorCheck:
+    """Check one server without starting it: a command on PATH, or a URL that accepts TCP."""
+    label = f"MCP server {name}"
+    if not isinstance(spec, dict):
+        return DoctorCheck(label, "fail", "entry is not an object")
+    url, command = spec.get("url"), spec.get("command")
+    if isinstance(url, str):
+        parts = urlsplit(url)
+        if parts.scheme not in ("http", "https") or not parts.hostname:
+            return DoctorCheck(label, "fail", f"unsupported URL: {url}")
+        try:
+            port = parts.port or (443 if parts.scheme == "https" else 80)
+        except ValueError:
+            return DoctorCheck(label, "fail", f"invalid port in URL: {url}")
+        target = f"{parts.hostname}:{port}"
+        if _reachable(parts.hostname, port):
+            return DoctorCheck(label, "ok", f"{target} reachable")
+        return DoctorCheck(label, "fail", f"{target} not reachable")
+    if isinstance(command, str) and command:
+        found = shutil.which(command)
+        if found:
+            return DoctorCheck(label, "ok", f"command found: {found}")
+        return DoctorCheck(label, "fail", f"command not found on PATH: {command}")
+    return DoctorCheck(label, "fail", "entry has neither `command` nor `url`")
+
+
+def _mcp_checks(root: Path) -> list[DoctorCheck]:
+    config_file = root / ".mcp.json"
+    if not config_file.is_file():
+        return []
+    try:
+        servers = json.loads(config_file.read_text(encoding="utf-8")).get("mcpServers")
+    except (OSError, ValueError, AttributeError):
+        servers = None
+    if not isinstance(servers, dict):
+        return [DoctorCheck(".mcp.json", "fail", "not valid JSON with an `mcpServers` object")]
+    return [_mcp_check(name, spec) for name, spec in sorted(servers.items())]
 
 
 def _docker_checks(required: bool) -> list[DoctorCheck]:
@@ -134,7 +221,7 @@ def _port_checks(
 
 
 def collect_doctor(path: Path) -> list[DoctorCheck]:
-    """Collect tool, Docker, and port checks for the project at *path*."""
+    """Collect tool, Docker, hook, MCP, and port checks for the project at *path*."""
     path = path.expanduser().resolve()
     if not path.is_dir():
         return [DoctorCheck("Project directory", "fail", f"Directory not found: {path}")]
@@ -146,10 +233,14 @@ def collect_doctor(path: Path) -> list[DoctorCheck]:
     is_project = _is_project(project)
     defined = compose_services(project.root)
     docker_required = bool(defined) or not is_project
+    pre_push = _pre_push_check(project.root) if is_project else None
     return [
         *_tool_checks(),
+        _just_check(project),
         *_docker_checks(docker_required),
         *_security_checks(),
+        *([pre_push] if pre_push else []),
+        *_mcp_checks(project.root),
         *_port_checks(project, is_project, defined),
     ]
 
@@ -167,7 +258,7 @@ def run_doctor(path: Path | None = None, json_output: bool = False) -> None:
         console.print()
         table = create_table("Environment Check", ["Check", "Status", "Details"])
         for c in checks:
-            table.add_row(c.check, STATUS_STYLE[c.status], escape(c.detail))
+            table.add_row(escape(c.check), STATUS_STYLE[c.status], escape(c.detail))
         console.print(table)
         console.print()
         if all_ok:

@@ -65,6 +65,7 @@ generate_app.command("crud")(crud)
 
 ProjectOption = Annotated[Path | None, typer.Option("--project", help="Project root path")]
 SEGMENT_RE = re.compile(r"^[a-z][a-z0-9_-]*$")
+TS_IDENTIFIER_RE = re.compile(r"[A-Za-z][A-Za-z0-9]*")
 CONTROLLER_PREFIX_RE = re.compile(
     r"""^@api_controller\(\s*['"]([^'"]*)['"]|^\s+prefix\s*=\s*['"]([^'"]*)['"]""", re.MULTILINE
 )
@@ -208,6 +209,8 @@ def component(
     start = time.monotonic()
     pascal = to_pascal(name)
     try:
+        if not TS_IDENTIFIER_RE.fullmatch(pascal):
+            raise GenerateError(f"Invalid component name {name!r}: use letters and digits.")
         root, frontend_dir = _frontend(project_path)
         layout = detect_frontend_layout(frontend_dir)
         base = frontend_dir / comp_path if comp_path else layout.src_dir / "components"
@@ -284,6 +287,8 @@ def hook(
     start = time.monotonic()
     hook_name = name if name.startswith("use") else f"use{to_pascal(name)}"
     try:
+        if not TS_IDENTIFIER_RE.fullmatch(hook_name):
+            raise GenerateError(f"Invalid hook name {name!r}: use letters and digits.")
         root, frontend_dir = _frontend(project_path)
         base = (
             frontend_dir / hook_path

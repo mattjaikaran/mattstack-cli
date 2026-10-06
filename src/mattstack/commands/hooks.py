@@ -95,7 +95,7 @@ def missing_prerequisites(config: dict[str, Any]) -> list[str]:
     ]
 
 
-def _hooks_dir(project: Path) -> Path | None:
+def git_hooks_dir(project: Path) -> Path | None:
     """Return the directory git runs hooks from, honouring core.hooksPath and worktrees."""
     result = subprocess.run(  # nosec B603, B607 # Argv; trust project tools and PATH.
         ["git", "rev-parse", "--git-path", "hooks"],
@@ -160,12 +160,12 @@ def install(
             print_error(f"pre-commit install --hook-type {hook_type} failed: {detail}")
             raise typer.Exit(code=1)
 
-    hooks_dir = _hooks_dir(project)
+    hooks_dir = git_hooks_dir(project)
     if hooks_dir is None:
         print_error(f"git cannot resolve the hooks directory of {project}")
         print_info(f"Check with: git -C {project} rev-parse --git-path hooks")
         raise typer.Exit(code=1)
-    absent = [name for name in hook_types if not _is_pre_commit_hook(hooks_dir / name)]
+    absent = [name for name in hook_types if not is_pre_commit_hook(hooks_dir / name)]
     if absent:
         print_error(
             "pre-commit reported success, but these git hooks are missing in "
@@ -180,7 +180,7 @@ def install(
     console.print(f"[dim]({elapsed:.1f}s)[/dim]")
 
 
-def _is_pre_commit_hook(hook_file: Path) -> bool:
+def is_pre_commit_hook(hook_file: Path) -> bool:
     if not hook_file.is_file():
         return False
     return "pre-commit" in hook_file.read_text(encoding="utf-8", errors="replace")

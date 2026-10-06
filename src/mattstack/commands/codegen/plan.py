@@ -55,6 +55,12 @@ class FilePlan:
     def conflicts(self) -> list[Path]:
         return sorted(p for p, content in self.creates.items() if p.exists() and content)
 
+    def outside_root(self) -> list[Path]:
+        """Planned paths that resolve outside the project root, e.g. through `..`."""
+        root = self.root.resolve()
+        planned = [*self.creates, *self.updates]
+        return sorted(p for p in planned if not p.resolve().is_relative_to(root))
+
     def _rel(self, path: Path) -> str:
         return os.path.relpath(path, self.root)
 

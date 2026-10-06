@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from rich.markup import escape
+
 from mattstack.config import get_repo_urls
 from mattstack.presets import list_presets
 from mattstack.utils.console import console, create_table
+from mattstack.utils.sources import redact_repo
 
 
 def run_info() -> None:
@@ -33,7 +36,7 @@ def _show_presets() -> None:
 def _show_repos() -> None:
     table = create_table("Source Repositories", ["Key", "URL"])
     for key, url in get_repo_urls().items():
-        table.add_row(f"[cyan]{key}[/cyan]", url)
+        table.add_row(f"[cyan]{escape(key)}[/cyan]", escape(redact_repo(url)))
     console.print(table)
 
 
