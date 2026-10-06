@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-06
+
 ### Added
 
 - Generate a root `AGENTS.md` (component pointers, cross-stack rules, testing policy, lockfile versions), a `@AGENTS.md` `CLAUDE.md`, a pointer `.cursorrules`, a `.claude/settings.json` that denies `git push` and `rm -rf`, and `.mcp.json` only for servers every component shares.

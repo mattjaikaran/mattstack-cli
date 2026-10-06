@@ -1087,3 +1087,17 @@ becomes a real problem.
 - [ ] Smoke: `mattstack init -p starter-fullstack`, then `make setup`,
   `make gauntlet`, `mattstack sync check`, and change one Pydantic field to
   confirm `sync check` fails before `sync openapi` and passes after.
+
+## Release v0.9.0 (2026-10-06)
+
+- Set package, module, and lockfile versions to `0.9.0`; `uv lock --check`
+  passes.
+- Rebase onto upstream `31e9b2d` (React tooling) and fold its changelog
+  entries into 0.9.0; reformat `tests/test_commands/test_lint.py`.
+- Move Unreleased entries into the dated release; keep the Breaking entries
+  for `workflow --ci`, the OpenAPI-only `sync`, and the `AGENTS.md` import.
+- Full gauntlet: nine gates pass; mutation exceeds its 600 s gate timeout
+  (35,355 mutants, about 13,000 run). Quick gauntlet after the rebase:
+  eight gates pass.
+- Push and tag only after the django-ninja-boilerplate `v1.13.0` tag exists
+  and a `starter-fullstack` init from GitHub sources passes. No PyPI release.
