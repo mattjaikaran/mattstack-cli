@@ -16,8 +16,22 @@ htmlcov/
 
 # Environment
 .env
-.env.local
+.env.*
+!.env.example
+env/
 *.log
+
+# Test and coverage artifacts
+coverage.xml
+*.sqlite3
+*.backup
+.mypy_cache/
+mutants/
+node_modules/
+
+# Agent-local state
+.claude/settings.local.json
+.claude/worktrees/
 
 # OS
 .DS_Store
