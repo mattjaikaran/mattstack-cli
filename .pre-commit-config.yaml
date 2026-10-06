@@ -1,7 +1,26 @@
+# Every gate runs locally; this repository has no hosted CI.
+# Install both hook types: mattstack hooks install (or pre-commit install).
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
 repos:
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.9.0
+  - repo: local
     hooks:
       - id: ruff
-        args: [--fix]
+        name: ruff (locked version)
+        entry: uv run --extra dev ruff check --fix --exit-non-zero-on-fix src/ tests/
+        language: system
+        types: [python]
+        pass_filenames: false
       - id: ruff-format
+        name: ruff format (locked version)
+        entry: uv run --extra dev ruff format src/ tests/
+        language: system
+        types: [python]
+        pass_filenames: false
+      - id: gauntlet-quick
+        name: make gauntlet-quick
+        entry: make gauntlet-quick
+        language: system
+        always_run: true
+        pass_filenames: false
+        stages: [pre-push]
