@@ -1101,3 +1101,34 @@ becomes a real problem.
   eight gates pass.
 - Push and tag only after the django-ninja-boilerplate `v1.13.0` tag exists
   and a `starter-fullstack` init from GitHub sources passes. No PyPI release.
+- No GitHub release for `v0.9.0`: fresh installs fail. See v0.9.1.
+
+## Release v0.9.1 (2026-10-06)
+
+- Fix: `cli.py` imports `click`, but only `typer` installed it. Typer 0.26
+  vendors Click (`typer._click`) and drops the dependency, so fresh 0.9.0
+  installs crashed with `ModuleNotFoundError: No module named 'click'`.
+  The lock pins typer 0.24.1, so the gates did not catch it.
+- Declare `click>=8.0.0`; cap `typer>=0.12.0,<0.26` (0.25.x still needs
+  Click).
+- Smoke: a fresh, unlocked wheel install (typer 0.25.1, click 8.5.0) passes
+  help, `info`, `sync --help`, the lazy-group typo suggestion, and a no-write
+  `init -p starter-api --dry-run`. Quick gauntlet: eight gates pass.
+- Published the GitHub release with the wheel and sdist. No PyPI release.
+
+## Release process follow-ups (next session)
+
+- [ ] Make gate 10 (INSTALL) catch dependency breaks: build the sdist, build
+  the wheel from it, install the wheel in a fresh venv without `uv.lock`,
+  then run `mattstack --help`, one lazy group (`mattstack sync --help`), and
+  a mistyped group that must print "Did you mean". The current check passed
+  with the missing `click` dependency.
+- [ ] Remove the `typer<0.26` cap: make `LazyTyperGroup` in
+  `src/mattstack/cli.py` work without importing standalone `click`
+  (`click.Context`, `click.Group`, `click.UsageError`). Do not import the
+  private `typer._click`. Verify with the fresh-install check above on typer
+  0.24.x and 0.27.x.
+- [ ] Write the manual release steps in `docs/` (or a `make release`
+  target): gates, sdist and wheel build from the tag, fresh-install smoke,
+  `gh release create` with both files. No workflow publishes releases, so
+  0.9.0 was tagged without one.
