@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-10-06
+
+### Fixed
+
+- Declare `click` and cap `typer` below 0.26 so that fresh installs start. Typer 0.26 vendors Click and no longer installs it, which made `mattstack` fail with `ModuleNotFoundError: No module named 'click'`.
+
 ## [0.9.0] - 2026-10-06
 
 ### Added
