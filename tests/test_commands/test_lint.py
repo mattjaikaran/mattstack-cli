@@ -131,9 +131,7 @@ class TestRunLint:
         )
         bin_dir = tmp_path / "bin"
         bin_dir.mkdir()
-        _fake_tool(
-            bin_dir, "bun", 'case "$*" in "run format:check") exit 17;; *) exit 0;; esac'
-        )
+        _fake_tool(bin_dir, "bun", 'case "$*" in "run format:check") exit 17;; *) exit 0;; esac')
         # A legacy hard-coded formatter must not bypass the failing app script.
         _fake_tool(bin_dir, "npx", "exit 0")
         monkeypatch.setenv("PATH", str(bin_dir))
