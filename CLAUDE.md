@@ -1,6 +1,6 @@
 # mattstack
 
-CLI to scaffold fullstack monorepos, generate components, sync types, and audit for quality.
+CLI to scaffold fullstack monorepos, generate components, sync the OpenAPI client, and audit for quality.
 
 ## Stack
 - Python 3.12+, uv (never pip), ruff, hatchling, Apache-2.0
@@ -20,16 +20,19 @@ mattstack add frontend -f react-rsbuild-kibo # Add component
 mattstack generate model Product --fields "title:str price:decimal"
 mattstack generate component ProductCard --with-test
 mattstack db migrate | seed | reset          # Database ops
-mattstack sync types | zod | api-client      # Pydantic → TS/Zod
+mattstack sync openapi | check               # OpenAPI → types, SDK, Zod, TanStack Query
 mattstack dev                                # Start applications and infrastructure
 mattstack test --parallel                    # Run tests
 mattstack lint --parallel --fix              # Lint + fix
 mattstack fmt                                # Format all
-mattstack audit --html                       # Static analysis
+mattstack audit --html | --versions          # Static analysis; version drift
 mattstack deps check | update | audit        # Dependencies
 mattstack health --live                      # Service health
 mattstack hooks install                      # Git hooks
-mattstack workflow                           # Generate CI/CD
+mattstack workflow --ci github | gitlab      # Opt-in hosted CI (gates run locally)
+mattstack env secrets                        # Create missing .env files with secrets
+mattstack upgrade --force                    # Three-way merge boilerplate changes
+mattstack doctor                             # Check tools, hooks, MCP servers
 mattstack info                               # Show presets/repos
 ```
 
@@ -42,7 +45,7 @@ Run `uv run mattstack info` for the current Django Ninja, Django Matt, FastAPI, 
 ## Rules
 - `uv` only (never pip/poetry), `bun` for JS (never npm/yarn)
 - Type hints on every function, no new dependencies
-- Parsers use regex (not AST), auditors produce `AuditFinding` objects
+- Auditors produce `AuditFinding` objects
 - Tests in `tests/` mirroring `src/` structure
 
 ## Architecture

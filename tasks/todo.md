@@ -962,3 +962,128 @@ boundaries complete endpoint behavior or working third-party integrations.
 - Run the release quick gauntlet: eight gates pass, zero fail.
 - Publish the annotated tag and GitHub release with both artifacts only after
   the release commit passes CI. Do not claim a PyPI publication.
+
+---
+
+## 2026 environment hardening (planned)
+
+Rules: no GitHub Actions budget, so all gates run locally. Do not generate
+bulk tests. `AGENTS.md` and `DESIGN.md` live in the backend and frontend
+components; the CLI does not invent a second copy.
+
+### Local gates, no CI
+
+- [x] Stop generating GitHub/GitLab workflows by default. Make
+  `mattstack workflow` opt-in (`--ci github|gitlab`) and print a warning that
+  it costs minutes.
+- [ ] Replace the earlier "Re-enable CI" item: remove `.github/workflows` from
+  this repo and run `make gauntlet-quick` from a `pre-push` hook
+  (`mattstack hooks install`). Done: CI removed, pre-push hook configured.
+  Open: `hooks install` refuses because git `core.hooksPath` is set.
+- [x] Generate a root `make gauntlet` that calls the backend `just gauntlet`
+  and the frontend `bun run gauntlet`, then `mattstack sync check`.
+
+### Agent files (no new duplication)
+
+- [x] Emit a root `AGENTS.md` that only points to `backend/AGENTS.md` and
+  `frontend/AGENTS.md` and lists cross-stack rules (types flow
+  backend → frontend; run `sync` after any schema change). Make `CLAUDE.md`
+  a one-line pointer to it. Keep `.cursorrules` as an adapter only.
+- [x] Stop deleting component `.claude/` skills in
+  `post_processors/consolidate.py` if they are the committed copy; only drop
+  files that duplicate `AGENTS.md`.
+- [x] Emit `.mcp.json` with servers that exist in both components, and a
+  `.claude/settings.json` that blocks `git push` and `rm -rf`. Never emit
+  `settings.local.json`.
+- [x] Add the testing policy line to the root `AGENTS.md`: tests only for bug
+  fixes, changed contracts and permission or boundary rules.
+- [x] Fix hardcoded "React 18" and "PostgreSQL 17"/"Redis 7" strings in
+  `templates/root_claude_md.py` (now `root_agents_md.py`): read versions from
+  the cloned lockfiles. `root_readme.py`, `gsd_project.py`, and
+  `stack_facts.py` still carry them.
+
+### Two-language type safety
+
+Goal: Pydantic and Zod schemas cannot drift.
+
+- [x] Make OpenAPI the contract: `sync openapi` is the default path.
+  Flow: backend export → `@hey-api/openapi-ts` (types, SDK, Zod plugin,
+  TanStack Query plugin) → commit generated files.
+- [x] Demote the regex path (`sync types|zod|api-client`) to a deprecated
+  alias that calls `sync openapi`; delete the regex generators and
+  `parsers/python_schemas.py` after the cutover. Remove the "no AST" rule
+  from `CLAUDE.md` in the same change.
+- [x] Add `mattstack sync check`: regenerate to a temp dir and fail on diff
+  with the committed files (`--check` mode already exists for `sync
+  openapi`; extend it to Zod and SDK output).
+- [x] Add a parity audit (`auditors/types`): compare each OpenAPI schema with
+  the generated Zod schema for fields, required-ness, nullability, enums,
+  `min`/`max`/`pattern`. Fail on mismatch with an `AuditFinding`.
+- [x] Pin `@hey-api/openapi-ts` and plugins to exact versions in the
+  frontend `package.json`; stop `bun add -D` on demand in Makefiles.
+  Done CLI-side: `init` pins 0.99.0 and `sync openapi|check` reject a range.
+  Frontend boilerplate Makefiles are edited in the frontend repos.
+- [x] Add a round-trip test fixture: one backend schema using alias,
+  `Optional`, enum, `Literal`, nested model, `Decimal`, `datetime`, and
+  constraints; assert the generated Zod matches. This is the one permanent
+  test for this feature.
+- [x] Document the known gaps (Decimal as string, datetime format, int64) and
+  the chosen mapping in `docs/architecture.md`.
+
+### Version drift
+
+- [x] Single source of versions: read from backend `pyproject.toml`/`uv.lock`
+  and frontend `package.json`. Generated pre-commit uses `repo: local` hooks
+  that run the project's own tools, so ruff v0.8.6-style pins disappear.
+- [x] Add `mattstack audit --versions`: ruff, mypy, python, bun, node,
+  postgres, valkey/redis, React, Tailwind, Zod across components; report
+  mismatches.
+- [x] Update `dockerfiles.py`: pin uv through `COPY --from=ghcr.io/astral-sh/uv`,
+  non-root user and healthcheck on the frontend image, drop `bun:latest`.
+- [x] Replace the mailhog image with a maintained one (`axllent/mailpit`).
+- [x] Switch the DB service to `pgvector/pgvector:pg17` when the AI add-on is
+  selected.
+
+### Preset and scaffold changes
+
+- [x] API-only backend: drop SPA-serving config and `npm` targets from the
+  generated Makefile (`bun` only). Frontend runs as its own service.
+- [ ] Add `--ai pgvector|qdrant` and `--graph age|neo4j` options and map
+  them to the backend compose profiles. Done: `--ai pgvector|qdrant`,
+  `--graph cte|neo4j`. Open: `--graph age` exits 2 (apache/age image has no
+  pgvector); generated CI still uses plain `postgres:N` for AI projects.
+- [x] Add `mattstack upgrade`: show and apply boilerplate changes to an
+  existing project (three-way against the recorded commit in `mattstack.yml`).
+- [x] Extend `mattstack doctor`: uv, bun, Docker, `just`, pre-push hook
+  installed, MCP servers reachable.
+- [ ] Frontend repos: oxlint/oxfmt is handled in another session. After it
+  lands, update generated pre-commit, `frontend-*` Makefile targets and
+  `ci_toolchain.py` to call `bun run lint|fmt` only.
+
+### Gauntlet integration (Rust verifier at ~/dev/gauntlet)
+
+Decision: mattstack stays Python. No second Rust CLI. No scaffolding inside
+Gauntlet, which is a language-agnostic verifier (agent never grades itself).
+Reconsider Rust only if startup latency or single-binary distribution
+becomes a real problem.
+
+- [x] Generate a `gauntlet.toml` into scaffolded projects that wraps the
+  existing local gates: backend `just gauntlet-quick`, frontend
+  `bun run gauntlet`, and `mattstack sync check`.
+- [ ] Propose a generic Gauntlet check "generated files match source":
+  run a command into a temp dir, diff against committed output. mattstack
+  uses it for OpenAPI, Zod and SDK drift. Field-level Pydantic/Zod parity
+  stays in mattstack and runs as a custom check.
+- [x] Cut import time: lazy-import Typer subcommands, Rich and questionary.
+  Measure `mattstack --help` before and after: 237 ms → 140 ms (hyperfine,
+  20 runs). Subcommand groups load lazily; questionary already loads only in
+  `init`; Rich stays because Typer renders help with it.
+- [ ] When Gauntlet is released, replace `scripts/gauntlet.py` in the
+  backend and the gate table in `CLAUDE.md` with thin wrappers, then delete
+  the duplicate gate runners.
+
+### Done check
+
+- [ ] Smoke: `mattstack init -p starter-fullstack`, then `make setup`,
+  `make gauntlet`, `mattstack sync check`, and change one Pydantic field to
+  confirm `sync check` fails before `sync openapi` and passes after.

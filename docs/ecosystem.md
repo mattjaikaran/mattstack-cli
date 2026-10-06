@@ -7,30 +7,38 @@ a generated project.
 ## Source provenance
 
 `mattstack init` and `mattstack add` copy code from source repositories.
-`mattstack upgrade` compares your project with fresh clones of the same sources.
+`mattstack upgrade` compares your project with the same sources, using the
+commit recorded in `mattstack.yml` as the merge base.
 
 ```mermaid
 flowchart LR
     builtin["Built-in repository map"] --> map["Repository URL<br/>for each selected key"]
     user["~/.mattstack/config.yaml<br/>repos: overrides"] --> map
-    map --> clone["git clone --depth 1<br/>default branch"]
-    clone --> post["Remove .git, rename project,<br/>update lock names"]
+    env["MATTSTACK_SOURCE_&lt;KEY&gt;"] --> map
+    map -->|URL| clone["git clone --depth 1<br/>default branch"]
+    map -->|local directory| copy["Copy the working tree<br/>with uncommitted changes"]
+    clone --> post["Record source commit,<br/>remove .git, rename project"]
+    copy --> post
     post --> project["Generated project"]
-    local["Unpublished changes<br/>in a local checkout"] -. "not used" .-> clone
 ```
 
-- The clone uses the remote default branch. mattstack does not pin a branch,
-  tag, or commit.
-- mattstack removes the cloned `.git` directory. `mattstack.yml` records the
-  selected frameworks, not the source URL or commit.
-- Local changes in a sibling boilerplate do not reach a new project until you
-  publish them to the default branch, or point a `repos:` override at a
-  repository that contains them.
+- The clone uses the remote default branch. mattstack does not pin a branch
+  or tag.
+- `mattstack.yml` records each component's source as
+  `project.<component>.source`: `repo` (credentials removed), `commit`, and
+  `dirty: true` when a copied working tree had uncommitted changes.
+- `MATTSTACK_SOURCE_<KEY>` overrides the built-in URL and any `repos:` entry
+  for one source. `<KEY>` is the source key in upper case with `-` changed to
+  `_`, for example `MATTSTACK_SOURCE_DJANGO_NINJA` or
+  `MATTSTACK_SOURCE_REACT_RSBUILD_KIBO`.
+- When an override is a local directory, `init` copies its working tree:
+  tracked and untracked files that `.gitignore` does not exclude. `add` and
+  `upgrade` clone the same path, so they see only its committed state.
 
-Some source fixes used in this repository's local verification are not
-published yet. A fresh `init` clones the published sources and may not include
-them. To record provenance, note the source commit when you scaffold, for
-example with `git ls-remote <url> HEAD`.
+```bash
+MATTSTACK_SOURCE_DJANGO_NINJA=~/dev/django-ninja-boilerplate \
+  mattstack init my-app -p starter-api
+```
 
 Built-in keys:
 
@@ -59,11 +67,12 @@ repos:
   nextjs: https://github.com/myorg/nextjs-starter.git
 ```
 
-A user entry replaces the built-in URL with the same key. Use any URL that
-`git clone` accepts; mattstack does not validate it. A `file://` URL clones the
-local repository's checked-out branch at its last commit. Uncommitted or
-stashed edits never reach the scaffold. Commit on the intended branch first,
-then record that branch and commit yourself.
+A user entry replaces the built-in URL with the same key. Use any URL or path
+that `git clone` accepts. mattstack rejects values that start with `-` and git
+remote-helper sources (`<transport>::<address>`). A `file://` URL clones the
+local repository's checked-out branch at its last commit, so uncommitted edits
+never reach the scaffold. A plain directory path makes `init` copy the working
+tree instead, as `MATTSTACK_SOURCE_<KEY>` does.
 
 mattstack clones only the built-in keys. A new key appears in `mattstack info`,
 but no command clones it. Presets cannot select a repository; they select
@@ -178,15 +187,14 @@ that repeats Gauntlet checks.
 
 ### OpenAPI clients with Hey API
 
-Use the runtime OpenAPI schema when regex-based `sync` cannot express your
-backend contract. The regex commands read source text; the OpenAPI schema comes
-from the backend framework. See [sync](commands.md#sync) to compare them.
-Prefer one client generator; do not install both Hey API and Orval.
+The backend's OpenAPI document is the only type contract; `sync openapi` is
+the only generator. See [sync](commands.md#sync). Do not install a second
+client generator such as Orval.
 
 ```bash
 mattstack client add @hey-api/openapi-ts@0.99.0 --dev --exact
 mattstack sync openapi           # Prints the Ninja export command if the schema is missing
-mattstack sync openapi --check
+mattstack sync check             # Exit 1 when the committed client is stale
 ```
 
 For Django Ninja, `sync openapi` reads `backend/docs/openapi/openapi.json`. When
@@ -196,13 +204,13 @@ directory. Run it, then retry. An explicit `--schema` overrides discovery.
 Other backends use `openapi.json` at the project root unless you pass a path.
 The CLI does not export your schema or install Hey API implicitly.
 
-Use Node 22.18 or later. `sync openapi` runs only your installed local tool.
-It rejects edited or unmanaged output unless you pass `--force`. `--check`
-reports drift without replacing files. Keep the schema free of secrets. Check
-the generated client with your frontend typecheck and API integration tests.
-
-Read the [Hey API setup guide](https://heyapi.dev/docs/openapi/typescript/get-started)
-for SDK, Zod, and TanStack Query plugin configuration.
+Use Node 22.18 or later. `sync openapi` runs only your installed local tool,
+pinned to an exact version. The SDK, Zod, and TanStack Query plugins ship
+inside `@hey-api/openapi-ts`; the generated code imports `zod`,
+`@tanstack/react-query`, and, with the Axios client, `axios` from your
+frontend. It rejects edited or unmanaged output unless you pass `--force`.
+Keep the schema free of secrets. Check the generated client with your
+frontend typecheck and API integration tests.
 
 ### React Doctor
 

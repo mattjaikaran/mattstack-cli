@@ -97,8 +97,8 @@ unpublished local changes.
 | Clone the iOS starter into `ios/` | if `--ios` | no | no |
 | Consolidate component root files | yes | yes | no |
 | Check task and realtime prerequisites | yes | yes | no |
-| Write root files (Makefile, README, `.cursorrules`, `.gitignore`, deployment files) | yes | yes | yes |
-| Write Compose files, `.env*`, `CLAUDE.md`, and Dockerfiles | yes | yes | no |
+| Write root files (Makefile, README, agent files, `gauntlet.toml`, `.gitignore`, deployment files) | yes | yes | yes |
+| Write Compose files, `.env*`, and Dockerfiles | yes | yes | no |
 | Write the root `.pre-commit-config.yaml` | yes | yes | yes |
 | Customize cloned components (names; frontend bundler config and API proxy) | yes | backend only | frontend only |
 | Write `mattstack.yml` and `.dockerignore` | yes | yes | yes |
@@ -158,17 +158,23 @@ Generated projects keep stack facts and secrets in different files:
 |------|---------|--------|
 | `mattstack.yml` | Control-plane settings (`deps`, `scope`, `board`, `notify`) and the `project:` stack metadata | Yes |
 | `.env.example`, `.env.production.example` | Variable names with placeholder values | Yes |
-| `.env` | Local values. Realtime projects get random Centrifugo secrets. | No |
-| `.env.production` | A copy of the production example. Replace every placeholder before you deploy. | No |
+| `.env` | Local values with generated secrets (`utils/env_secrets.py`), mode 0600 | No |
+| `.env.production` | Production values with separately generated secrets, mode 0600. Replace the remaining placeholders before you deploy. | No |
 
 `save_project_config()` writes only nonsecret choices under `project:`:
 name, type, variant, iOS, deployment target, execution mode, the backend
 framework, directory, Redis, API prefix, task backend, realtime, media
-storage, and settings module, the frontend framework and directory, and
-ports. It overwrites scaffold choices, keeps user-tuned values such as
-ports, and keeps every other key and comment. Configuration that needs a
-credential names an environment variable, for example
-`board.api_key_env`, instead of the value.
+storage, AI store (`ai`), graph (`graph`), and settings module, the frontend
+framework and directory, and ports. It overwrites scaffold choices, keeps
+user-tuned values such as ports, and keeps every other key and comment.
+Configuration that needs a credential names an environment variable, for
+example `board.api_key_env`, instead of the value. `utils/sources.py` adds
+each component's `source` record (`repo`, `commit`, and `dirty`), which
+`mattstack upgrade` uses as the merge base.
+
+`init` never prints a secret value, and it never overwrites an existing
+`.env` or `.env.production`. `mattstack env secrets` creates a missing file
+from its example with the same generator.
 
 When a command reads an existing project, persisted metadata wins over
 filesystem detection. Detection in `stack_detection.py` returns `None` for
@@ -280,6 +286,83 @@ any file.
 - `--lifecycle soft-delete` requires a base model whose default manager
   hides inactive rows. The check refuses a base model that does not.
 
+## Type contract
+
+The backend's OpenAPI document is the only type contract between Python and
+TypeScript. mattstack does not read Pydantic source.
+
+```mermaid
+flowchart LR
+  P[Pydantic schemas] -->|just openapi| O[backend/docs/openapi/openapi.json]
+  O -->|mattstack sync openapi| G[frontend/src/api/generated]
+  G --> C{mattstack sync check}
+  O --> A{mattstack audit -t types}
+  G --> A
+```
+
+- `parsers/openapi_spec.py` finds the contract (`--schema`, the Ninja export,
+  or `openapi.json`) and holds the generator pin (`HEY_API_VERSION`).
+- `commands/openapi.py` runs the frontend's exact-pinned
+  `@hey-api/openapi-ts` with the `@hey-api/typescript`, `@hey-api/sdk`,
+  `zod`, and `@tanstack/react-query` plugins. `sync check` regenerates into a
+  temporary directory and compares file hashes with the committed output.
+- `auditors/types.py` and `auditors/types_parity.py` compare every
+  `components.schemas` entry with its `z<Name>` constant in `zod.gen.ts`:
+  keys, required, nullable, enum and literal values, `$ref` targets, union
+  branches, formats, and `min`/`max`/`gt`/`lt`/`pattern` bounds. Each
+  difference is an `ERROR` finding. `parsers/zod_schemas.py` reads the Zod
+  file with a bracket-, string-, and regex-aware scanner.
+- `tests/test_auditors/test_types.py` is the round-trip test. Its fixture is
+  a real Ninja export and the pinned generator's output; regenerate both when
+  you change `HEY_API_VERSION`.
+
+### Mapping
+
+Verified with `@hey-api/openapi-ts` 0.99.0, Django Ninja, Pydantic 2, and
+Zod 4.
+
+| Pydantic | OpenAPI | Zod |
+|---|---|---|
+| `alias_generator=to_camel` | property `firstName` | key `firstName` |
+| Field without a default | listed in `required` | no `.optional()` |
+| Field with a default | not in `required` | `.optional()`, plus `.default(v)` when the schema has the default |
+| `X \| None` | `anyOf: [X, {type: null}]` | `.nullable()`, or `.nullish()` when also optional |
+| `Enum` | `$ref` to an `enum` component | reference to `z.enum([...])` |
+| `Literal["a", "b"]` | `enum` | `z.enum(['a', 'b'])` |
+| `Literal["v1"]` | `const` | `z.literal('v1')` |
+| Nested model | `$ref` | reference to `z<Model>` |
+| `datetime`, `date`, `time` | `string` + `date-time`, `date`, `time` | `z.iso.datetime()`, `z.iso.date()`, `z.iso.time()` |
+| `UUID`, `EmailStr`, `HttpUrl` | `string` + `uuid`, `email`, `uri` | `z.uuid()`, `z.email()`, `z.url()` |
+| `int`, `float`, `bool` | `integer`, `number`, `boolean` | `z.int()`, `z.number()`, `z.boolean()` |
+| `Decimal` | `anyOf: [number, string]` | `z.union([z.number(), z.string()])` |
+| `min_length`, `max_length` | `minLength`, `maxLength`, `minItems`, `maxItems` | `.min()`, `.max()`; `.length()` when equal |
+| `ge`, `le` | `minimum`, `maximum` | `.gte()`, `.lte()` |
+| `gt`, `lt` | `exclusiveMinimum`, `exclusiveMaximum` | `.gt()`, `.lt()` |
+| `pattern` | `pattern` | `.regex(/.../)` |
+
+### Known gaps
+
+- **Decimal:** the schema accepts a number or a string. Ninja's JSON
+  renderer sends `Decimal` as a string. Keep money as a string or a decimal
+  type in the frontend; do not do arithmetic on `number`.
+- **datetime:** `z.iso.datetime()` accepts `Z` only. It rejects offsets such
+  as `+02:00` and naive values. Keep `USE_TZ = True` and UTC output.
+- **int64:** `format: int64` becomes `z.coerce.bigint()` with int64 bounds,
+  so parsed values are `bigint`, not `number`. Pydantic emits no int64
+  format unless you declare it.
+- **Untyped objects:** a property with `type: object` and no `properties` or
+  `additionalProperties` is dropped from the Zod object; the parity audit
+  reports it as missing. Use a model or `dict[str, T]`.
+- **writeOnly and readOnly:** `writeOnly` fields (for example a password)
+  are absent from `z<Name>` and present in `z<Name>Writable`; `readOnly`
+  fields are the reverse. The audit compares both.
+- **Not emitted:** `multipleOf`, `@field_validator` and `@model_validator`
+  bodies. Put constraints on `Field(...)`, `Literal`, or an `Enum`.
+- **OpenAPI 3.0:** a boolean `exclusiveMinimum` becomes `.gt(true)`; the
+  audit reports it. Django Ninja exports OpenAPI 3.1.
+- **Scope:** the audit compares component schemas only, not operation
+  query or path parameters.
+
 ## Component guidance and quality gates
 
 Consolidation removes each cloned component's standalone root files,
@@ -287,19 +370,35 @@ because the generated project has one root. Agent guidance follows one
 rule: canonical sources stay, and harness adapters go.
 
 - **Kept in the component:** `AGENTS.md`, `SKILLS.md`, `.agents/skills/`,
-  `.omp/`, and `.context/`.
-- **Removed from the component:** `CLAUDE.md`, `.cursorrules`, `.claude/`,
-  `.cursor/`, `.windsurf/`, `.kiro/`, and `.continue/`. The root
-  `CLAUDE.md` and `.cursorrules` replace them.
-- The root `CLAUDE.md` lists each component's guidance files that exist,
-  and its quick gate: `cd backend && just gauntlet-quick` when the
-  component has that `justfile` recipe, or its `gauntlet:quick` package
-  script.
+  `.omp/`, `.context/`, and committed `.claude/skills/<name>/` that no
+  `.agents/skills/` or `.omp/skills/` entry duplicates. `CLAUDE.md` and
+  `.cursorrules` stay when the component has no `AGENTS.md`.
+- **Removed from the component:** `CLAUDE.md` and `.cursorrules` that an
+  `AGENTS.md` duplicates, the rest of `.claude/` (local settings,
+  worktrees), `.cursor/`, `.windsurf/`, `.kiro/`, and `.continue/`.
+- **Written at the root** (`templates/agent_files.py`): `AGENTS.md` is the
+  one root source. It lists each component's guidance files that exist, its
+  quick gate (`cd backend && just gauntlet-quick`, or the frontend's
+  `gauntlet:quick`/`gauntlet` script), cross-stack rules, the testing
+  policy, and versions read by `utils/versions.py`. `CLAUDE.md` is the
+  one-line import `@AGENTS.md`; `.cursorrules` points at `AGENTS.md`.
+  `.claude/settings.json` denies `git push` and `rm -rf`; mattstack never
+  writes `.claude/settings.local.json`. `.mcp.json` is written only when
+  every component's `.mcp.json` declares the same server.
+- `gauntlet.toml` (`templates/gauntlet_toml.py`) wraps the local gates as
+  Gauntlet `[checks.custom.*]` entries: the backend `just gauntlet-quick`,
+  the frontend `gauntlet` script, and `mattstack sync check` for Django
+  fullstack projects. A gate is listed only when the component defines it.
 - The root `.pre-commit-config.yaml` runs each tool inside its component.
   For `django-ninja`, it runs the backend's locked ruff on commit and
-  `just gauntlet-quick` on push. Other Python backends use the ruff
-  pre-commit mirror, NestJS uses its `lint` script, and frontends use
-  their own prettier.
+  `just gauntlet-quick` on push. Other Python backends run the project's
+  own ruff, NestJS uses its `lint` script, and frontends use their own
+  prettier.
+- The root `make gauntlet` target (`templates/root_gauntlet.py`) runs every
+  gate locally: each component's gauntlet (else its lint and test targets),
+  `mattstack sync check` for non-NestJS fullstack projects, and
+  `mattstack audit --no-todo`. Generated projects have no hosted CI;
+  `mattstack workflow --ci github|gitlab` writes it only on request.
 
 Keep this guidance and these gate scripts during consolidation. Do not
 replace the generated hooks with the open PR #1 implementation.
@@ -323,12 +422,12 @@ src/mattstack/
 ├── commands/
 │   ├── init.py, init_runtime.py   # Entry modes, wizard, runtime flags
 │   ├── generate.py, generate_crud.py  # generate subgroup
-│   ├── codegen/        # FilePlan, layouts, resource policy, router planners, TS/Zod
-│   ├── add.py, upgrade.py  # Add a component; preview boilerplate updates
+│   ├── codegen/        # FilePlan, layouts, resource policy, router planners, CRUD TS
+│   ├── add.py, upgrade.py, upgrade_merge.py  # Add a component; three-way boilerplate upgrade
 │   ├── db.py, db_target.py  # Database subgroup and target detection
-│   ├── sync.py, openapi.py  # Types, Zod, API client, OpenAPI SDK
+│   ├── sync.py, openapi.py  # OpenAPI client generation and drift check
 │   ├── dev.py, test.py, lint.py, health.py, env.py
-│   ├── deps.py, hooks.py, workflow.py  # Dependencies, Git hooks, GitHub Actions
+│   ├── deps.py, hooks.py, workflow.py  # Dependencies, Git hooks, opt-in hosted CI
 │   ├── audit.py        # AUDITOR_CLASSES and plugin loading
 │   ├── rules.py, context*.py  # Agent config files and context dumps
 │   ├── board.py, todo.py, protect.py, verify.py, notify.py  # Control plane
@@ -336,10 +435,12 @@ src/mattstack/
 ├── generators/         # BaseGenerator and the fullstack, backend-only, frontend-only, iOS generators
 ├── post_processors/    # Consolidation, customization, bundler config, task runtime, TLS health
 ├── templates/          # Python functions that return file content (no Jinja2)
-├── parsers/            # Regex parsers that return dataclasses
-├── auditors/           # BaseAuditor subclasses that return AuditFinding objects
+│   ├── agent_files.py, root_agents_md.py  # AGENTS.md, CLAUDE.md, .cursorrules, .claude/, .mcp.json
+│   └── root_gauntlet.py, gauntlet_toml.py, ci_toolchain.py  # Local gates; opt-in CI pins
+├── parsers/            # Contract and source parsers (openapi_spec.py, zod_schemas.py, routes)
+├── auditors/           # BaseAuditor subclasses; types_parity.py, versions.py (drift)
 ├── boards/             # Board backends (axis, none; Hermes, Jira, Linear are stubs)
-└── utils/              # Console, Git, Docker, processes, jobs, package managers
+└── utils/              # Console, Git, Docker, processes; env_secrets.py, sources.py, versions.py
 ```
 
 `scripts/check_architecture.py` enforces the layers: `commands/` can import
@@ -352,7 +453,8 @@ core modules, and core modules cannot import from `commands/`.
    and calls `cleanup()` on failure.
 3. `ProjectConfig` is the single scaffold configuration. Commands that act
    on an existing project use `resolve_project()` or `stack.py`.
-4. Parsers use regex, not AST, and have no extra dependencies.
+4. Parsers have no extra dependencies. The OpenAPI contract, not Python
+   source, is the input for frontend types.
 5. Auditors subclass `BaseAuditor` and return `list[AuditFinding]`.
 6. Code generators plan into a `FilePlan` and write only through
    `finish()`.
@@ -360,8 +462,9 @@ core modules, and core modules cannot import from `commands/`.
 ## Development tools and security gate
 
 Run `uv sync --locked --extra dev` to install the development tools,
-including mypy, Bandit, and PyYAML stubs. CI selects each matrix
-interpreter explicitly and uses the committed lockfile.
+including mypy, Bandit, and PyYAML stubs. This repository has no hosted CI:
+the pre-commit hook runs Ruff, and the pre-push hook runs
+`make gauntlet-quick` with the committed lockfile.
 
 Keep the Bandit gate blocking at every severity. Do not add global rule
 skips, a blanket baseline, or a lower severity threshold. Add an exact
@@ -395,7 +498,7 @@ strength.
 5. Update the templates that branch on the backend: `root_makefile.py`,
    `docker_compose.py`, `compose_env.py`, `dockerfiles.py`,
    `backend_entrypoint.py`, `root_env.py`, `pre_commit_config.py`, the
-   `deploy_*.py` recipes, `root_readme.py`, and `root_claude_md.py`.
+   `deploy_*.py` recipes, `root_readme.py`, and `root_agents_md.py`.
 6. Update `runtime_profiles.py` if the backend runs task workers.
 7. Add tests in `tests/test_presets.py` and the generator and template
    tests.
@@ -411,7 +514,7 @@ strength.
    variable, proxy) and `post_processors/frontend_config.py` (bundler
    config patch).
 5. Update `frontend_commands.py`, `dockerfiles.py`, `root_readme.py`,
-   `root_claude_md.py`, and `gsd_project.py`.
+   `root_agents_md.py`, and `gsd_project.py`.
 6. If the framework uses a new bundler or router, update
    `parsers/frontend_layout.py` and add a page planner in
    `commands/codegen/`.

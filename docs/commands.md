@@ -39,6 +39,8 @@ mattstack init my-app -p kibo-fullstack --dry-run
 | `--task-backend` | `celery`, `huey`, `django_q`, `django_rq`, `dramatiq`, or `none`. |
 | `--realtime / --no-realtime` | Add the Django Ninja Centrifugo profile. Default: off. |
 | `--media-storage` | Django Ninja production media: `local` (default) or `s3`. |
+| `--ai` | Django Ninja AI layer vector store: `none` (default), `pgvector`, or `qdrant`. See [AI layer](#ai-layer). |
+| `--graph` | Django Ninja AI layer graph queries: `cte` (default) or `neo4j`. |
 
 For unattended use, provide a name and a preset, or a config file. Do not
 combine `--config` with a name or preset. Dry runs do not change files.
@@ -49,8 +51,17 @@ wizard and presets use `docker`. The CLI rejects unsupported target
 combinations before it clones any source. See
 [supported combinations](deployment-guide.md#supported-combinations).
 
-`init` clones the published default branch of each selected source. It does not
-use local, unpublished changes in a sibling boilerplate. See
+`init` clones the published default branch of each selected source. To use a
+local checkout instead, set `MATTSTACK_SOURCE_<KEY>`, where `<KEY>` is the
+source key in upper case with `-` changed to `_`:
+
+```bash
+MATTSTACK_SOURCE_DJANGO_NINJA=~/dev/django-ninja-boilerplate mattstack init my-app -p starter-api
+```
+
+The variable overrides the built-in URL and any `repos:` entry. When its value
+is a local directory, `init` copies the working tree, including uncommitted
+changes, and skips files that `.gitignore` excludes. See
 [source provenance](ecosystem.md#source-provenance).
 
 Generated projects store nonsecret stack metadata in `mattstack.yml`. Do not
@@ -113,6 +124,42 @@ in `.env.production` or your provider's secret manager. Set
 `AWS_S3_REGION_NAME` to your bucket's region. Compose defaults it to
 `us-east-1`; cloud recipes do not set it. Development media stays local.
 
+#### AI layer
+
+`--ai` and `--graph` need the Django Ninja backend and its `core/ai` package
+and `ai` extra; `--graph age` is rejected. Any choice other than
+`--ai none --graph cte` sets `AI_ENABLED=true`, `UV_EXTRAS=ai`, and
+`POSTGRES_IMAGE=pgvector/pgvector:pg<major>` in both env files, where
+`<major>` matches the backend's Postgres image.
+
+- `--ai qdrant` adds a development `qdrant` service on the `ai` Compose
+  profile.
+- `--graph neo4j` adds a development `neo4j` service on the `graph` Compose
+  profile and a generated `NEO4J_PASSWORD`.
+
+Start a profile with `docker compose --profile ai up -d`. Scaffold YAML has no
+keys for these choices; `mattstack.yml` records them as `project.backend.ai`
+and `project.backend.graph`.
+
+#### Generated secrets
+
+`init` writes `.env.example` and `.env.production.example` with empty secret
+values, then creates the gitignored `.env` and `.env.production` with mode
+0600. Each file gets its own fresh values for the secrets the selected stack
+reads, such as `POSTGRES_PASSWORD`, `SECRET_KEY`, and `REDIS_PASSWORD`. Keys
+are 64 URL-safe characters; passwords are 48 hexadecimal characters. `init`
+prints only the names and never replaces an existing file.
+
+To create a missing file later, for example in a fresh clone, run:
+
+```bash
+mattstack env secrets         # .env and .env.production from their examples
+```
+
+`env secrets` fills every empty known secret in each example and keeps an
+existing `.env` or `.env.production` unchanged. It exits 1 when neither
+example exists.
+
 ### `mattstack add`
 
 Add one component to an existing project.
@@ -138,17 +185,27 @@ Without `--force`, `add` keeps your files and stages alternatives as
 
 ### `mattstack upgrade`
 
-Compare the project with fresh clones of its sources.
+Compare the project with its sources since the commit `init` or `add`
+recorded in `mattstack.yml` (`project.<component>.source`).
 
 ```bash
 mattstack upgrade                     # Preview every component
 mattstack upgrade -c frontend         # One component: backend or frontend
-mattstack upgrade --force             # Apply new and modified files
+mattstack upgrade --force             # Apply new, updated, and merged files
 ```
 
+With a recorded commit, upgrade compares three ways. It leaves files that
+upstream did not change, replaces files that only upstream changed, and merges
+files that both sides changed with `git merge-file`. It reports a conflicting
+merge and never writes it; the recorded commit moves forward only when no
+conflict remains. Files and directories the project removed stay removed.
+Without a recorded commit, upgrade compares two ways and `--force` replaces
+every file that differs from upstream.
+
 Upgrade checks every selected component before it writes files. It prints
-diffs, ignores upstream deletions, and rejects symbolic-link paths. It exits 1
-when it cannot compare a component.
+diffs, ignores upstream deletions, and rejects symbolic-link paths and git
+remote-helper sources (`<transport>::<address>`). It exits 1 when it cannot
+compare a component.
 
 ---
 
@@ -385,69 +442,59 @@ confirm.
 
 ## Sync
 
-mattstack has two ways to generate frontend types from the backend contract.
-
-| Approach | Use it when | Limits |
-|---|---|---|
-| Regex sync | You want fast output with no extra tools. | It reads Pydantic classes and routes as text. Dynamic or computed contracts are not visible. |
-| `sync openapi` | The runtime schema describes your contract better than source text. | You install and pin Hey API and export the schema yourself. |
-
-Prefer one generated API client per frontend.
-
-### `mattstack sync types`
-
-Generate TypeScript interfaces and enum unions from Pydantic schemas. Decimal
-types without a known serializer accept numeric or string JSON values.
+The backend's OpenAPI document is the type contract. `@hey-api/openapi-ts`
+generates the frontend types, SDK, Zod schemas, and TanStack Query hooks from
+it. Commit the generated files; `mattstack sync check` keeps them current.
 
 ```bash
-mattstack sync types
-mattstack sync types --output frontend/src/types/generated.ts --dry-run
+mattstack sync                      # Same as `mattstack sync openapi`
+mattstack sync openapi              # Regenerate src/api/generated in the frontend
+mattstack sync check                # Exit 1 when the committed output is stale
+mattstack audit --type types        # Field-level OpenAPI ↔ Zod parity
 ```
 
-### `mattstack sync zod`
-
-Generate Zod schemas and enums from Pydantic schemas.
-
-### `mattstack sync api-client`
-
-Generate TanStack Query hooks for the detected non-stub API routes and mount
-prefix. When the frontend has a shared Axios instance, generated hooks use it
-and keep its authentication handling. Otherwise, a fetch helper reads the
-bundler's API base URL variable. The removed `--base-url` option did not
-configure runtime requests.
-
-`types`, `zod`, and `api-client` accept `-p, --path`, `-o, --output`, and
-`--dry-run`.
-
-### `mattstack sync all`
-
-Run `types`, `zod`, and `api-client` with their default outputs. Options:
-`-p, --path` and `--dry-run`.
+`sync types`, `sync zod`, `sync api-client`, and `sync all` are deprecated
+aliases. They accept only `-p, --path` and run `sync openapi`.
 
 ### `mattstack sync openapi`
 
-Generate an SDK with the locally installed, pinned `@hey-api/openapi-ts`. This
-command does not fetch a tool or export a schema.
-
-```bash
-mattstack sync openapi                                 # Discover the schema
-mattstack sync openapi --schema openapi.json --check   # Explicit schema
-```
+Run the frontend's own `node_modules/.bin/openapi-ts` with the plugins
+`@hey-api/typescript`, `@hey-api/sdk`, `zod`, and `@tanstack/react-query`. The
+client is `@hey-api/client-axios` when the frontend depends on `axios`, else
+`@hey-api/client-fetch`. The command does not download a tool or export a
+schema.
 
 | Option | Description |
 |---|---|
 | `--schema` | OpenAPI JSON file, relative to the project. |
 | `-o, --output` | Output directory relative to the frontend. Default: `src/api/generated`. |
-| `--check` | Report drift without changing files. |
 | `--force` | Replace edited or unmanaged output. |
-| `-p, --path` | Project root. |
+| `-p, --path` | Project root. Default: the current directory. |
 
-For Django Ninja, the default schema is `backend/docs/openapi/openapi.json`.
-Other backends use `openapi.json` at the project root. When the Ninja export is
-missing, run the export command that the CLI prints, then retry. The ownership
-manifest `.mattstack-openapi.json` protects edited or unmanaged files. Keep the
-output inside your frontend. See
-[OpenAPI clients with Hey API](ecosystem.md#openapi-clients-with-hey-api).
+The frontend `package.json` must pin `@hey-api/openapi-ts` to an exact
+version, and `node_modules` must contain that version. A range such as
+`^0.99.0` fails. `mattstack init` pins `0.99.0` when the frontend has no exact
+pin.
+
+For Django Ninja, the default schema is `backend/docs/openapi/openapi.json`
+(`just openapi` in the backend writes it). Other backends use `openapi.json`
+at the project root. When the Ninja export is missing, run the export command
+that the CLI prints, then retry. The ownership manifest
+`.mattstack-openapi.json` protects edited or unmanaged files. Exclude the
+output directory from your frontend formatter, or `sync check` reports drift.
+
+### `mattstack sync check`
+
+Regenerate into a temporary directory and compare every file with the
+committed output. On a difference, list the stale, missing, or extra files,
+print the regenerate command, and exit 1. Options: `--schema`, `-o, --output`,
+and `-p, --path`. Use it as a local gate or pre-push hook. It does not check
+that the backend export is current; run the backend's `just openapi-check`
+for that.
+
+See [OpenAPI clients with Hey API](ecosystem.md#openapi-clients-with-hey-api)
+and [Type contract](architecture.md#type-contract) for the type mapping and its
+known gaps.
 
 ---
 
@@ -515,6 +562,18 @@ marked section of `tasks/todo.md`. It replaces an existing section or creates
 the file. JSON mode never writes the todo file. JSON output goes to stdout and
 diagnostics to stderr. Audit returns nonzero for error findings, even when a
 display filter hides them.
+
+`--versions` runs only the version drift report. It lists each tool and
+service version (Python, uv, Bun, Node, Postgres, Valkey, and key packages)
+with every file that records it: lockfiles, manifests, Compose images, and
+Dockerfiles. Two pins disagree when they differ at the precision both record,
+so `3.13` and `3.13.15` agree. A range such as `>=3.13` is a floor; only a pin
+below it disagrees. The report exits 1 on any drift. `--json` prints
+`{"versions": ..., "findings": ...}`.
+
+```bash
+mattstack audit --versions
+```
 
 ---
 
@@ -612,6 +671,8 @@ Install the Git hook stages that the selected source's
 Ninja source runs Ruff at commit time and `just gauntlet-quick` before push,
 with locked backend development tools. Install `uv`, `just`, and `bun` as
 required. Missing prerequisites fail before hooks are written.
+pre-commit refuses to install while `core.hooksPath` is set; unset a stale
+value with `git config --unset-all core.hooksPath`, then rerun.
 
 A passing gate can still print nonblocking findings. Read them; they are not an
 all-clear result.
@@ -621,24 +682,35 @@ Run `mattstack hooks status` to show installed hooks. Run
 
 ### `mattstack workflow`
 
-Generate CI configuration for the detected component directories and committed
-lockfiles.
+Generated projects run every gate locally and have no hosted CI. `make
+gauntlet` runs the backend's `just gauntlet` and the frontend's `gauntlet`
+script, or their lint and test targets when a component has no gate. A Django
+or FastAPI fullstack project then runs `mattstack sync check`, and every
+project ends with `mattstack audit --no-todo`. For Django Ninja, the pre-push
+hook from `mattstack hooks install` runs the backend's `just gauntlet-quick`.
+
+`mattstack workflow` generates hosted CI only when you opt in with `--ci`.
+Without it, the command prints the local gates and exits 2.
 
 ```bash
-mattstack workflow                          # .github/workflows/ci.yml
-mattstack workflow --platform gitlab-ci     # .gitlab-ci.yml
-mattstack workflow --dry-run
+mattstack workflow --ci github              # .github/workflows/ci.yml
+mattstack workflow --ci gitlab              # .gitlab-ci.yml
+mattstack workflow --ci github --dry-run
 ```
 
-Platforms: `github-actions` (default) and `gitlab-ci`. Existing workflow files
-stay unchanged unless you pass `--force`. Every workflow includes a `gauntlet`
-job. It installs mattstack from the CLI repository's default branch and runs
-`mattstack audit --no-todo`.
+Each push and pull request then spends hosted CI minutes. Existing workflow
+files stay unchanged unless you pass `--force`. Every workflow includes a
+`gauntlet` job that installs mattstack from the CLI repository's default
+branch and runs `mattstack audit --no-todo`. Python jobs pin uv, Python,
+Postgres, and Valkey to the versions the project records: GitHub Actions uses
+`astral-sh/setup-uv`, and GitLab CI uses the
+`ghcr.io/astral-sh/uv:<uv>-python<python>-trixie-slim` image.
 
 ### `mattstack protect`
 
 Enable branch protection: a no-commit-to-branch hook, CODEOWNERS, and a GitHub
-ruleset that requires the `gauntlet` check. Use `--dry-run` to preview.
+ruleset that requires the `gauntlet` check. Use `--dry-run` to preview. Only a
+`mattstack workflow --ci github` workflow reports that check.
 
 ---
 
@@ -648,26 +720,33 @@ ruleset that requires the `gauntlet` check. Use `--dry-run` to preview.
 |---|---|
 | `mattstack info`, `mattstack presets` | Show presets, source repositories, and usage. |
 | `mattstack config [show\|path\|init]` | Show, locate, or create `~/.mattstack/config.yaml`. `init` overwrites an existing file. |
-| `mattstack env [check\|sync\|show]` | Compare `.env` with `.env.example`, append missing variables, or show masked values. |
-| `mattstack doctor [--path P] [--json]` | Check required tools. Busy ports are informational; a missing project directory fails. |
+| `mattstack env [check\|sync\|show\|secrets]` | Compare `.env` with `.env.example`, append missing variables, show masked values, or create missing `.env` and `.env.production` files with generated secrets. |
+| `mattstack doctor [--path P] [--json]` | Check required tools (`uv`, `bun`, Docker, and `just` when the backend has a `justfile`), the installed `pre-push` hook, and each `.mcp.json` server. Busy ports are informational; a missing project directory fails. |
 | `mattstack version` | Show the version and check for updates, unless `--quiet` is set. |
 | `mattstack completions --install` | Install shell completions. `--show` prints the script. |
 | `mattstack verify --scope` | Fail when changed files are outside `SCOPE.md` or `--scope-file`. |
 | `mattstack notify` | Send a deploy notification through the backend in `mattstack.yml`. |
 
-Compose is optional for `doctor` when your project does not define it.
+Compose is optional for `doctor` when your project does not define it. Doctor
+checks a stdio MCP server's command on `PATH` and an HTTP server's TCP port;
+it never starts a server.
 `verify --scope` fails closed when Git cannot report changes.
 
 ### `mattstack rules`
 
-Generate assistant context files that describe the project's stack.
+Generate the root agent files that describe the project's stack.
 
 ```bash
-mattstack rules             # CLAUDE.md and .cursorrules
+mattstack rules             # AGENTS.md, CLAUDE.md, .cursorrules, .claude/settings.json
 mattstack rules --gsd       # Also .planning/ project files
 mattstack rules sync        # Adapters from .omp/ and .context/
 ```
 
+`AGENTS.md` points at each component's own guidance and lists cross-stack
+rules and the testing policy. `CLAUDE.md` is the import `@AGENTS.md`, and
+`.cursorrules` points at `AGENTS.md`. `.claude/settings.json` denies
+`git push` and `rm -rf`; mattstack never writes `.claude/settings.local.json`.
+`.mcp.json` appears only when every component declares the same server.
 Existing files stay unchanged unless you pass `--force`. `rules sync` updates
 harness adapters without replacing the component's own rules or duplicating
 Claude guidance. Both accept `--dry-run`.

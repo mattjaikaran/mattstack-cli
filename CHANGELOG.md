@@ -7,13 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Generate a root `AGENTS.md` (component pointers, cross-stack rules, testing policy, lockfile versions), a `@AGENTS.md` `CLAUDE.md`, a pointer `.cursorrules`, a `.claude/settings.json` that denies `git push` and `rm -rf`, and `.mcp.json` only for servers every component shares.
+- Generate `gauntlet.toml` that wraps the backend `just gauntlet-quick`, the frontend `gauntlet` script, and `mattstack sync check` as Gauntlet custom checks.
+- Record each component's source commit in `mattstack.yml`; `mattstack upgrade` merges three ways against it and never writes conflicts.
+- `mattstack doctor` checks `just`, the installed `pre-push` hook, and `.mcp.json` servers.
+- `mattstack init` writes `.env` and `.env.production` (mode 0600) with separate generated secrets for the selected stack and prints only their names; `mattstack env secrets` creates a missing file from its example.
+- `mattstack sync openapi` generates types, SDK, Zod schemas, and TanStack Query hooks with the frontend's exact-pinned `@hey-api/openapi-ts`; `mattstack sync check` exits 1 when the committed output is stale.
+- `mattstack audit --type types` compares each OpenAPI schema with its Zod schema field by field.
+- `mattstack audit --versions` lists each tool and service version by source file and exits 1 on drift.
+- `mattstack init --ai none|pgvector|qdrant` and `--graph cte|neo4j` select the Django Ninja AI layer (pgvector image, `ai` extra, and the `ai`/`graph` Compose profiles).
+- `MATTSTACK_SOURCE_<KEY>` overrides one source repository; a local directory copies its working tree, including uncommitted changes.
+- Generated projects get a root `make gauntlet` that runs every component gate, `mattstack sync check`, and `mattstack audit --no-todo` locally.
+
 ### Changed
 
+- Keep committed component `.claude/skills/` unless `.agents/` or `.omp/` holds the same skill; drop component `CLAUDE.md`/`.cursorrules` only when an `AGENTS.md` duplicates them.
+- Load subcommand groups lazily: `mattstack --help` drops from about 237 ms to 140 ms.
+- Generated README and `.planning/PROJECT.md` name the Postgres and Valkey major versions from the backend's Compose images instead of a fixed "PostgreSQL 17" and "Redis 7".
+- Generated GitLab CI Python jobs use the pinned `ghcr.io/astral-sh/uv:<uv>-python<python>-trixie-slim` image instead of `pip install uv`.
+- This repository has no hosted CI: the pre-push hook runs `make gauntlet-quick`.
 - Generated React frontends now use pinned Oxlint 1.87.0, Oxfmt 0.72.0, and React Doctor 0.9.14, with local quality scripts and frontend-scoped hooks. Next.js retains its own linter.
 - React postprocessing preserves the cloned starter UI, theme tokens, and `DESIGN.md`; obsolete ESLint/Prettier dependencies and configurations are removed.
 - Frontend lint format checks use the application's `format:check` script in both sequential and parallel runs.
 - React `make setup` formats postprocessed frontend files after installing dependencies, so fresh scaffolds pass Oxfmt checks without manual formatting.
 - Generated Vite public configuration now uses `VITE_AUTH_STORAGE_KEY`, `VITE_AUTH_REFRESH_STORAGE_KEY`, and `VITE_DJANGO_CSRF_COOKIE_NAME`, matching the starter's non-secret storage/cookie-name contract.
+
+### Removed
+
+- **Breaking:** `mattstack workflow` writes hosted CI only with `--ci github` or `--ci gitlab`, which replaces `--platform`; without it, the command prints the local gates and exits 2.
+- **Breaking:** The regex Pydantic-to-TypeScript generators are gone. `sync types`, `sync zod`, `sync api-client`, and `sync all` are deprecated aliases that run `sync openapi` and accept only `-p, --path`. `sync openapi --check` is now `sync check`.
+- **Breaking:** The generated root `CLAUDE.md` no longer holds the project guidance; it imports `AGENTS.md`.
+
+### Security
+
+- Refuse generated writes outside the project and component or hook names that are not identifiers.
+- Refuse git remote-helper clone sources and redact credentials in printed and recorded repository URLs.
 
 ## [0.8.0] - 2026-10-02
 

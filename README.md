@@ -214,33 +214,37 @@ Other generators include `model`, `endpoint`, `component`, `page`, `hook`, and `
 ## Command overview
 
 ```
-mattstack init        Scaffold a new project
+mattstack init        Scaffold a new project (generates .env secrets)
 mattstack add         Add frontend/backend/ios to existing project
+mattstack upgrade     Three-way merge boilerplate changes since the recorded commit
 mattstack generate    Generate models, CRUDs, components, hooks
 mattstack db          Database operations (migrate, seed, reset, shell)
-mattstack sync        Sync types/Zod/api-client or generate from OpenAPI
+mattstack sync        OpenAPI → types, SDK, Zod, TanStack Query (openapi, check)
 mattstack test        Run all tests (parallel supported)
 mattstack lint        Lint all code (parallel supported)
 mattstack fmt         Format all code
-mattstack audit       Static analysis (6 domains)
+mattstack audit       Static analysis (6 domains); --versions for version drift
 mattstack dev         Start all services
 mattstack deps        Dependency management (check, update, audit)
 mattstack health      Service health checks
 mattstack hooks       Git hooks (install, status, run)
-mattstack workflow    Generate GitHub Actions or GitLab CI
-mattstack env         Manage .env files
+mattstack workflow    Opt-in hosted CI: --ci github or --ci gitlab
+mattstack env         Manage .env files (check, sync, show, secrets)
 mattstack protect     Enable branch protection (hooks, CODEOWNERS, ruleset)
 mattstack board       Pluggable kanban board (Axis backend + stubs)
 mattstack todo        Move completed tasks to completed.md (date + SHA)
 mattstack notify      Send deploy notifications (hermes/telegram/webhook)
 mattstack verify      Enforce plan scope on changed files
-mattstack rules       Generate AI context files; sync harness adapters
+mattstack rules       Generate AGENTS.md, CLAUDE.md, .cursorrules; sync harness adapters
 mattstack context     Dump project context (for AI prompts)
 mattstack info        Show presets, repos, frameworks
-mattstack doctor      Check dev environment
+mattstack doctor      Check tools, the pre-push hook, and .mcp.json servers
 mattstack version     Show version
 mattstack completions Shell completions (bash/zsh/fish)
 ```
+
+Generated projects run their gates locally with `make gauntlet` (and, for Django
+Ninja, a pre-push hook). They have no hosted CI unless you run `mattstack workflow --ci`.
 
 Full reference: [docs/commands.md](docs/commands.md)
 
@@ -284,9 +288,11 @@ For example, Django CRUD planners do not generate FastAPI or NestJS resources,
 and a B2B frontend is not a drop-in replacement for another source's API.
 
 `init` clones the configured repository URLs. Local edits to a sibling boilerplate
-do not reach a new scaffold until you publish them or configure a source override.
-Run `make setup`, review dependency lock changes, and check the selected source's
-quality tools. Use the [ecosystem guide](docs/ecosystem.md) to configure sources.
+do not reach a new scaffold until you publish them or set a source override such
+as `MATTSTACK_SOURCE_DJANGO_NINJA=~/dev/django-ninja-boilerplate`, which copies
+that working tree. Run `make setup`, review dependency lock changes, and check the
+selected source's quality tools. Use the [ecosystem guide](docs/ecosystem.md) to
+configure sources.
 
 Keep evidence specific:
 
@@ -303,13 +309,14 @@ Six audit domains in one pass:
 
 ```bash
 mattstack audit                         # All domains
-mattstack audit --type types          # Pydantic ↔ TypeScript drift
+mattstack audit --type types          # OpenAPI ↔ Zod field parity
 mattstack audit --type quality        # TODOs, stubs, hardcoded creds
 mattstack audit --type endpoints      # Missing/unimplemented endpoints
 mattstack audit --type tests          # Coverage gaps
 mattstack audit --type dependencies   # Outdated packages
 mattstack audit --type vulnerabilities # CVE scan
 mattstack audit --html                  # HTML dashboard
+mattstack audit --versions              # Tool/service version drift; exit 1 on drift
 ```
 
 Results are printed as a Rich table and appended to `tasks/todo.md`.
@@ -340,6 +347,13 @@ uv run ruff format src/ tests/
 make gauntlet-quick     # Format, lint, types, security, architecture, length, tests, install
 ```
 
+This repository has no hosted CI. Install the hooks once with
+`uv run mattstack hooks install`; the pre-push hook runs `make gauntlet-quick`.
+
+```bash
+git config --get core.hooksPath   # Must print nothing; pre-commit refuses otherwise
+```
+
 ---
 
 ## Source repositories
@@ -347,7 +361,8 @@ make gauntlet-quick     # Format, lint, types, security, architecture, length, t
 | Key | Repository |
 |-----|-----------|
 | `django-ninja` | [django-ninja-boilerplate](https://github.com/mattjaikaran/django-ninja-boilerplate) |
-| `django-matt` | [Configured source](docs/ecosystem.md#source-provenance) |
+| `django-matt` | [django-matt-starter](https://github.com/mattjaikaran/django-matt-starter) |
+| `django-matt` | [django-matt-b2b](https://github.com/mattjaikaran/django-matt-b2b) |
 | `fastapi` | [fastapi-boilerplate](https://github.com/mattjaikaran/fastapi-boilerplate) |
 | `nestjs` | [nestjs-boilerplate](https://github.com/mattjaikaran/nestjs-boilerplate) |
 | `react-vite` | [react-vite-boilerplate](https://github.com/mattjaikaran/react-vite-boilerplate) |
