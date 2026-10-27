@@ -24,7 +24,7 @@
 
 Verified on `9bf4cfe` (2026-10-26).
 
-- No test asserts the `@http_*` controller decorators, the all-optional `UpdateSchema`, or `id`/`created_at`/`updated_at` on `ResponseSchema` (`src/mattstack/commands/codegen/django_models.py:172-189`).
+- No test asserts the `@http_*` controller decorators, the all-optional `UpdateSchema` (each field rendered as `name: type = Field(default=None, ...)` by `field_lines(optional=True)`, `src/mattstack/commands/codegen/django_models.py:150-161`), or `id`/`created_at`/`updated_at` on `ResponseSchema` (`django_models.py:180-189`).
 - No test asserts the hooks, list component and `--with-tests` outputs (`src/mattstack/commands/codegen/crud_frontend.py:113-169`, `src/mattstack/commands/codegen/crud_backend.py:95-100`).
 - No test compiles the generated Python.
 - Helper `crud(...)`: `tests/test_commands/test_generate.py:22-27` (copy it; do not import from or edit that file).
@@ -43,8 +43,8 @@ Stage only the Files owned, with explicit paths. Commit subject: `test(generate)
 
 | ID | Cwd | Exact command or journey step | Expected exit/status | Exact output or JSON assertion |
 |---|---|---|---|---|
-| A1 | repo root | see Verification commands | 0 | Controller matches `@http_(get|post|put|delete)` |
-| A2 | repo root | see Verification commands | 0 | Every `ProductUpdateSchema` field ends in `None = None`; `ProductResponseSchema` has `id`, `created_at`, `updated_at` |
+| A1 | repo root | see Verification commands | 0 | The controller has lines matching `@http_get`, `@http_post`, `@http_put` and `@http_delete` |
+| A2 | repo root | see Verification commands | 0 | Every field declared in the `class ProductUpdateSchema` block has `default=None` in its `Field(...)` arguments; `ProductResponseSchema` has `id`, `created_at`, `updated_at` |
 | A3 | repo root | see Verification commands | 0 | Frontend hooks file, `ProductList` component, `ProductList.test.tsx` and `core/tests/test_product_api.py` exist |
 | A4 | repo root | see Verification commands | 0 | `compile(text, path, "exec")` succeeds for every new `.py` under `backend/` |
 
