@@ -18,7 +18,7 @@
 | Max files | 3 |
 | Max changed lines | 200 |
 | Verification commands | `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_COUNT=0 uv run pytest tests/test_gauntlet_script.py -q`; `uv run ruff format --check src/ tests/`; `uv run ruff check src/ tests/`; `uv run mypy src/`; `uv run bandit -q -r src/ -c pyproject.toml`; `uv run python scripts/check_architecture.py`; `uv run python scripts/check_file_length.py`; `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_COUNT=0 uv run pytest -x -q --tb=short` |
-| Acceptance criteria | A1; A2; A3 (table below) |
+| Acceptance criteria | A1; A2 (table below) |
 
 ## Context and verified citations
 
@@ -30,7 +30,7 @@ Verified on `9bf4cfe` (2026-10-26).
 
 ## Goal and non-goals
 
-Gate 10 builds an sdist, builds a wheel from that sdist, creates a temporary `uv venv`, installs the wheel into it, and runs `mattstack --help` and `mattstack sync --help` from that venv; any non-zero exit fails the gate. Non-goals: no CI workflow change, no other gate changes.
+Gate 10 builds an sdist, builds a wheel from that sdist, creates a temporary `uv venv`, installs the wheel into it, and runs `mattstack --help` and `mattstack sync --help` from that venv; any non-zero exit fails the gate. Agent runs have no network, so A1 and A2 (mocked `_run`) are the proof; do not run the real install gate. Non-goals: no CI workflow change, no other gate changes.
 
 ## Implementation steps
 
@@ -46,7 +46,6 @@ Stage only the Files owned, with explicit paths. Commit subject: `fix(gauntlet):
 |---|---|---|---|---|
 | A1 | repo root | see Verification commands | 0 | Recorded argv order: sdist build, wheel build, venv, install, `--help`, `sync --help` |
 | A2 | repo root | see Verification commands | 0 | `_gate_install()` returns False when any step exits non-zero |
-| A3 | repo root | see Verification commands | 0 | `uv run python scripts/gauntlet.py --gate install` exits 0 on the branch (needs network for the build backend) |
 
 ## Stop conditions and PR evidence
 
