@@ -48,8 +48,13 @@ conditions.
   uv run bandit -q -r src/ -c pyproject.toml
   uv run python scripts/check_architecture.py
   uv run python scripts/check_file_length.py
-  uv run pytest -x -q --tb=short
+  GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_COUNT=0 uv run pytest -x -q --tb=short
   ```
+
+  The prefix drops the `core.hooksPath` that the agent's environment sets
+  in its global Git config and in `GIT_CONFIG_KEY_0`. Those hooks make
+  `git init` fail, which breaks the tests that build temporary
+  repositories.
 
 - Commit with explicit paths and a Conventional Commit subject.
 - Open a pull request from the spec's Branch. Do not push to `main`.
