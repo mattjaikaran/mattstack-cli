@@ -9,7 +9,7 @@
 | Assigned executor | agent-run |
 | Base commit | 9bf4cfe |
 | Branch | agent/S-CLI-03 |
-| Depends on | none |
+| Depends on | S-CLI-02 |
 | Conflicts with | S-CLI-02 |
 | Files owned | `src/mattstack/parsers/django_routes.py`, `tests/test_parsers/test_django_matt_routes.py`, `tests/test_auditors/test_endpoints.py` |
 | Migrations | none |
@@ -24,10 +24,10 @@
 
 Verified on `9bf4cfe` (2026-10-26).
 
-- `src/mattstack/parsers/django_routes.py:276-280` (`MATT_METHOD_RE`) reads `auth=` only inside `@get(...)`/`@post(...)`.
+- `src/mattstack/parsers/django_routes.py:276-280` (`MATT_METHOD_RE`) reads `auth=` only inside `@get(...)`/`@post(...)`. These line numbers are as of 9bf4cfe; after S-CLI-02 merges they shift by its added lines, so locate `MATT_METHOD_RE` by name (a shift alone is not a wrong citation).
 - The django-matt generator guards routes with a separate decorator: `@post("/")` then `@jwt_required` (`src/mattstack/commands/codegen/django_matt_api.py:86`).
 - `src/mattstack/auditors/endpoints.py:92-99` then warns "No auth on write endpoint" for generated write routes.
-- `django_routes.py` is 367 lines; the limit is 400. S-CLI-02 edits the same file: it runs first or after, never at once.
+- `django_routes.py` is 367 lines before S-CLI-02, which may grow it to 383; the file-length gate allows 400. Budget: this spec grows `django_routes.py` by at most 16 lines (`wc -l` at most 400 after S-CLI-02). It depends on S-CLI-02 so the two never run at once.
 
 ## Goal and non-goals
 

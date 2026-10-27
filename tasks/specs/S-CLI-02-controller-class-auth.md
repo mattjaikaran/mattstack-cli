@@ -28,7 +28,7 @@ Verified on `9bf4cfe` (2026-10-26).
 - Endpoint auth comes only from the `@http_*` arguments (`django_routes.py:197-198`).
 - The generator puts auth on the class for owned resources: `src/mattstack/commands/codegen/django_api.py:100-101,122` (`class_auth = ["auth=JWTAuth()"] if owned`).
 - So `context routes` reports `auth: False` for generated owned endpoints (`src/mattstack/commands/context_builders.py:266`).
-- `django_routes.py` is 367 lines; the limit is 400.
+- `django_routes.py` is 367 lines; the file-length gate allows 400, and S-CLI-03 also adds code to it. Budget: this spec grows `django_routes.py` by at most 16 lines (`wc -l` at most 383).
 
 ## Goal and non-goals
 

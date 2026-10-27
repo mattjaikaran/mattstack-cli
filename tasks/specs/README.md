@@ -25,7 +25,7 @@ Name each spec `S-<AREA>-<NN>-<slug>.md`. Start it with this header table:
 | Human needed | `none`, or the open decision |
 | Max files | At most 6 |
 | Max changed lines | At most 300, insertions plus deletions |
-| Verification commands | Commands from `Makefile` and `.github/workflows/ci.yml` |
+| Verification commands | Commands from `Makefile` and the quick gates of `scripts/gauntlet.py` |
 | Acceptance criteria | Criterion IDs, detailed in the acceptance table |
 
 Then add these sections: context and verified citations, goal and
@@ -38,7 +38,8 @@ conditions.
 - Change only the spec's Files owned. Do not edit `tasks/todo.md`,
   `tasks/completed.md` or `tasks/specs/`.
 - Use `uv` only. Add no dependency.
-- Run the spec's Verification commands. They mirror CI:
+- Run the spec's Verification commands. The repository has no hosted CI;
+  these are the quick gauntlet gates (`make gauntlet-quick`), one by one:
 
   ```bash
   uv sync --locked --extra dev
@@ -74,7 +75,7 @@ a claimed spec. The claim is the push that creates `agent/<Spec ID>`.
 |---|---|---|---|
 | [S-CLI-01](S-CLI-01-ci-pgvector-image.md) pgvector image in generated CI | READY | none | none |
 | [S-CLI-02](S-CLI-02-controller-class-auth.md) class-level controller auth | READY | none | S-CLI-03 |
-| [S-CLI-03](S-CLI-03-matt-jwt-required-auth.md) `@jwt_required` endpoint auth | READY | none | S-CLI-02 |
+| [S-CLI-03](S-CLI-03-matt-jwt-required-auth.md) `@jwt_required` endpoint auth | READY | S-CLI-02 | S-CLI-02 |
 | [S-CLI-04](S-CLI-04-hooks-hookspath.md) `core.hooksPath` in hooks | READY | none | none |
 | [S-CLI-05](S-CLI-05-context-watch-clear.md) clear screen in context watch | READY | none | none |
 | [S-CLI-06](S-CLI-06-generate-model-tests.md) generate model tests | READY | none | none |
