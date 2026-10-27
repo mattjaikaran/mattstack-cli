@@ -26,7 +26,7 @@ Verified on `9bf4cfe` (2026-10-26).
 
 - `src/mattstack/templates/stack_facts.py:74` sets `_DJANGO_ENV` to `DATABASE_URL`, `SECRET_KEY`, `REDIS_URL` (if Redis); it is used for Django (`stack_facts.py:106`) and FastAPI (`stack_facts.py:150`).
 - Django settings read `DB_*` and ignore `DATABASE_URL` (`stack_facts.py:69-70`, `src/mattstack/templates/root_env.py:99-100`, `src/mattstack/templates/deploy_runtime.py:41`).
-- FastAPI requires `JWT_SECRET_KEY` (`src/mattstack/templates/deploy_runtime.py:310-314`, `src/mattstack/templates/root_env.py:119`).
+- FastAPI requires `JWT_SECRET_KEY` (`src/mattstack/templates/deploy_runtime.py:310-314`; written to `.env` at `src/mattstack/templates/root_env.py:117` for development and `:278` for production).
 - Rendered at `src/mattstack/templates/root_agents_md.py:211`.
 
 ## Goal and non-goals
