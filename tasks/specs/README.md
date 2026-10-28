@@ -82,3 +82,6 @@ a claimed spec. The claim is the push that creates `agent/<Spec ID>`.
 | [S-CLI-07](S-CLI-07-generate-crud-contract-tests.md) generate crud tests | READY | none | none |
 | [S-CLI-08](S-CLI-08-agents-md-env-vars.md) AGENTS.md env vars | READY | none | none |
 | [S-CLI-09](S-CLI-09-gauntlet-install-wheel.md) wheel smoke test gate | READY | none | none |
+| [S-CLI-10](S-CLI-10-gauntlet-install-typo-check.md) gate 10 mistyped-group check | READY | S-CLI-09 | S-CLI-09 |
+| [S-CLI-11](S-CLI-11-lazy-group-without-click.md) LazyTyperGroup without click import | READY | none | none |
+| [S-CLI-12](S-CLI-12-release-steps-doc.md) manual release steps doc | READY | none | none |
