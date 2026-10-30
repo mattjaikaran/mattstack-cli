@@ -144,17 +144,19 @@ class Controller:
     file: Path
     line: int
     endpoints: list[ControllerEndpoint] = field(default_factory=list)
+    auth: bool = False
 
 
-# @api_controller("/products", tags=["Products"])
+# @api_controller("/products", tags=["Products"], auth=JWTAuth())
 API_CONTROLLER_RE = re.compile(
     r"@api_controller\s*\(\s*['\"]([^'\"]*)['\"]"
-    r"(?:[^)]*tags\s*=\s*\[.*?['\"]([^'\"]*)['\"])?",
+    r"(?:[^)]*tags\s*=\s*\[.*?['\"]([^'\"]*)['\"])?"
+    r"(?:[^)]*auth\s*=\s*(\w+))?",
     re.DOTALL,
 )
 
-# class ProductController(BaseController):
-CONTROLLER_CLASS_RE = re.compile(r"^class\s+(\w+Controller)\s*\(", re.MULTILINE)
+# class ProductController(BaseController):  or  class ProductController:
+CONTROLLER_CLASS_RE = re.compile(r"^class\s+(\w+Controller)\s*(?:\(|:)", re.MULTILINE)
 
 # @http_get("/", response=list[ProductSchema], auth=JWTAuth())
 HTTP_METHOD_FULL_RE = re.compile(
@@ -175,6 +177,8 @@ def parse_controller_file(path: Path) -> list[Controller]:
     for dec_match in API_CONTROLLER_RE.finditer(text):
         prefix = dec_match.group(1)
         tag = dec_match.group(2) if dec_match.lastindex and dec_match.lastindex >= 2 else None
+        class_auth_val = dec_match.group(3)
+        class_auth = bool(class_auth_val and class_auth_val.lower() not in ("none", "false"))
 
         # Find the class definition after this decorator
         class_match = CONTROLLER_CLASS_RE.search(text, dec_match.end())
@@ -195,7 +199,11 @@ def parse_controller_file(path: Path) -> list[Controller]:
             ep_path = ep_match.group(2)
             response_raw = ep_match.group(3).strip() if ep_match.group(3) else None
             auth_val = ep_match.group(4) if ep_match.lastindex and ep_match.lastindex >= 4 else None
-            has_auth = bool(auth_val and auth_val.lower() not in ("none", "false"))
+            has_auth = (
+                bool(auth_val and auth_val.lower() not in ("none", "false"))
+                if auth_val is not None
+                else class_auth
+            )
 
             # Find handler name (next def after this decorator — may be indented)
             remaining = class_body[ep_match.end() :]
@@ -221,6 +229,7 @@ def parse_controller_file(path: Path) -> list[Controller]:
                 file=path,
                 line=class_line,
                 endpoints=endpoints,
+                auth=class_auth,
             )
         )
 
