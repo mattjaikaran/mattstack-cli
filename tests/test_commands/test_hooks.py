@@ -20,6 +20,9 @@ from mattstack.templates.pre_commit_config import generate_pre_commit_config
 _FAKE_PRE_COMMIT = f"""#!{sys.executable}
 import os, sys
 from pathlib import Path
+marker = os.environ.get("FAKE_PRE_COMMIT_MARKER")
+if marker:
+    Path(marker).write_text("ran")
 hook_type = sys.argv[sys.argv.index("--hook-type") + 1]
 if hook_type not in os.environ.get("FAKE_PRE_COMMIT_SKIP", "").split(","):
     Path(".git/hooks", hook_type).write_text("#!/bin/sh\\nexec pre-commit hook-impl\\n")
@@ -37,6 +40,7 @@ def _git_project(path: Path, monkeypatch: pytest.MonkeyPatch, tools: tuple[str, 
     # A user-wide core.hooksPath would move the hooks out of .git/hooks.
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "0")
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
     project = path / "project"
     project.mkdir()
@@ -125,6 +129,21 @@ class TestHooksInstall:
         assert "uv tool install rust-just" in result.output
         assert not (project / ".git/hooks/pre-commit").exists()
 
+    def test_core_hooks_path_refuses_before_pre_commit(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        project = _git_project(tmp_path, monkeypatch, ())
+        (project / ".pre-commit-config.yaml").write_text("repos: []")
+        subprocess.run(["git", "config", "core.hooksPath", ".githooks"], cwd=project, check=True)
+        marker = tmp_path / "pre-commit-ran"
+        monkeypatch.setenv("FAKE_PRE_COMMIT_MARKER", str(marker))
+        result = CliRunner().invoke(hooks_app, ["install", "--path", str(project)])
+        assert result.exit_code == 1, result.output
+        assert "core.hooksPath" in result.output
+        assert ".githooks" in result.output
+        assert "git config --unset core.hooksPath" in result.output
+        assert not marker.exists()
+
 
 # ---------------------------------------------------------------------------
 # hooks status
@@ -136,50 +155,70 @@ class TestHooksStatus:
         runner = CliRunner()
         result = runner.invoke(hooks_app, ["status", "--path", str(tmp_path)])
         assert result.exit_code == 1
-        assert "No .git/hooks directory" in result.output
+        assert "No git hooks directory" in result.output
 
-    def test_no_hooks_installed_shows_not_installed(self, tmp_path: Path) -> None:
-        hooks_dir = tmp_path / ".git" / "hooks"
-        hooks_dir.mkdir(parents=True)
+    def test_no_hooks_installed_shows_not_installed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        project = _git_project(tmp_path, monkeypatch, ())
         runner = CliRunner()
-        result = runner.invoke(hooks_app, ["status", "--path", str(tmp_path)])
+        result = runner.invoke(hooks_app, ["status", "--path", str(project)])
         assert result.exit_code == 0
         assert "not installed" in result.output
 
-    def test_installed_hook_shows_installed(self, tmp_path: Path) -> None:
-        hooks_dir = tmp_path / ".git" / "hooks"
-        hooks_dir.mkdir(parents=True)
-        (hooks_dir / "pre-commit").write_text("#!/bin/sh\npre-commit run\n")
+    def test_installed_hook_shows_installed(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        project = _git_project(tmp_path, monkeypatch, ())
+        (project / ".git/hooks/pre-commit").write_text("#!/bin/sh\npre-commit run\n")
         runner = CliRunner()
-        result = runner.invoke(hooks_app, ["status", "--path", str(tmp_path)])
+        result = runner.invoke(hooks_app, ["status", "--path", str(project)])
         assert result.exit_code == 0
         assert "installed" in result.output
 
-    def test_no_config_shows_info_message(self, tmp_path: Path) -> None:
-        hooks_dir = tmp_path / ".git" / "hooks"
-        hooks_dir.mkdir(parents=True)
+    def test_no_config_shows_info_message(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        project = _git_project(tmp_path, monkeypatch, ())
         runner = CliRunner()
-        result = runner.invoke(hooks_app, ["status", "--path", str(tmp_path)])
+        result = runner.invoke(hooks_app, ["status", "--path", str(project)])
         assert result.exit_code == 0
         assert "No .pre-commit-config.yaml found" in result.output
 
-    def test_config_present_but_no_hooks_warns(self, tmp_path: Path) -> None:
-        hooks_dir = tmp_path / ".git" / "hooks"
-        hooks_dir.mkdir(parents=True)
-        (tmp_path / ".pre-commit-config.yaml").write_text("repos: []")
+    def test_config_present_but_no_hooks_warns(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        project = _git_project(tmp_path, monkeypatch, ())
+        (project / ".pre-commit-config.yaml").write_text("repos: []")
         runner = CliRunner()
-        result = runner.invoke(hooks_app, ["status", "--path", str(tmp_path)])
+        result = runner.invoke(hooks_app, ["status", "--path", str(project)])
         assert result.exit_code == 0
         assert "hooks install" in result.output
 
-    def test_pre_commit_source_detected(self, tmp_path: Path) -> None:
-        hooks_dir = tmp_path / ".git" / "hooks"
-        hooks_dir.mkdir(parents=True)
-        (hooks_dir / "pre-commit").write_text("#!/bin/sh\npre-commit run --hook-stage pre-commit\n")
+    def test_pre_commit_source_detected(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        project = _git_project(tmp_path, monkeypatch, ())
+        (project / ".git/hooks/pre-commit").write_text(
+            "#!/bin/sh\npre-commit run --hook-stage pre-commit\n"
+        )
         runner = CliRunner()
-        result = runner.invoke(hooks_app, ["status", "--path", str(tmp_path)])
+        result = runner.invoke(hooks_app, ["status", "--path", str(project)])
         assert result.exit_code == 0
         assert "pre-commit" in result.output
+
+    def test_core_hooks_path_status_reads_configured_dir(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        project = _git_project(tmp_path, monkeypatch, ())
+        subprocess.run(["git", "config", "core.hooksPath", ".githooks"], cwd=project, check=True)
+        hooks_dir = project / ".githooks"
+        hooks_dir.mkdir()
+        (hooks_dir / "pre-commit").write_text("#!/bin/sh\npre-commit run\n")
+        runner = CliRunner()
+        result = runner.invoke(hooks_app, ["status", "--path", str(project)])
+        assert result.exit_code == 0, result.output
+        assert "installed" in result.output
 
 
 # ---------------------------------------------------------------------------
