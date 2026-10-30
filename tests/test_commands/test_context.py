@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import io
 import json
+import sys
 from pathlib import Path
 
 import pytest
 import typer
 
+from mattstack.commands import context as context_module
 from mattstack.commands.context import run_context
 from mattstack.commands.context_builders import (
     build_stack_context,
@@ -244,3 +247,66 @@ class TestMachineReadableStdout:
         field = root.find("types/interface/field")
         assert field is not None
         assert field.get("type") == "Record<string, Item[]>"
+
+
+CLEAR_SCREEN = "\033[2J\033[H"
+
+
+class _FakeStdout(io.StringIO):
+    """Capture stdout and report a fixed TTY status."""
+
+    def __init__(self, tty: bool) -> None:
+        super().__init__()
+        self._tty = tty
+
+    def isatty(self) -> bool:
+        return self._tty
+
+
+def _drive_watch(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    tty: bool,
+    output: str | None,
+) -> tuple[str, list[str]]:
+    """Run one re-emission cycle; return captured stdout and the buffer at each emit."""
+    fake = _FakeStdout(tty)
+    monkeypatch.setattr(sys, "stdout", fake)
+    snapshots = iter([{"a.py": 1.0}, {"a.py": 2.0}])
+    monkeypatch.setattr(context_module, "_watch_snapshot", lambda _path: next(snapshots))
+    sleeps = 0
+
+    def _sleep(_seconds: float) -> None:
+        nonlocal sleeps
+        sleeps += 1
+        if sleeps > 1:
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(context_module.time, "sleep", _sleep)
+    emitted: list[str] = []
+    monkeypatch.setattr(
+        context_module, "_emit_context", lambda *_args, **_kwargs: emitted.append(fake.getvalue())
+    )
+    context_module._watch_loop(Path("."), lambda _path: {}, "markdown", None, output)
+    return fake.getvalue(), emitted
+
+
+class TestWatchClearScreen:
+    def test_clears_before_reemission_on_tty(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        stdout, emitted = _drive_watch(monkeypatch, tty=True, output=None)
+        assert len(emitted) == 2
+        assert CLEAR_SCREEN not in emitted[0]
+        assert CLEAR_SCREEN in emitted[1]
+        assert stdout.count(CLEAR_SCREEN) == 1
+
+    def test_no_clear_when_stdout_is_not_a_tty(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        stdout, emitted = _drive_watch(monkeypatch, tty=False, output=None)
+        assert len(emitted) == 2
+        assert CLEAR_SCREEN not in stdout
+
+    def test_no_clear_when_writing_to_file(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        stdout, emitted = _drive_watch(monkeypatch, tty=True, output=str(tmp_path / "ctx.md"))
+        assert len(emitted) == 2
+        assert CLEAR_SCREEN not in stdout
