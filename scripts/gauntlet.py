@@ -11,7 +11,7 @@ Gates:
     7. TEST — pytest with coverage
     8. MUTATION — mutmut (skipped in quick mode)
     9. AUDIT — pip-audit (skipped in quick mode)
-   10. INSTALL — pip install -e . check
+   10. INSTALL — wheel built from the sdist, installed into a fresh venv, help runs
 
 Usage:
     python scripts/gauntlet.py          # full gauntlet
@@ -28,6 +28,7 @@ import signal
 import subprocess
 import sys
 import sysconfig
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -190,12 +191,48 @@ def _gate_audit() -> bool:
 
 
 def _gate_install() -> bool:
-    """Gate 10: pip install -e . check."""
+    """Gate 10: build a wheel from the sdist and smoke-test it in a fresh venv."""
     bin_ = shutil.which("uv") or "uv"
-    code, out = _run([bin_, "pip", "install", "-e", "."])
-    if code != 0:
-        print(out)
-    return code == 0
+    timeout = 600
+    with tempfile.TemporaryDirectory(prefix="mattstack-install-") as tmp:
+        work = Path(tmp)
+        code, out = _run([bin_, "build", "--sdist", "-o", str(work)], timeout=timeout)
+        if code != 0:
+            print(out)
+            return False
+        sdists = sorted(work.glob("*.tar.gz"))
+        if len(sdists) != 1:
+            print(f"Expected one sdist in {work}, found {[path.name for path in sdists]}")
+            return False
+        code, out = _run(
+            [bin_, "build", "--wheel", "-o", str(work), str(sdists[0])], timeout=timeout
+        )
+        if code != 0:
+            print(out)
+            return False
+        wheels = sorted(work.glob("*.whl"))
+        if len(wheels) != 1:
+            print(f"Expected one wheel in {work}, found {[path.name for path in wheels]}")
+            return False
+        venv = work / "venv"
+        code, out = _run([bin_, "venv", str(venv)], timeout=timeout)
+        if code != 0:
+            print(out)
+            return False
+        code, out = _run(
+            [bin_, "pip", "install", "--python", str(venv / "bin" / "python"), str(wheels[0])],
+            timeout=timeout,
+        )
+        if code != 0:
+            print(out)
+            return False
+        executable = str(venv / "bin" / "mattstack")
+        for command in ([executable, "--help"], [executable, "sync", "--help"]):
+            code, out = _run(command, timeout=timeout)
+            if code != 0:
+                print(out)
+                return False
+        return True
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +249,7 @@ GATES: list[Gate] = [
     Gate("test", "pytest + coverage", quick=True, run=_gate_test),
     Gate("mutation", "mutmut", quick=False, run=_gate_mutation),
     Gate("audit", "pip-audit", quick=False, run=_gate_audit),
-    Gate("install", "pip install check", quick=True, run=_gate_install),
+    Gate("install", "wheel build + help smoke test", quick=True, run=_gate_install),
 ]
 
 
