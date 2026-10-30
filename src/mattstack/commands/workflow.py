@@ -90,7 +90,7 @@ def _generate_github_actions(
         backend = backend_facts(config.backend_framework)
         if backend.is_python:
             jobs.append(_backend_lint_job(backend, backend_dir, tools))
-            jobs.append(_backend_test_job(backend, backend_dir, tools))
+            jobs.append(_backend_test_job(backend, backend_dir, tools, ai=config.use_ai))
         else:
             js = js_ci(layout.backend, layout.root)
             jobs.append(_js_job("backend-lint", js.run(backend.lint), js, backend_dir))
@@ -145,12 +145,12 @@ def _backend_lint_job(backend: BackendFacts, directory: str, tools: CiTools) -> 
       - run: uv run ruff format --check ."""
 
 
-def _backend_test_job(backend: BackendFacts, directory: str, tools: CiTools) -> str:
+def _backend_test_job(backend: BackendFacts, directory: str, tools: CiTools, ai: bool) -> str:
     return f"""  backend-test:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:{tools.postgres}
+        image: {tools.postgres_image(ai)}
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -220,7 +220,7 @@ gauntlet:
         stages.extend(["lint", "test"])
         backend = backend_facts(config.backend_framework)
         if backend.is_python:
-            jobs.extend(_gitlab_python_jobs(backend, backend_dir, tools))
+            jobs.extend(_gitlab_python_jobs(backend, backend_dir, tools, ai=config.use_ai))
         else:
             js = js_ci(layout.backend, layout.root)
             for name, stage, command in (
@@ -255,12 +255,17 @@ gauntlet:
 """
 
 
-def _gitlab_python_jobs(backend: BackendFacts, directory: str, tools: CiTools) -> list[str]:
+def _gitlab_python_jobs(
+    backend: BackendFacts, directory: str, tools: CiTools, ai: bool
+) -> list[str]:
     sync = f"uv sync --frozen --python {tools.python}{backend.ci_sync_args}"
     head = f"""
   image: {tools.uv_image}
   before_script:
     - {yaml_str(in_dir(directory, sync))}"""
+    postgres = tools.postgres_image(ai)
+    if ai:
+        postgres = f"name: {postgres}\n      alias: postgres"
     lint = f"""
 backend-lint:
   stage: lint{head}
@@ -271,7 +276,7 @@ backend-lint:
 backend-test:
   stage: test{head}
   services:
-    - postgres:{tools.postgres}
+    - {postgres}
     - name: valkey/valkey:{tools.valkey}
       alias: redis
   variables:
