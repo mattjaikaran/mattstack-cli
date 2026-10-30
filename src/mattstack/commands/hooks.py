@@ -108,6 +108,18 @@ def git_hooks_dir(project: Path) -> Path | None:
     return (project / result.stdout.strip()).resolve()
 
 
+def configured_hooks_path(project: Path) -> str | None:
+    """Return core.hooksPath when git config sets it, else None."""
+    result = subprocess.run(  # nosec B603, B607 # Argv; trust project tools and PATH.
+        ["git", "config", "--get", "core.hooksPath"],
+        cwd=project,
+        capture_output=True,
+        text=True,
+    )
+    value = result.stdout.strip()
+    return value if result.returncode == 0 and value else None
+
+
 @hooks_app.command("install")
 def install(
     path: Annotated[
@@ -145,6 +157,12 @@ def install(
             print_error(f"{tool} is not on PATH; a hook entry in {config_file} runs it")
             print_info(f"Install it: {HOOK_PREREQUISITES[tool]}")
         print_info(f"Then rerun: mattstack hooks install --path {project}")
+        raise typer.Exit(code=1)
+
+    hooks_path = configured_hooks_path(project)
+    if hooks_path is not None:
+        print_error(f"core.hooksPath is set to {hooks_path}; pre-commit refuses to install hooks")
+        print_info("Unset it, then rerun: git config --unset core.hooksPath")
         raise typer.Exit(code=1)
 
     hook_types = required_hook_types(config)
@@ -200,21 +218,13 @@ def status(
     console.print("[bold cyan]mattstack hooks status[/bold cyan]")
     console.print()
 
-    hooks_dir = project / ".git" / "hooks"
-    if not hooks_dir.is_dir():
-        print_error(f"No .git/hooks directory found in {project}")
-        print_info("Is this a git repository?")
+    hooks_dir = git_hooks_dir(project)
+    if hooks_dir is None or not hooks_dir.is_dir():
+        print_error(f"No git hooks directory found in {project}")
+        print_info(f"Check with: git -C {project} rev-parse --git-path hooks")
         raise typer.Exit(code=1)
 
-    hook_types = [
-        "pre-commit",
-        "commit-msg",
-        "pre-push",
-        "pre-merge-commit",
-        "prepare-commit-msg",
-        "post-commit",
-        "post-merge",
-    ]
+    hook_types = _GIT_HOOK_TYPES
 
     table = create_table("Git Hooks", ["Hook", "Status", "Source"])
     installed_count = 0
