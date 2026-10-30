@@ -14,7 +14,13 @@ from mattstack.commands.workflow import (
     _generate_gitlab_ci,
     run_generate_workflow,
 )
-from mattstack.config import BackendFramework, FrontendFramework, ProjectConfig, ProjectType
+from mattstack.config import (
+    AiStore,
+    BackendFramework,
+    FrontendFramework,
+    ProjectConfig,
+    ProjectType,
+)
 
 
 def _config(
@@ -22,6 +28,7 @@ def _config(
     project_type: ProjectType = ProjectType.FULLSTACK,
     backend: BackendFramework = BackendFramework.DJANGO_NINJA,
     frontend: FrontendFramework = FrontendFramework.REACT_VITE,
+    ai_store: AiStore = AiStore.NONE,
 ) -> ProjectConfig:
     return ProjectConfig(
         name="app",
@@ -29,6 +36,7 @@ def _config(
         project_type=project_type,
         backend_framework=backend,
         frontend_framework=frontend,
+        ai_store=ai_store,
         init_git=False,
     )
 
@@ -84,6 +92,18 @@ class TestGenerateGithubActions:
         document = yaml.safe_load(content)
         assert document["concurrency"]["cancel-in-progress"] is True
         assert "gauntlet" in document["jobs"]
+
+    @pytest.mark.parametrize(
+        ("ai_store", "image"),
+        [(AiStore.NONE, "postgres:17"), (AiStore.PGVECTOR, "pgvector/pgvector:pg17")],
+    )
+    def test_backend_test_postgres_service_matches_compose_image(
+        self, tmp_path: Path, ai_store: AiStore, image: str
+    ) -> None:
+        """AI projects select pgvector in Compose, so CI must run the same image."""
+        config = _config(tmp_path, ProjectType.BACKEND_ONLY, ai_store=ai_store)
+        jobs = yaml.safe_load(_generate_github_actions(config, with_gauntlet=False))["jobs"]
+        assert jobs["backend-test"]["services"]["postgres"]["image"] == image
 
 
 class TestJavaScriptPackageManager:
@@ -163,6 +183,21 @@ class TestGenerateGitlabCi:
             "cd backend && bun install --frozen-lockfile"
         ]
         assert document["backend-test"]["script"] == ["bun run test"]
+
+    @pytest.mark.parametrize(
+        ("ai_store", "service"),
+        [
+            (AiStore.NONE, "postgres:17"),
+            (AiStore.PGVECTOR, {"name": "pgvector/pgvector:pg17", "alias": "postgres"}),
+        ],
+    )
+    def test_backend_test_postgres_service_matches_compose_image(
+        self, tmp_path: Path, ai_store: AiStore, service: object
+    ) -> None:
+        """The AI image keeps the ``postgres`` alias, so DB_HOST still resolves."""
+        config = _config(tmp_path, ProjectType.BACKEND_ONLY, ai_store=ai_store)
+        document = yaml.safe_load(_generate_gitlab_ci(config, with_gauntlet=False))
+        assert document["backend-test"]["services"][0] == service
 
 
 # ---------------------------------------------------------------------------
