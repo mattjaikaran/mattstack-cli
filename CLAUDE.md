@@ -64,7 +64,7 @@ See [docs/architecture.md](docs/architecture.md) for file map, patterns, and ext
 | 7 | TEST | pytest + coverage | yes | `make test` |
 | 8 | MUTATION | mutmut | no | — |
 | 9 | AUDIT | pip-audit | no | — |
-| 10 | INSTALL | pip install -e . | yes | — |
+| 10 | INSTALL | wheel build from sdist + venv help smoke test | yes | — |
 
 ```bash
 make gauntlet-quick      # quick gates (skip mutation + audit)
