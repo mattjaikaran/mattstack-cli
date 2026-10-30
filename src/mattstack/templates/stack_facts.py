@@ -71,7 +71,11 @@ class BackendFacts:
     db_env_parts: bool = False
 
 
-_DJANGO_ENV = "`DATABASE_URL`, `SECRET_KEY`, `REDIS_URL` (if Redis)"
+_DJANGO_ENV = (
+    "`DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, "
+    "`SECRET_KEY`, `REDIS_URL` (if Redis)"
+)
+_FASTAPI_ENV = "`DATABASE_URL`, `SECRET_KEY`, `JWT_SECRET_KEY`, `REDIS_URL` (if Redis)"
 
 
 class PythonCommands(TypedDict):
@@ -147,7 +151,7 @@ def backend_facts(framework: BackendFramework, tools: Toolchain | None = None) -
             dev=f"cd backend && {tools.python_run('uvicorn app.main:app --reload --port 8000')}",
             details=("Testing: pytest", "Linting: ruff", "Migrations: Alembic"),
             docs_path="/docs",
-            env_vars=_DJANGO_ENV,
+            env_vars=_FASTAPI_ENV,
             background="Celery + Redis",
             ci_sync_args=" --extra dev",
             database_scheme="postgresql+asyncpg",

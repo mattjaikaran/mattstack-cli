@@ -1,6 +1,8 @@
 """Tests for template generation."""
 
-from mattstack.config import ProjectConfig, TaskBackend
+from pathlib import Path
+
+from mattstack.config import BackendFramework, ProjectConfig, ProjectType, TaskBackend
 from mattstack.templates.docker_compose import generate_docker_compose
 from mattstack.templates.docker_compose_override import generate_docker_compose_override
 from mattstack.templates.docker_compose_prod import generate_docker_compose_prod
@@ -138,3 +140,33 @@ def test_docker_compose_override_frontend(frontend_only_config: ProjectConfig):
     content = generate_docker_compose_override(frontend_only_config)
     assert "frontend-dev" in content
     assert "api-dev" not in content
+
+
+# --- Backend env vars in AGENTS.md ---
+
+
+def _root_env_line(content: str) -> str:
+    return next(line for line in content.splitlines() if line.startswith("- Root `.env`: "))
+
+
+def test_agents_md_django_lists_db_env_vars(starter_fullstack_config: ProjectConfig):
+    """Django settings read DB_*; DATABASE_URL alone leaves NAME empty."""
+    line = _root_env_line(generate_agents_md(starter_fullstack_config))
+    assert "`DB_NAME`" in line
+    assert "`DB_HOST`" in line
+    assert "DATABASE_URL" not in line
+
+
+def test_agents_md_fastapi_lists_jwt_secret_key(tmp_path: Path):
+    """FastAPI settings require JWT_SECRET_KEY; Django has no such variable."""
+    config = ProjectConfig(
+        name="test-api",
+        path=tmp_path / "test-api",
+        project_type=ProjectType.BACKEND_ONLY,
+        backend_framework=BackendFramework.FASTAPI,
+        task_backend=TaskBackend.NONE,
+        use_redis=False,
+    )
+    line = _root_env_line(generate_agents_md(config))
+    assert "`JWT_SECRET_KEY`" in line
+    assert "`DATABASE_URL`" in line
