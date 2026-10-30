@@ -43,6 +43,12 @@ class CiTools:
         """
         return f"ghcr.io/astral-sh/uv:{self.uv}-python{self.python}-trixie-slim"
 
+    def postgres_image(self, ai: bool) -> str:
+        """Return the Postgres service image; the AI layer needs pgvector."""
+        if ai:
+            return f"pgvector/pgvector:pg{self.postgres}"
+        return f"postgres:{self.postgres}"
+
 
 def ci_tools(root: Path) -> CiTools:
     """Read pins from the components and generated root files, else the fallbacks."""
