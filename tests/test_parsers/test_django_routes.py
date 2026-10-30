@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from mattstack.parsers.django_routes import parse_routes_file
+from mattstack.parsers.django_routes import parse_controller_file, parse_routes_file
 
 
 def test_basic_routes(tmp_path: Path) -> None:
@@ -91,3 +91,43 @@ def test_empty_file(tmp_path: Path) -> None:
     f.write_text("# no routes\n")
     routes = parse_routes_file(f)
     assert len(routes) == 0
+
+
+def test_controller_class_auth_applies_to_endpoints(tmp_path: Path) -> None:
+    f = tmp_path / "controllers.py"
+    f.write_text(
+        "from ninja_extra import api_controller, http_get\n\n"
+        '@api_controller("/p", tags=["P"], auth=JWTAuth())\n'
+        "class PController:\n"
+        '    @http_get("/")\n'
+        "    def list_items(self):\n"
+        "        return []\n\n"
+        '    @http_get("/open", auth=None)\n'
+        "    def open_items(self):\n"
+        "        return []\n"
+    )
+    controllers = parse_controller_file(f)
+    assert len(controllers) == 1
+    controller = controllers[0]
+    assert controller.prefix == "/p"
+    assert controller.tag == "P"
+    assert controller.auth is True
+    endpoints = {ep.path: ep for ep in controller.endpoints}
+    assert endpoints["/"].auth is True
+    assert endpoints["/open"].auth is False
+
+
+def test_controller_without_class_auth_leaves_endpoints_public(tmp_path: Path) -> None:
+    f = tmp_path / "controllers.py"
+    f.write_text(
+        "from ninja_extra import api_controller, http_get\n\n"
+        '@api_controller("/p", tags=["P"])\n'
+        "class PController(BaseController):\n"
+        '    @http_get("/")\n'
+        "    def list_items(self):\n"
+        "        return []\n"
+    )
+    controllers = parse_controller_file(f)
+    assert len(controllers) == 1
+    assert controllers[0].auth is False
+    assert controllers[0].endpoints[0].auth is False
