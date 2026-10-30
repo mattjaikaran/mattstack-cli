@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -93,6 +94,12 @@ def _watch_loop(
         err_console.print(f"\n[dim]── {stamp} ──[/dim]")
         _emit_context(path, builder, fmt, output, max_tokens)
 
+    def _clear() -> None:
+        """Clear the terminal, but only when context goes to an interactive stdout."""
+        if output is None and sys.stdout.isatty():
+            sys.stdout.write("\033[2J\033[H")
+            sys.stdout.flush()
+
     _emit()
     snap = _watch_snapshot(path)
     err_console.print("[dim]Watching for changes... (Ctrl-C to stop)[/dim]")
@@ -102,6 +109,7 @@ def _watch_loop(
             new_snap = _watch_snapshot(path)
             if new_snap != snap:
                 snap = new_snap
+                _clear()
                 _emit()
     except KeyboardInterrupt:
         pass
