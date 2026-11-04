@@ -24,7 +24,7 @@
 
 Verified on `9337e65` (2026-10-28). Installed typer is 0.24.1 (`uv.lock:702-703`); `pyproject.toml:27` caps `typer<0.26`.
 
-- `src/mattstack/cli.py:14` has `import click`. It is used for `click.Context` (lines 71, 74, 86, 99), `click.Command` (74, 87, 88), `click.Group(...)` (79), `click.UsageError` (90, 97) and `click.HelpFormatter` (99).
+- `src/mattstack/cli.py:14` has `import click`. It is used for `click.Context` (lines 71, 74, 86, 99), `click.Command` (74, 87), `click.Group(...)` (79), `click.UsageError` (90, 97) and `click.HelpFormatter` (99).
 - `typer.Context` and `typer.core.TyperCommand` / `TyperGroup` are public and importable on 0.24.1 (`uv run python -c "import typer; from typer.core import TyperCommand, TyperGroup; typer.Context"`). typer 0.27.3 exports the same names (checked in a temporary venv) and vendors click as the private `typer._click`; do not import that.
 - `TyperGroup.resolve_command` suggests only loaded commands, so `resolve_command` (`cli.py:85-97`) catches `UsageError` and re-raises it with lazy groups included. `mattstack sync2` prints `No such command 'sync2'. Did you mean 'sync'?` today.
 - `tests/test_commands/test_cli.py` uses `runner = CliRunner()` (line 13) and `app` (line 11); `test_audit_did_you_mean` (line 46) is the style to copy.
