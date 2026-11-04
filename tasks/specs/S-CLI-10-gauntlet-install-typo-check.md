@@ -26,7 +26,7 @@ Verified on `9337e65` (2026-10-28).
 
 - `tasks/todo.md:11-15` asks gate 10 to run `mattstack --help`, `mattstack sync --help` and a mistyped group that must print "Did you mean". S-CLI-09 adds the first two runs; it does not add the third.
 - `scripts/gauntlet.py:192-198` (`_gate_install`) is rewritten by S-CLI-09. Read the post-S-CLI-09 version, with its venv install and its `_run` calls.
-- `_run(cmd, cwd, timeout)` returns `(exit_code, combined_output)` (`scripts/gauntlet.py:53`).
+- `_run(cmd, cwd, timeout)` returns `(exit_code, combined_output)` (`scripts/gauntlet.py:54`).
 - `mattstack sync2` exits non-zero and prints `No such command 'sync2'. Did you mean 'sync'?` (observed with `uv run mattstack sync2` on `9337e65`). `sync` is a lazy group (`src/mattstack/cli.py:43-47`), so the suggestion proves lazy groups are listed in the installed wheel.
 - `tests/test_gauntlet_script.py` is created by S-CLI-09 (its loader and recorded-argv fake `_run`). Extend it; do not duplicate the loader.
 
