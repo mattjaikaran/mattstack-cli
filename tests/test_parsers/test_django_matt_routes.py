@@ -82,6 +82,42 @@ def test_parse_controller_auth_detection(tmp_path: Path) -> None:
     assert ep_map["list_products"].auth is False
 
 
+JWT_DECORATOR_CONTROLLER = """\
+from django_matt import APIController, get, post
+from django_matt.auth import jwt_required
+
+
+class OrderController(APIController):
+    prefix = "/orders"
+    tags = ["Orders"]
+
+    @get("/")
+    async def list_orders(self, request):
+        return []
+
+    @post("/")
+    @jwt_required
+    async def create_order(self, request, payload):
+        return {}
+"""
+
+
+def test_parse_controller_jwt_required_decorator_sets_auth(tmp_path: Path) -> None:
+    f = tmp_path / "controllers.py"
+    f.write_text(JWT_DECORATOR_CONTROLLER)
+    ctrl = parse_django_matt_controller_file(f)[0]
+    ep_map = {ep.handler: ep for ep in ctrl.endpoints}
+    assert ep_map["create_order"].auth is True
+
+
+def test_parse_controller_without_auth_decorators_stays_public(tmp_path: Path) -> None:
+    f = tmp_path / "controllers.py"
+    f.write_text(JWT_DECORATOR_CONTROLLER)
+    ctrl = parse_django_matt_controller_file(f)[0]
+    ep_map = {ep.handler: ep for ep in ctrl.endpoints}
+    assert ep_map["list_orders"].auth is False
+
+
 def test_parse_controller_handlers(tmp_path: Path) -> None:
     f = tmp_path / "controllers.py"
     f.write_text(SAMPLE_CONTROLLER)

@@ -81,6 +81,44 @@ def test_auth_endpoint_no_warning(tmp_path: Path) -> None:
     assert len(auth_findings) == 0
 
 
+def _matt_project(tmp_path: Path, controller: str) -> None:
+    backend = tmp_path / "backend"
+    (backend / "api").mkdir(parents=True)
+    (backend / "pyproject.toml").write_text(
+        '[project]\nname = "myapp"\ndependencies = ["django-matt>=0.9.0"]\n'
+    )
+    (backend / "api" / "orders.py").write_text(controller)
+
+
+def test_django_matt_jwt_required_write_route_has_no_auth_warning(tmp_path: Path) -> None:
+    _matt_project(
+        tmp_path,
+        "class OrderController(APIController):\n"
+        '    prefix = "/orders"\n\n'
+        '    @post("/")\n'
+        "    @jwt_required\n"
+        "    async def create_order(self, request, payload):\n"
+        "        return {}\n",
+    )
+    findings = EndpointAuditor(_make_config(tmp_path)).run()
+    auth_findings = [f for f in findings if "No auth on write endpoint" in f.message]
+    assert auth_findings == []
+
+
+def test_django_matt_unguarded_write_route_still_warns(tmp_path: Path) -> None:
+    _matt_project(
+        tmp_path,
+        "class OrderController(APIController):\n"
+        '    prefix = "/orders"\n\n'
+        '    @post("/")\n'
+        "    async def create_order(self, request, payload):\n"
+        "        return {}\n",
+    )
+    findings = EndpointAuditor(_make_config(tmp_path)).run()
+    auth_findings = [f for f in findings if "No auth on write endpoint" in f.message]
+    assert len(auth_findings) == 1
+
+
 def test_trailing_slash_warning(tmp_path: Path) -> None:
     (tmp_path / "api.py").write_text(
         "from ninja import Router\n"
