@@ -290,6 +290,10 @@ MATT_METHOD_RE = re.compile(
 
 _INDENTED_DEF_RE = re.compile(r"def\s+(\w+)\s*\(")
 
+# django-matt guards a route with a bare decorator below the method decorator:
+# @post("/") then @jwt_required
+JWT_REQUIRED_RE = re.compile(r"^\s*@jwt_required\b", re.MULTILINE)
+
 
 def parse_django_matt_controller_file(path: Path) -> list[DjangoMattController]:
     """Parse APIController subclasses and their @get/@post/... endpoints."""
@@ -324,6 +328,8 @@ def parse_django_matt_controller_file(path: Path) -> list[DjangoMattController]:
             remaining = class_body[ep_match.end() :]
             handler_match = _INDENTED_DEF_RE.search(remaining)
             handler = handler_match.group(1) if handler_match else "unknown"
+            decorators = remaining[: handler_match.start()] if handler_match else ""
+            has_auth = has_auth or JWT_REQUIRED_RE.search(decorators) is not None
 
             endpoints.append(
                 DjangoMattEndpoint(
