@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Generated development Compose now sets `ALLOWED_HOSTS` on `api-dev`, so the frontend proxy's `Host: api-dev:8000` no longer returns a Django 400.
+
 ## [0.9.1] - 2026-10-06
 
 ### Fixed

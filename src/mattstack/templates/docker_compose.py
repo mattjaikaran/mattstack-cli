@@ -77,7 +77,12 @@ def _api_dev_service(config: ProjectConfig) -> str:
         volumes = "      - ./backend:/app"
     else:
         command = f"{uv_run(config)} python manage.py runserver 0.0.0.0:{port}"
-        extra = {"CORS_ALLOWED_ORIGINS": cors}
+        extra = {
+            "CORS_ALLOWED_ORIGINS": cors,
+            # frontend-dev forwards the browser request with Host: api-dev:8000;
+            # Django answers 400 unless that host is allowed.
+            "ALLOWED_HOSTS": f"localhost,127.0.0.1,{DEV_API_SERVICE}",
+        }
         volumes = "      - ./backend:/app"
     return f"""\
   {DEV_API_SERVICE}:
