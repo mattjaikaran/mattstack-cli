@@ -467,7 +467,7 @@ schema.
 | Option | Description |
 |---|---|
 | `--schema` | OpenAPI JSON file, relative to the project. |
-| `-o, --output` | Output directory relative to the frontend. Default: `src/api/generated`. |
+| `-o, --output` | Output directory relative to the frontend. Default: src/api/generated in the frontend. |
 | `--force` | Replace edited or unmanaged output. |
 | `-p, --path` | Project root. Default: the current directory. |
 

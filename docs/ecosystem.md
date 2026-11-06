@@ -199,7 +199,7 @@ mattstack sync check             # Exit 1 when the committed client is stale
 
 For Django Ninja, `sync openapi` reads `backend/docs/openapi/openapi.json`. When
 the file is missing, the CLI prints an export command that loads the root
-`.env` and runs `uv run python manage.py export_openapi` from the backend
+`.env` and runs `manage.py export_openapi` with `uv` from the backend
 directory. Run it, then retry. An explicit `--schema` overrides discovery.
 Other backends use `openapi.json` at the project root unless you pass a path.
 The CLI does not export your schema or install Hey API implicitly.
