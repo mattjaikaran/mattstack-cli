@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -24,7 +25,14 @@ repos:
 
 
 @pytest.mark.skipif(shutil.which("git") is None, reason="needs git")
-def test_pre_push_hook_fails_until_installed(tmp_path: Path) -> None:
+def test_pre_push_hook_fails_until_installed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A user-wide core.hooksPath moves hooks out of .git/hooks, so the temp
+    # repo has to ignore the global config (including GIT_CONFIG_* overrides).
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    monkeypatch.setenv("GIT_CONFIG_COUNT", "0")
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     (tmp_path / ".pre-commit-config.yaml").write_text(PRE_PUSH_CONFIG, encoding="utf-8")
 
