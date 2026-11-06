@@ -241,6 +241,30 @@ def test_frontend_container_proxies_to_the_api_service(
     assert _published(compose, "frontend-dev") == [("3000", "3000")]
 
 
+@pytest.mark.parametrize(
+    "frontend",
+    [
+        FrontendFramework.REACT_VITE,
+        FrontendFramework.REACT_RSBUILD,
+        FrontendFramework.REACT_RSBUILD_KIBO,
+        FrontendFramework.NEXTJS,
+    ],
+)
+def test_dev_api_allows_the_proxied_host(tmp_path: Path, frontend: FrontendFramework) -> None:
+    """Django 400s on the proxy's Host unless api-dev is in ALLOWED_HOSTS."""
+    config = ProjectConfig(name="todoapp", path=tmp_path / "todoapp", frontend_framework=frontend)
+    compose = generate_docker_compose(config)
+    api = _service_env(compose, "api-dev")
+    # Compose loads the root .env, which already allows only the host names;
+    # the container value must still admit the proxy's Host.
+    value = _interpolate(api["ALLOWED_HOSTS"], {"ALLOWED_HOSTS": "localhost,127.0.0.1"})
+    hosts = value.split(",")
+    assert "api-dev" in hosts
+    # Host-run requests through the published port keep working.
+    assert "localhost" in hosts
+    assert "127.0.0.1" in hosts
+
+
 def _run_make(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["make", "-C", str(root), *args], capture_output=True, text=True, check=False

@@ -132,7 +132,10 @@ flowchart TD
   services.
 - `mattstack dev` runs in host mode by default: Compose starts only the
   database and Redis, and the app servers run on your machine. Container
-  mode runs the `api-dev` and `frontend-dev` Compose services instead.
+  mode runs the `api-dev` and `frontend-dev` Compose services instead. The
+  frontend dev server proxies the API prefix to `api-dev`, whose generated
+  environment allows that service host in `ALLOWED_HOSTS` (Django otherwise
+  answers 400).
 - The production Compose file and deployment recipes follow the same
   selection. See the [deployment guide](deployment-guide.md) for the
   production prerequisites and the verification boundary.
