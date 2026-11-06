@@ -82,7 +82,7 @@ def _gsd_structure(config: ProjectConfig, backend: BackendFacts) -> str:
         lines.append(f"- `frontend/` — {_frontend_label(config)} app")
     if config.has_backend:
         lines.append("- `docker-compose.yml` — Infrastructure")
-    lines.append("- `Makefile` — All commands")
+    lines.append("- `justfile` — All commands")
     lines.append("- `CLAUDE.md` — AI agent context")
     return "\n".join(lines)
 
@@ -90,9 +90,9 @@ def _gsd_structure(config: ProjectConfig, backend: BackendFacts) -> str:
 def _gsd_commands(config: ProjectConfig) -> str:
     lines = ["## Key Commands", "", "```bash"]
     if config.has_backend:
-        lines.append("make setup && make up && make backend-migrate")
+        lines.append("just setup && just up && just backend-migrate")
     else:
-        lines.append("make setup")
+        lines.append("just setup")
     lines.append("mattstack dev    # Start everything")
     lines.append("mattstack test   # Run all tests")
     lines.append("mattstack audit  # Static analysis")

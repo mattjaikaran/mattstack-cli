@@ -18,6 +18,7 @@ from mattstack.templates.stack_facts import Toolchain
 
 _GUIDANCE = ("AGENTS.md", "CLAUDE.md", ".omp/rules", ".context", ".claude/skills")
 _JUST_RECIPE = re.compile(r"^gauntlet-quick\s*:", re.M)
+_JUST_ROOT_RECIPE = re.compile(r"^backend-gauntlet-quick\s*:", re.M)
 
 
 def _read(path: Path) -> str:
@@ -36,10 +37,16 @@ def package_scripts(directory: Path) -> set[str]:
     return set(scripts) if isinstance(scripts, dict) else set()
 
 
-def backend_gate(directory: Path) -> list[str] | None:
-    """Return the backend's quick gate command, or None when it has none."""
+def backend_gate(directory: Path) -> tuple[list[str], str] | None:
+    """Return the backend quick gate and its cwd, or None when it has none.
+
+    A standalone boilerplate keeps its own justfile. A generated monorepo drops
+    that file, so the gate is the root justfile's ``backend-`` prefixed recipe.
+    """
     if _JUST_RECIPE.search(_read(directory / "justfile")):
-        return ["just", "gauntlet-quick"]
+        return ["just", "gauntlet-quick"], "backend"
+    if _JUST_ROOT_RECIPE.search(_read(directory.parent / "justfile")):
+        return ["just", "backend-gauntlet-quick"], "."
     return None
 
 
@@ -53,7 +60,11 @@ def frontend_gate_script(directory: Path, *, quick: bool) -> str | None:
 def _quality_gate(name: str, directory: Path, tools: Toolchain) -> str | None:
     if name == "backend":
         gate = backend_gate(directory)
-        return f"cd backend && {' '.join(gate)}" if gate else None
+        if not gate:
+            return None
+        command, cwd = gate
+        run = " ".join(command)
+        return f"cd {cwd} && {run}" if cwd != "." else run
     script = frontend_gate_script(directory, quick=True)
     return f"cd frontend && {tools.js_run(script)}" if script else None
 

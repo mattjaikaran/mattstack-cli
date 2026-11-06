@@ -21,7 +21,7 @@ from mattstack.runtime_profiles import task_backend_extra
 from mattstack.templates.docker_compose import generate_docker_compose
 from mattstack.templates.docker_compose_prod import generate_docker_compose_prod
 from mattstack.templates.root_env import generate_env_example
-from mattstack.templates.root_makefile import generate_makefile
+from mattstack.templates.root_justfile import generate_justfile
 
 WORKERS = {
     TaskBackend.CELERY: ({"celery-worker", "celery-beat"}, "celery", None),
@@ -74,12 +74,12 @@ def test_each_backend_gets_its_worker_profile_extra_and_env(
         assert not prod[name]["command"].startswith("uv ")
         assert prod[name]["environment"]["TASK_BACKEND"] == backend.value
 
-    makefile = generate_makefile(config)
-    assert f"up-{profile}:" in makefile
-    assert f"docker compose --profile {profile} up -d" in makefile
-    assert "backend-worker:" in makefile
+    content = generate_justfile(config)
+    assert f"up-{profile}:" in content
+    assert f"docker compose --profile {profile} up -d" in content
+    assert "backend-worker:" in content
     if extra:
-        assert f"uv sync --extra {extra}" in makefile
+        assert f"uv sync --extra {extra}" in content
     assert f"TASK_BACKEND={backend.value}" in generate_env_example(config)
 
 
@@ -92,36 +92,35 @@ def test_no_worker_mode_is_explicit_and_starts_no_consumer(tmp_path: Path) -> No
     assert not any(name.endswith(("-worker", "-beat")) for name in prod)
     # Without TASK_BACKEND, Ninja would default to Celery with no worker running.
     assert dev["api-dev"]["environment"]["TASK_BACKEND"] == "none"
-    makefile = generate_makefile(config)
-    assert "backend-worker:" not in makefile
-    assert not re.search(r"^up-(celery|huey|django-q|django-rq|dramatiq):", makefile, re.M)
+    content = generate_justfile(config)
+    assert "backend-worker:" not in content
+    assert not re.search(r"^up-(celery|huey|django-q|django-rq|dramatiq):", content, re.M)
 
 
-@pytest.mark.skipif(shutil.which("make") is None, reason="make is not installed")
+@pytest.mark.skipif(shutil.which("just") is None, reason="just is not installed")
 @pytest.mark.parametrize("backend", [*WORKERS, TaskBackend.NONE])
-def test_make_fails_for_task_processes_the_backend_does_not_run(
+def test_just_fails_for_task_processes_the_backend_does_not_run(
     tmp_path: Path, backend: TaskBackend
 ) -> None:
-    """A declared target with no recipe makes `make backend-worker` exit 0 doing nothing."""
+    """A declared recipe with no body makes `just backend-worker` do nothing."""
     worker_runs = backend != TaskBackend.NONE
     beat_runs = backend == TaskBackend.CELERY
     config = _config(tmp_path, backend)
     config.path.mkdir()
-    (config.path / "Makefile").write_text(generate_makefile(config))
+    (config.path / "justfile").write_text(generate_justfile(config))
 
     for target, runs in (("backend-worker", worker_runs), ("backend-beat", beat_runs)):
         result = subprocess.run(
-            ["make", "-C", str(config.path), "-n", target],
+            ["just", "--justfile", str(config.path / "justfile"), "--dry-run", target],
             capture_output=True,
             text=True,
             check=False,
         )
         if runs:
             assert result.returncode == 0, result.stderr
-            assert "uv run" in result.stdout
+            assert "uv run" in (result.stdout + result.stderr)
         else:
             assert result.returncode != 0, result.stdout
-            assert "No rule to make target" in result.stderr
 
 
 def test_realtime_is_opt_in(tmp_path: Path) -> None:
@@ -129,7 +128,7 @@ def test_realtime_is_opt_in(tmp_path: Path) -> None:
     assert "centrifugo" not in _services(generate_docker_compose(plain))
     assert "CENTRIFUGO_API_KEY" not in generate_docker_compose(plain)
     assert "CENTRIFUGO_API_KEY" not in generate_env_example(plain)
-    assert "up-realtime" not in generate_makefile(plain)
+    assert "up-realtime" not in generate_justfile(plain)
 
 
 def test_realtime_profile_shares_secrets_without_committing_them(tmp_path: Path) -> None:
@@ -162,4 +161,4 @@ def test_realtime_profile_shares_secrets_without_committing_them(tmp_path: Path)
     assert prod["centrifugo"]["environment"]["CENTRIFUGO_ALLOWED_ORIGINS"].startswith(
         "${CENTRIFUGO_ALLOWED_ORIGINS:?"
     )
-    assert "up-realtime:" in generate_makefile(config)
+    assert "up-realtime:" in generate_justfile(config)

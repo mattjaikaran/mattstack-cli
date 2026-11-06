@@ -133,7 +133,7 @@ defaults:
 Commands that run frontend tools, such as `client`, `deps`, `dev`, `lint`, and
 `test`, choose the package manager in this order: the `--pm` option, the
 project's lockfile, this default, then `bun`. Run `mattstack client which` to
-see the choice and its reason. Generated Makefiles use Bun.
+see the choice and its reason. Generated justfiles use Bun.
 
 The config template advertises only `package_manager` under `defaults`.
 Set scaffold choices per project with a preset, a scaffold YAML file, or
@@ -158,7 +158,7 @@ mattstack config init   # Write the template config
 
 ## Dependency and lock updates
 
-`make setup` installs dependencies without locked mode, so it can update
+`just setup` installs dependencies without locked mode, so it can update
 `uv.lock` and `bun.lock`. It also requests the backend's `dev` extra when one
 exists. For a Django Ninja task backend other than Celery, it adds that
 backend's extra, for example `uv sync --extra huey`.

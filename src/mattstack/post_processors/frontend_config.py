@@ -230,7 +230,7 @@ def _proxy_const(text: str, config: ProjectConfig) -> str:
     semi = ";" if re.search(r"^import .*;\s*$", text, re.MULTILINE) else ""
     return (
         "\n// Compose sets API_PROXY_TARGET to the api-dev service. Host runs reach\n"
-        "// the backend on API_PORT, which `make frontend-dev` loads from the root .env.\n"
+        "// the backend on API_PORT, which `just frontend-dev` loads from the root .env.\n"
         f"const {_PROXY_CONST} =\n"
         "  process.env.API_PROXY_TARGET ??\n"
         f"  `http://localhost:${{process.env.API_PORT ?? {config.backend_api_port}}}`{semi}\n"

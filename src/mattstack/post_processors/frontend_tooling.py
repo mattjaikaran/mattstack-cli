@@ -125,7 +125,7 @@ def configure_frontend_tooling(config: ProjectConfig) -> None:
         )
     print_info(
         "Configured Oxlint, Oxfmt and local React Doctor; "
-        "run make setup to refresh the dependency lock"
+        "run just setup to refresh the dependency lock"
     )
 
 

@@ -97,7 +97,7 @@ unpublished local changes.
 | Clone the iOS starter into `ios/` | if `--ios` | no | no |
 | Consolidate component root files | yes | yes | no |
 | Check task and realtime prerequisites | yes | yes | no |
-| Write root files (Makefile, README, agent files, `gauntlet.toml`, `.gitignore`, deployment files) | yes | yes | yes |
+| Write root files (justfile, README, agent files, `gauntlet.toml`, `.gitignore`, deployment files) | yes | yes | yes |
 | Write Compose files, `.env*`, and Dockerfiles | yes | yes | no |
 | Write the root `.pre-commit-config.yaml` | yes | yes | yes |
 | Customize cloned components (names; frontend bundler config and API proxy) | yes | backend only | frontend only |
@@ -296,7 +296,7 @@ TypeScript. mattstack does not read Pydantic source.
 
 ```mermaid
 flowchart LR
-  P[Pydantic schemas] -->|just openapi| O[backend/docs/openapi/openapi.json]
+  P[Pydantic schemas] -->|just backend-openapi| O[backend/docs/openapi/openapi.json]
   O -->|mattstack sync openapi| G[frontend/src/api/generated]
   G --> C{mattstack sync check}
   O --> A{mattstack audit -t types}
@@ -381,7 +381,7 @@ rule: canonical sources stay, and harness adapters go.
   worktrees), `.cursor/`, `.windsurf/`, `.kiro/`, and `.continue/`.
 - **Written at the root** (`templates/agent_files.py`): `AGENTS.md` is the
   one root source. It lists each component's guidance files that exist, its
-  quick gate (`cd backend && just gauntlet-quick`, or the frontend's
+  quick gate (`just backend-gauntlet-quick`, or the frontend's
   `gauntlet:quick`/`gauntlet` script), cross-stack rules, the testing
   policy, and versions read by `utils/versions.py`. `CLAUDE.md` is the
   one-line import `@AGENTS.md`; `.cursorrules` points at `AGENTS.md`.
@@ -389,15 +389,15 @@ rule: canonical sources stay, and harness adapters go.
   writes `.claude/settings.local.json`. `.mcp.json` is written only when
   every component's `.mcp.json` declares the same server.
 - `gauntlet.toml` (`templates/gauntlet_toml.py`) wraps the local gates as
-  Gauntlet `[checks.custom.*]` entries: the backend `just gauntlet-quick`,
+  Gauntlet `[checks.custom.*]` entries: the backend `just backend-gauntlet-quick`,
   the frontend `gauntlet` script, and `mattstack sync check` for Django
   fullstack projects. A gate is listed only when the component defines it.
 - The root `.pre-commit-config.yaml` runs each tool inside its component.
   For `django-ninja`, it runs the backend's locked ruff on commit and
-  `just gauntlet-quick` on push. Other Python backends run the project's
+  `just backend-gauntlet-quick` on push. Other Python backends run the project's
   own ruff, NestJS uses its `lint` script, and frontends use their own
   prettier.
-- The root `make gauntlet` target (`templates/root_gauntlet.py`) runs every
+- The root `just gauntlet` recipe (`templates/root_justfile.py`) runs every
   gate locally: each component's gauntlet (else its lint and test targets),
   `mattstack sync check` for non-NestJS fullstack projects, and
   `mattstack audit --no-todo`. Generated projects have no hosted CI;
@@ -439,7 +439,7 @@ src/mattstack/
 ├── post_processors/    # Consolidation, customization, bundler config, task runtime, TLS health
 ├── templates/          # Python functions that return file content (no Jinja2)
 │   ├── agent_files.py, root_agents_md.py  # AGENTS.md, CLAUDE.md, .cursorrules, .claude/, .mcp.json
-│   └── root_gauntlet.py, gauntlet_toml.py, ci_toolchain.py  # Local gates; opt-in CI pins
+│   └── root_justfile*.py, gauntlet_toml.py, ci_toolchain.py  # Local gates; opt-in CI pins
 ├── parsers/            # Contract and source parsers (openapi_spec.py, zod_schemas.py, routes)
 ├── auditors/           # BaseAuditor subclasses; types_parity.py, versions.py (drift)
 ├── boards/             # Board backends (axis, none; Hermes, Jira, Linear are stubs)
@@ -498,7 +498,7 @@ strength.
    and the `add --framework` help in `cli_scaffold.py`.
 4. Add a branch in `post_processors/customizer.py` and, if needed,
    `post_processors/consolidate.py`.
-5. Update the templates that branch on the backend: `root_makefile.py`,
+5. Update the templates that branch on the backend: `root_justfile.py`,
    `docker_compose.py`, `compose_env.py`, `dockerfiles.py`,
    `backend_entrypoint.py`, `root_env.py`, `pre_commit_config.py`, the
    `deploy_*.py` recipes, `root_readme.py`, and `root_agents_md.py`.

@@ -44,7 +44,7 @@ def align_tanstack_router(config: ProjectConfig) -> None:
     if manifest.is_file() and _align_manifest(manifest):
         print_info(
             "Aligned TanStack Router to the Rsbuild line; "
-            "`make setup` regenerates frontend/bun.lock to match"
+            "`just setup` regenerates frontend/bun.lock to match"
         )
     _migrate_devtools_imports(config.frontend_dir)
     tanstack = read_tanstack_config(config.frontend_dir)

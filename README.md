@@ -48,13 +48,13 @@ Install the CLI with `uv`. Install Docker for local database/cache containers an
 uv tool install git+https://github.com/mattjaikaran/mattstack-cli
 mattstack init my-app -p starter-fullstack
 cd my-app
-make setup
-make up
+just setup
+just up
 mattstack db migrate
 mattstack dev --mode host
 ```
 
-Run application commands from the generated project root. `make up` starts the
+Run application commands from the generated project root. `just up` starts the
 shared infrastructure; host mode runs the selected applications on your machine.
 Use `mattstack dev --mode container` for container application development instead.
 Do not run both modes on the same ports.
@@ -77,7 +77,7 @@ my-app/
 ├── frontend/         # Selected UI; omitted for backend-only projects
 ├── ios/              # Swift iOS client (optional)
 ├── docker-compose.yml
-├── Makefile          # setup, up, down, test, lint, format, migrate
+├── justfile          # setup, up, down, test, lint, format, migrate
 ├── .env.example
 ├── .pre-commit-config.yaml
 └── README.md
@@ -243,7 +243,7 @@ mattstack version     Show version
 mattstack completions Shell completions (bash/zsh/fish)
 ```
 
-Generated projects run their gates locally with `make gauntlet` (and, for Django
+Generated projects run their gates locally with `just gauntlet` (and, for Django
 Ninja, a pre-push hook). They have no hosted CI unless you run `mattstack workflow --ci`.
 
 Full reference: [docs/commands.md](docs/commands.md)
@@ -256,22 +256,22 @@ Select runtime services independently of the frontend:
 
 | Backend | Task choices | Migration target |
 |---|---|---|
-| Django Ninja | `celery`, `huey`, `django_q`, `django_rq`, `dramatiq`, `none` | `make backend-migrate` |
-| Django Matt | `celery`, `none` | `make backend-migrate` |
-| FastAPI | `celery`, `none` | `make backend-migrate` (Alembic) |
-| NestJS | Source Bull queues; not the Python task facade | `make backend-migrate` (Drizzle) |
+| Django Ninja | `celery`, `huey`, `django_q`, `django_rq`, `dramatiq`, `none` | `just backend-migrate` |
+| Django Matt | `celery`, `none` | `just backend-migrate` |
+| FastAPI | `celery`, `none` | `just backend-migrate` (Alembic) |
+| NestJS | Source Bull queues; not the Python task facade | `just backend-migrate` (Drizzle) |
 
-Only emitted worker targets exist. `make backend-worker` starts the selected
-consumer; `make backend-beat` exists only for Celery. Disabled Ninja dispatch
+Only emitted worker targets exist. `just backend-worker` starts the selected
+consumer; `just backend-beat` exists only for Celery. Disabled Ninja dispatch
 rejects enqueue attempts rather than dropping jobs.
 
 ```bash
 mattstack init task-api -p starter-api --task-backend huey
 cd task-api
-make setup
-make up
+just setup
+just up
 mattstack db migrate
-make backend-worker
+just backend-worker
 ```
 
 Keep secrets in environment files, not persisted project metadata. Use separate
@@ -290,7 +290,7 @@ and a B2B frontend is not a drop-in replacement for another source's API.
 `init` clones the configured repository URLs. Local edits to a sibling boilerplate
 do not reach a new scaffold until you publish them or set a source override such
 as `MATTSTACK_SOURCE_DJANGO_NINJA=~/dev/django-ninja-boilerplate`, which copies
-that working tree. Run `make setup`, review dependency lock changes, and check the
+that working tree. Run `just setup`, review dependency lock changes, and check the
 selected source's quality tools. Use the [ecosystem guide](docs/ecosystem.md) to
 configure sources.
 

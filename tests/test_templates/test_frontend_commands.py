@@ -8,7 +8,7 @@ import pytest
 
 from mattstack.config import FrontendFramework, ProjectConfig, ProjectType, TaskBackend
 from mattstack.templates.frontend_commands import frontend_commands
-from mattstack.templates.root_makefile import generate_makefile
+from mattstack.templates.root_justfile import generate_justfile
 
 
 def _config(tmp_path: Path, framework: FrontendFramework) -> ProjectConfig:
@@ -55,24 +55,24 @@ def test_nextjs_has_no_test_script(tmp_path: Path) -> None:
     assert cmds.typecheck == "bunx tsc --noEmit"
 
 
-def test_makefile_emits_the_resolved_command(tmp_path: Path) -> None:
-    """A hardcoded name breaks `make test`; the resolver must reach the file."""
-    vite = generate_makefile(_config(tmp_path, FrontendFramework.REACT_VITE))
+def test_justfile_emits_the_resolved_command(tmp_path: Path) -> None:
+    """A hardcoded name breaks `just test`; the resolver must reach the file."""
+    vite = generate_justfile(_config(tmp_path, FrontendFramework.REACT_VITE))
     assert "bun run type-check" in vite
     assert "bun run typecheck" not in vite
 
-    starter = generate_makefile(_config(tmp_path, FrontendFramework.REACT_VITE_STARTER))
+    starter = generate_justfile(_config(tmp_path, FrontendFramework.REACT_VITE_STARTER))
     assert "bun run typecheck" in starter
     assert "bun run type-check" not in starter
 
 
-def test_makefile_ships_a_read_only_gauntlet_target(tmp_path: Path) -> None:
+def test_justfile_ships_a_read_only_gauntlet_target(tmp_path: Path) -> None:
     """The local gate must not write tasks/todo.md, matching the CI job."""
-    makefile = generate_makefile(_config(tmp_path, FrontendFramework.REACT_VITE))
-    assert "\tmattstack audit --no-todo\n" in makefile
+    content = generate_justfile(_config(tmp_path, FrontendFramework.REACT_VITE))
+    assert "    mattstack audit --no-todo\n" in content
 
 
-def test_makefile_sync_api_uses_the_openapi_command(tmp_path: Path) -> None:
-    """The Makefile regenerates the client through the OpenAPI contract."""
-    makefile = generate_makefile(_config(tmp_path, FrontendFramework.REACT_VITE))
-    assert "\tmattstack sync openapi\n" in makefile
+def test_justfile_sync_api_uses_the_openapi_command(tmp_path: Path) -> None:
+    """The justfile regenerates the client through the OpenAPI contract."""
+    content = generate_justfile(_config(tmp_path, FrontendFramework.REACT_VITE))
+    assert "    mattstack sync openapi\n" in content

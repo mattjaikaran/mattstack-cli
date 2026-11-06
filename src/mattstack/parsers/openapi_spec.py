@@ -34,7 +34,7 @@ EXACT_VERSION = re.compile(r"\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?")
 def ninja_export_command(project: ResolvedProject) -> str:
     """Return the shell command that writes the Ninja schema to ``NINJA_SCHEMA``.
 
-    It loads the root .env the same way the generated Makefile does, because
+    It loads the root .env the same way the generated justfile does, because
     consolidation removes ``backend/.env`` and the settings read the environment.
     """
     steps = [f"cd {shlex.quote(str(project.root))}"]

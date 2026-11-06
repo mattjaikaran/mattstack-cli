@@ -31,7 +31,7 @@ def _make_backend_project(path: Path, pyproject: str = NINJA_PYPROJECT) -> Path:
     backend.mkdir()
     (backend / "pyproject.toml").write_text(pyproject)
     (backend / "manage.py").write_text("#!/usr/bin/env python\n")
-    (path / "Makefile").write_text(".DEFAULT_GOAL := help\n")
+    (path / "justfile").write_text("default:\n    @just --list\n")
     return path
 
 
@@ -42,7 +42,7 @@ def _make_frontend_project(path: Path) -> Path:
     frontend.mkdir()
     (frontend / "package.json").write_text(json.dumps(VITE_PACKAGE))
     (frontend / "src").mkdir()
-    (path / "Makefile").write_text(".DEFAULT_GOAL := help\n")
+    (path / "justfile").write_text("default:\n    @just --list\n")
     return path
 
 
@@ -88,29 +88,29 @@ class TestRunAdd:
         assert (proj / "frontend" / "package.json").exists()
         mock_clone.assert_called_once()
         mock_rm_git.assert_called_once()
-        # The regenerated Makefile is staged next to the user's file.
-        assert "frontend" in (proj / "Makefile.mattstack-new").read_text().lower()
+        # The regenerated justfile is staged next to the user's file.
+        assert "frontend" in (proj / "justfile.mattstack-new").read_text().lower()
 
     def test_add_backend_to_frontend(self, mock_clone, mock_rm_git, tmp_path: Path) -> None:
         proj = _make_frontend_project(tmp_path / "my-app")
         run_add("backend", proj)
         assert (proj / "backend" / "pyproject.toml").exists()
-        assert "backend" in (proj / "Makefile.mattstack-new").read_text().lower()
+        assert "backend" in (proj / "justfile.mattstack-new").read_text().lower()
 
     def test_add_ios_to_fullstack(self, mock_clone, mock_rm_git, tmp_path: Path) -> None:
         proj = _make_fullstack_project(tmp_path / "my-app")
         run_add("ios", proj)
         assert (proj / "ios" / "Package.swift").exists()
-        assert "ios" in (proj / "Makefile.mattstack-new").read_text().lower()
+        assert "ios" in (proj / "justfile.mattstack-new").read_text().lower()
 
     def test_existing_root_files_stay_byte_identical(
         self, mock_clone, mock_rm_git, tmp_path: Path
     ) -> None:
         proj = _make_frontend_project(tmp_path / "my-app")
-        (proj / "Makefile").write_bytes(b"custom:\n\techo hi\n")
+        (proj / "justfile").write_bytes(b"custom:\n    echo hi\n")
         (proj / "README.md").write_bytes(b"mine\n")
         run_add("backend", proj)
-        assert (proj / "Makefile").read_bytes() == b"custom:\n\techo hi\n"
+        assert (proj / "justfile").read_bytes() == b"custom:\n    echo hi\n"
         assert (proj / "README.md").read_bytes() == b"mine\n"
         # Missing root files are still created.
         assert (proj / "docker-compose.yml").exists()
@@ -154,9 +154,9 @@ class TestRunAdd:
         pyproject = '[project]\nname = "api"\ndependencies = ["fastapi"]\n'
         proj = _make_backend_project(tmp_path / "my-app", pyproject)
         run_add("frontend", proj)
-        makefile = (proj / "Makefile.mattstack-new").read_text()
-        assert "alembic" in makefile
-        assert "manage.py" not in makefile
+        content = (proj / "justfile.mattstack-new").read_text()
+        assert "alembic" in content
+        assert "manage.py" not in content
         assert _stack_metadata(proj)["backend"]["framework"] == "fastapi"
 
     def test_persisted_metadata_wins_over_detection(

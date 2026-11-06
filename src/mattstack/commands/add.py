@@ -140,11 +140,11 @@ def _root_files(config: ProjectConfig) -> list[tuple[str, str]]:
     from mattstack.templates.docker_compose import generate_docker_compose
     from mattstack.templates.gauntlet_toml import generate_gauntlet_toml
     from mattstack.templates.root_env import generate_env_example
-    from mattstack.templates.root_makefile import generate_makefile
+    from mattstack.templates.root_justfile import generate_justfile
     from mattstack.templates.root_readme import generate_readme
 
     files = [
-        ("Makefile", generate_makefile(config)),
+        ("justfile", generate_justfile(config)),
         (".env.example", generate_env_example(config)),
         ("README.md", generate_readme(config)),
     ]
@@ -220,16 +220,16 @@ def _print_next_steps(component: str, config: ProjectConfig) -> None:
 
     if component == "frontend":
         console.print("  [cyan]cd frontend && bun install[/cyan]")
-        console.print("  [cyan]make frontend-dev[/cyan]  # http://localhost:3000")
+        console.print("  [cyan]just frontend-dev[/cyan]  # http://localhost:3000")
     elif component == "backend":
         install = "bun install" if config.is_nestjs_backend else "uv sync"
         console.print(f"  [cyan]cd backend && {install}[/cyan]")
-        console.print("  [cyan]make up[/cyan]              # Start Docker services")
-        console.print("  [cyan]make backend-migrate[/cyan]")
+        console.print("  [cyan]just up[/cyan]              # Start Docker services")
+        console.print("  [cyan]just backend-migrate[/cyan]")
         if config.is_django_backend:
-            console.print("  [cyan]make backend-superuser[/cyan]")
+            console.print("  [cyan]just superuser-host[/cyan]")
         api_url = f"http://localhost:{config.backend_api_port}"
-        console.print(f"  [cyan]make backend-dev[/cyan]     # {api_url}")
+        console.print(f"  [cyan]just backend-dev[/cyan]     # {api_url}")
     elif component == "ios":
         console.print("  [cyan]Open ios/ in Xcode[/cyan]")
         console.print("  [cyan]Update API base URL in the iOS project[/cyan]")

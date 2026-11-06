@@ -16,7 +16,7 @@ from mattstack.templates.docker_compose_prod import generate_docker_compose_prod
 from mattstack.templates.dockerfiles import generate_backend_dockerfile
 from mattstack.templates.pre_commit_config import generate_pre_commit_config
 from mattstack.templates.root_gitignore import generate_gitignore
-from mattstack.templates.root_makefile import generate_makefile
+from mattstack.templates.root_justfile import generate_justfile
 from mattstack.templates.root_readme import generate_readme
 from mattstack.utils.console import print_error, print_info
 
@@ -55,7 +55,7 @@ class BackendOnlyGenerator(BaseGenerator):
 
     def _step_create_root_files(self) -> bool:
         try:
-            self.write_file("Makefile", generate_makefile(self.config))
+            self.write_file("justfile", generate_justfile(self.config))
             self.write_file("docker-compose.yml", generate_docker_compose(self.config))
             self.write_file("docker-compose.prod.yml", generate_docker_compose_prod(self.config))
             self.write_file(

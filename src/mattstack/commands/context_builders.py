@@ -38,7 +38,7 @@ def _detect_components(project: ResolvedProject) -> dict[str, bool]:
         "frontend": (project.frontend_dir / "package.json").is_file(),
         "ios": (root / "ios").is_dir() and any((root / "ios").glob("*.xcodeproj")),
         "docker": any((root / name).is_file() for name in ("docker-compose.yml", "compose.yml")),
-        "makefile": (root / "Makefile").exists(),
+        "justfile": (root / "justfile").exists(),
         "claude_md": (root / "CLAUDE.md").exists(),
     }
 
@@ -168,21 +168,28 @@ def detect_env_vars(path: Path) -> list[str]:
     return names
 
 
-def detect_makefile_targets(path: Path) -> list[str]:
-    makefile = path / "Makefile"
-    if not makefile.exists():
+_JUST_RECIPE = re.compile(r"^([A-Za-z_][\w-]*)(?:\s+[^:]+)?:")
+
+
+def detect_just_recipes(path: Path) -> list[str]:
+    """Return top-level recipe names from ``path/justfile``; attributes are skipped."""
+    justfile = path / "justfile"
+    if not justfile.exists():
         return []
-    targets = []
-    for line in makefile.read_text(encoding="utf-8").splitlines():
-        if line and not line.startswith("\t") and not line.startswith("#") and ":" in line:
-            target = line.split(":")[0].strip()
-            if target and not target.startswith("."):
-                targets.append(target)
-    return targets
+    recipes: list[str] = []
+    for line in justfile.read_text(encoding="utf-8").splitlines():
+        if not line or line[0].isspace() or line.startswith(("#", "set ", "alias ", "export ")):
+            continue
+        if ":=" in line or line.startswith("["):
+            continue
+        match = _JUST_RECIPE.match(line)
+        if match and match.group(1) not in recipes:
+            recipes.append(match.group(1))
+    return recipes
 
 
 def _tool_versions() -> dict[str, str]:
-    tools = ["git", "uv", "bun", "node", "python", "docker", "make"]
+    tools = ["git", "uv", "bun", "node", "python", "docker", "just"]
     versions: dict[str, str] = {}
     for tool in tools:
         if command_available(tool):
@@ -213,9 +220,9 @@ def build_stack_context(path: Path) -> dict[str, Any]:
     env_vars = detect_env_vars(root)
     if env_vars:
         ctx["env_vars"] = env_vars
-    targets = detect_makefile_targets(root)
-    if targets:
-        ctx["makefile_targets"] = targets
+    recipes = detect_just_recipes(root)
+    if recipes:
+        ctx["just_recipes"] = recipes
     ctx["tools"] = _tool_versions()
     return ctx
 

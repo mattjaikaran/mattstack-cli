@@ -6,7 +6,6 @@ import os
 import shlex
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 import yaml
@@ -45,12 +44,16 @@ def test_gauntlet_entry_names_the_fix_when_just_is_missing(
     assert "uv tool install rust-just" in result.stderr
 
 
-def test_gauntlet_entry_names_the_fix_when_uv_is_missing(
+def test_gauntlet_entry_runs_the_root_backend_recipe(
     tmp_path: Path, starter_fullstack_config: ProjectConfig
 ) -> None:
+    """The boilerplate justfile is dropped, so the hook uses the root recipe."""
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    (bin_dir / "just").symlink_to(sys.executable)
+    log = tmp_path / "just-args"
+    fake_just = bin_dir / "just"
+    fake_just.write_text(f'#!/bin/sh\necho "$@" > {log}\n', encoding="utf-8")
+    fake_just.chmod(0o755)
     result = _run_gauntlet_entry(starter_fullstack_config, tmp_path / "project", bin_dir)
-    assert result.returncode == 1
-    assert "https://astral.sh/uv/install.sh" in result.stderr
+    assert result.returncode == 0, result.stderr
+    assert log.read_text(encoding="utf-8").strip() == "backend-gauntlet-quick"

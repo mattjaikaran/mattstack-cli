@@ -401,6 +401,8 @@ def _populate_backend_standalone(backend: Path) -> None:
     backend.mkdir(parents=True, exist_ok=True)
     for f in [
         "Makefile",
+        "Makefile.legacy",
+        "justfile",
         "docker-compose.yml",
         "docker-compose.prod.yml",
         "docker-compose.single.yml",
@@ -493,6 +495,8 @@ def test_consolidate_backend_removes_standalone_files(tmp_path: Path) -> None:
 
     for f in [
         "Makefile",
+        "Makefile.legacy",
+        "justfile",
         "docker-compose.yml",
         "docker-compose.prod.yml",
         ".env",

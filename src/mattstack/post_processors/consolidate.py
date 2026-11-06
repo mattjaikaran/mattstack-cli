@@ -1,7 +1,8 @@
 """Consolidate cloned boilerplates into a single-root monorepo.
 
 When a boilerplate is cloned into ``backend/`` or ``frontend/`` it carries its own
-standalone-project root files (``Makefile``, ``docker-compose*.yml``, ``.env*``,
+standalone-project root files (``Makefile``, ``Makefile.legacy``, ``justfile``,
+``docker-compose*.yml``, ``.env*``,
 ``Dockerfile``, agent adapters, deployment dirs). In a generated monorepo
 those live once at the project root, so this module removes the per-subdirectory
 copies. Removal is defensive: missing paths are tolerated.
@@ -34,6 +35,8 @@ from mattstack.config import ProjectConfig
 # README in place; the monorepo root README does not replace it.
 _BACKEND_GLOBS: list[str] = [
     "Makefile",
+    "Makefile.legacy",
+    "justfile",
     "docker-compose*.yml",
     "docker-compose*.yaml",
     "Dockerfile*",

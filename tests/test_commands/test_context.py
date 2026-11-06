@@ -15,7 +15,7 @@ from mattstack.commands.context import run_context
 from mattstack.commands.context_builders import (
     build_stack_context,
     detect_env_vars,
-    detect_makefile_targets,
+    detect_just_recipes,
 )
 from mattstack.commands.context_format import format_context_claude, format_context_markdown
 from mattstack.config import BackendFramework, FrontendFramework
@@ -41,7 +41,7 @@ def _make_fullstack(path: Path) -> Path:
             }
         )
     )
-    (path / "Makefile").write_text("setup:\n\techo setup\ntest:\n\techo test\n")
+    (path / "justfile").write_text("setup:\n    echo setup\ntest:\n    echo test\n")
     (path / ".env.example").write_text(
         "DATABASE_URL=postgres://localhost/db\nSECRET_KEY=changeme\n"
     )
@@ -57,7 +57,7 @@ class TestDetectComponents:
         assert comps["backend"] is True
         assert comps["frontend"] is True
         assert comps["docker"] is True
-        assert comps["makefile"] is True
+        assert comps["justfile"] is True
         assert comps["claude_md"] is True
 
     def test_empty(self, tmp_path: Path) -> None:
@@ -148,15 +148,15 @@ class TestDetectEnvVars:
         assert detect_env_vars(tmp_path) == []
 
 
-class TestDetectMakefileTargets:
-    def test_parses_targets(self, tmp_path: Path) -> None:
+class TestDetectJustRecipes:
+    def test_parses_recipes(self, tmp_path: Path) -> None:
         proj = _make_fullstack(tmp_path / "app")
-        targets = detect_makefile_targets(proj)
-        assert "setup" in targets
-        assert "test" in targets
+        recipes = detect_just_recipes(proj)
+        assert "setup" in recipes
+        assert "test" in recipes
 
-    def test_no_makefile(self, tmp_path: Path) -> None:
-        assert detect_makefile_targets(tmp_path) == []
+    def test_no_justfile(self, tmp_path: Path) -> None:
+        assert detect_just_recipes(tmp_path) == []
 
 
 class TestBuildContext:
@@ -168,7 +168,7 @@ class TestBuildContext:
         assert "backend" in ctx
         assert "frontend" in ctx
         assert "env_vars" in ctx
-        assert "makefile_targets" in ctx
+        assert "just_recipes" in ctx
         assert "tools" in ctx
 
 
@@ -181,7 +181,7 @@ class TestFormatContextMarkdown:
         assert "## Backend" in md
         assert "## Frontend" in md
         assert "## Environment Variables" in md
-        assert "## Makefile Targets" in md
+        assert "## Just Recipes" in md
 
 
 class TestRunContext:

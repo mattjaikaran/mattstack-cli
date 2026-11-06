@@ -15,7 +15,7 @@ def print_b2b_instructions(config: ProjectConfig) -> None:
     console.print()
     console.print("[bold yellow]B2B Feature Setup[/bold yellow]")
     console.print()
-    console.print("After running [cyan]make setup[/cyan] and [cyan]make backend-migrate[/cyan],")
+    console.print("After running [cyan]just setup[/cyan] and [cyan]just backend-migrate[/cyan],")
     console.print("generate B2B features:")
     console.print()
     console.print("[dim]cd backend[/dim]")
