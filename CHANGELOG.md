@@ -139,8 +139,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Consolidated monorepo generation** — `init` now produces a single root `Makefile`, `.env` family, and `docker-compose` pair with no standalone-project files left inside `backend/`/`frontend/`.
 - **Relocated Dockerfiles** — framework-aware `docker/backend/Dockerfile` and `docker/frontend/Dockerfile` (+ `.dev` variant) generated from templates with repo-root build context.
-- **Multi-environment config** — `.env.production.example` alongside `.env.example`; `make up-prod` loads `.env.production`.
-- **Docker profiles** — `make up-celery` starts Celery worker/beat via the `celery` profile.
+- **Multi-environment config** — `.env.production.example` alongside `.env.example`; the `up-prod` target loads `.env.production`.
+- **Docker profiles** — the `up-celery` target starts Celery worker/beat via the `celery` profile.
 - **FastAPI backend support** — 5 presets with SQLAlchemy (async), Alembic, Celery, Redis.
 - **NestJS backend support** — 4 presets with Fastify, Drizzle ORM, JWT/OAuth.
 - **django-matt backend** — first-class MattAPI controller + CRUDService support.
