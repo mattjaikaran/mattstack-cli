@@ -250,9 +250,9 @@ router. Page and CRUD generation then use that router's own conventions.
 
 | Dependency found | Router | Where pages go |
 |------------------|--------|----------------|
-| `next` | `nextjs` | App Router directory (`app/` or `src/app/`) |
+| `next` | `nextjs` | App Router directory (`frontend/app/` or `frontend/src/app/`) |
 | `@tanstack/react-router` | `tanstack` | Routes directory from the TanStack config (`parsers/tanstack_config.py`) |
-| `react-router-dom` or `react-router` | `react-router` | `src/pages/`, registered in the route declaration |
+| `react-router-dom` or `react-router` | `react-router` | `frontend/src/pages/`, registered in the route declaration |
 | None of these | `unknown` | Page generation refuses |
 
 For React Router, the generator edits one of two declaration styles: a
