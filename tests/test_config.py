@@ -6,6 +6,7 @@ from mattstack.config import (
     ProjectConfig,
     Variant,
     normalize_name,
+    source_env_var,
     to_python_package,
 )
 
@@ -20,6 +21,11 @@ def test_normalize_name():
 def test_to_python_package():
     assert to_python_package("my-cool-app") == "my_cool_app"
     assert to_python_package("test") == "test"
+
+
+def test_source_env_var_maps_repo_key_to_override_variable():
+    assert source_env_var("django-ninja") == "MATTSTACK_SOURCE_DJANGO_NINJA"
+    assert source_env_var("react-rsbuild-kibo") == "MATTSTACK_SOURCE_REACT_RSBUILD_KIBO"
 
 
 def test_project_config_normalization(tmp_path: Path):
