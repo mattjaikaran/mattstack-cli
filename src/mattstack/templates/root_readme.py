@@ -31,18 +31,19 @@ def generate_readme(config: ProjectConfig) -> str:
 
 
 def _prerequisites() -> str:
-    """Return the tools the generated Makefile calls."""
+    """Return the tools the generated justfile calls."""
     return """\
 ## Prerequisites
 
-Install these before you run `make setup`:
+Install these before you run `just setup`:
 
 | Tool | Used by |
 |---|---|
 | [uv](https://docs.astral.sh/uv/) | Backend dependencies and Django commands |
 | [bun](https://bun.sh/) | Frontend dependencies and scripts |
-| [Docker](https://docs.docker.com/get-docker/) | `make up` and the database |
-| [mattstack](https://github.com/mattjaikaran/mattstack-cli) | `make sync-api`, `make gauntlet` |
+| [Docker](https://docs.docker.com/get-docker/) | `just up` and the database |
+| [just](https://just.systems/) | Every root recipe (`just --list`) |
+| [mattstack](https://github.com/mattjaikaran/mattstack-cli) | `just sync-api`, `just gauntlet` |
 
 ```bash
 uv tool install git+https://github.com/mattjaikaran/mattstack-cli
@@ -70,7 +71,7 @@ def _tech_stack(config: ProjectConfig) -> str:
         else:
             stack.append(f"- **Background Tasks**: {task_summary(config)}")
         if config.use_realtime:
-            stack.append("- **Realtime**: Centrifugo (`make up-realtime`)")
+            stack.append("- **Realtime**: Centrifugo (`just up-realtime`)")
     if config.has_frontend:
         stack.append(f"- **Frontend**: {_frontend_description(config)}")
     if config.include_ios:
@@ -118,7 +119,7 @@ def _quickstart(config: ProjectConfig) -> str:
         "",
         "```bash",
         "# Install dependencies",
-        "make setup",
+        "just setup",
     ]
 
     if config.has_backend:
@@ -126,10 +127,10 @@ def _quickstart(config: ProjectConfig) -> str:
             [
                 "",
                 "# Start services (Docker)",
-                "make up",
+                "just up",
                 "",
                 "# Run database migrations",
-                "make backend-migrate",
+                "just migrate",
             ]
         )
         if config.is_django_backend:
@@ -137,7 +138,7 @@ def _quickstart(config: ProjectConfig) -> str:
                 [
                     "",
                     "# Create admin user",
-                    "make backend-superuser",
+                    "just superuser",
                 ]
             )
 
@@ -145,10 +146,10 @@ def _quickstart(config: ProjectConfig) -> str:
     lines.append("# Start dev servers")
 
     if config.has_backend:
-        lines.append(f"make backend-dev   # http://localhost:{api_port}")
+        lines.append(f"just backend-dev   # http://localhost:{api_port}")
 
     if config.has_frontend:
-        lines.append("make frontend-dev  # http://localhost:3000")
+        lines.append("just frontend-dev  # http://localhost:3000")
 
     lines.append("```")
     return "\n".join(lines)
@@ -167,7 +168,7 @@ def _project_structure_fullstack(config: ProjectConfig) -> str:
 ├── frontend/             # {fe_label}{ios_line}
 ├── docker-compose.yml    # Dev services
 ├── docker-compose.prod.yml
-├── Makefile              # All commands
+├── justfile              # All commands
 ├── .env.example
 └── CLAUDE.md
 ```"""
@@ -182,7 +183,7 @@ def _project_structure_backend(config: ProjectConfig) -> str:
 {config.name}/
 ├── backend/              # {backend_label}
 ├── docker-compose.yml    # Dev services
-├── Makefile
+├── justfile
 ├── .env.example
 └── CLAUDE.md
 ```"""
@@ -196,7 +197,7 @@ def _project_structure_frontend(config: ProjectConfig) -> str:
 ```
 {config.name}/
 ├── frontend/             # {label}
-├── Makefile
+├── justfile
 └── .env.example
 ```"""
 
@@ -205,12 +206,12 @@ def _commands(config: ProjectConfig) -> str:
     rows = [
         ("| Command | Description |", True),
         ("|---------|-------------|", True),
-        ("| `make setup` | Install all dependencies |", True),
-        ("| `make up` | Start Docker services |", config.has_backend),
-        ("| `make down` | Stop Docker services |", config.has_backend),
-        ("| `make test` | Run all tests |", True),
-        ("| `make lint` | Lint all code |", True),
-        ("| `make format` | Format all code |", True),
+        ("| `just setup` | Install all dependencies |", True),
+        ("| `just up` | Start Docker services |", config.has_backend),
+        ("| `just down` | Stop Docker services |", config.has_backend),
+        ("| `just test` | Run all tests |", True),
+        ("| `just lint` | Lint all code |", True),
+        ("| `just format` | Format all code |", True),
     ]
 
     table = "\n".join(row for row, include in rows if include)
@@ -218,7 +219,7 @@ def _commands(config: ProjectConfig) -> str:
     return f"""\
 ## Commands
 
-Run `make help` to see all available commands.
+Run `just --list` to see all available commands.
 
 {table}"""
 
@@ -242,7 +243,7 @@ def _b2b_features() -> str:
     return """\
 ## B2B Features
 
-After running `make setup` and `make backend-migrate`, generate B2B features:
+After running `just setup` and `just backend-migrate`, generate B2B features:
 
 ```bash
 cd backend

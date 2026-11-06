@@ -35,7 +35,7 @@ def test_frontend_generates_files(mock_clone, tmp_path: Path) -> None:
     result = gen.run()
     assert result is True
     assert config.path.exists()
-    assert (config.path / "Makefile").exists()
+    assert (config.path / "justfile").exists()
     assert (config.path / "README.md").exists()
     assert (config.path / ".gitignore").exists()
 

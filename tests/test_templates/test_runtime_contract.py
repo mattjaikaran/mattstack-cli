@@ -2,7 +2,7 @@
 
 The boilerplate's Django settings read a fixed set of environment variables.
 A missing key does not fail at generation time; it fails when a developer runs
-`make up` or `manage.py migrate`. These tests assert the keys the settings
+`just up` or `manage.py migrate`. These tests assert the keys the settings
 read are the keys the generated compose and .env files set.
 
 Source of truth: the django-ninja boilerplate's
@@ -105,35 +105,27 @@ def test_production_env_defines_the_settings_read(tmp_path: Path) -> None:
         assert f"{key}=" in content, f".env.production.example is missing {key}"
 
 
-def test_makefile_sources_the_root_env(tmp_path: Path) -> None:
-    """Host commands need DB_* too, and nothing else loads .env for them.
+def test_justfile_loads_the_root_env(tmp_path: Path) -> None:
+    """Host commands need DB_* too, and just's dotenv-load supplies them."""
+    from mattstack.templates.root_justfile import generate_justfile
 
-    The Makefile sources the file in the recipe shell rather than using
-    `include`: make treats `#` as a comment and expands `$`, and a generated
-    secret key can contain both, so an include would truncate the secret on
-    the host while the container kept the full value.
-    """
-    from mattstack.templates.root_makefile import generate_makefile
-
-    makefile = generate_makefile(_fullstack(tmp_path))
-    assert "LOAD_ENV := set -a && . ./.env && set +a" in makefile
-    assert "$(LOAD_ENV) cd backend" in makefile
-    assert not any(line.strip() == "include .env" for line in makefile.splitlines()), (
-        "make include mangles secrets; source the file in the recipe shell"
-    )
+    content = generate_justfile(_fullstack(tmp_path))
+    assert "set dotenv-load" in content
+    assert "LOAD_ENV" not in content
+    assert "include .env" not in content
 
 
-def test_makefile_compose_and_env_agree_on_db_host(tmp_path: Path) -> None:
+def test_justfile_compose_and_env_agree_on_db_host(tmp_path: Path) -> None:
     """The container uses `db`; the host uses `localhost`. Neither may leak."""
-    from mattstack.templates.root_makefile import generate_makefile
+    from mattstack.templates.root_justfile import generate_justfile
 
     compose = generate_docker_compose(_fullstack(tmp_path))
     env_example = generate_env_example(_fullstack(tmp_path))
-    makefile = generate_makefile(_fullstack(tmp_path))
+    content = generate_justfile(_fullstack(tmp_path))
 
     assert _service_env(compose, "api-dev")["DB_HOST"] == "db"
     assert "DB_HOST=localhost" in env_example
-    assert "$(LOAD_ENV)" in makefile
+    assert "set dotenv-load" in content
 
 
 def test_dockerfile_pins_the_interpreter_and_venv(tmp_path: Path) -> None:
@@ -265,39 +257,45 @@ def test_dev_api_allows_the_proxied_host(tmp_path: Path, frontend: FrontendFrame
     assert "127.0.0.1" in hosts
 
 
-def _run_make(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+def _run_just(justfile: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["make", "-C", str(root), *args], capture_output=True, text=True, check=False
+        ["just", "--justfile", str(justfile), *args],
+        cwd=justfile.parent,
+        capture_output=True,
+        text=True,
+        check=False,
     )
 
 
-@pytest.mark.skipif(shutil.which("make") is None, reason="make is not installed")
-def test_makefile_never_drops_data_volumes_without_opt_in(tmp_path: Path) -> None:
-    from mattstack.templates.root_makefile import generate_makefile
+@pytest.mark.skipif(shutil.which("just") is None, reason="just is not installed")
+def test_justfile_never_drops_data_volumes_without_opt_in(tmp_path: Path) -> None:
+    from mattstack.templates.root_justfile import generate_justfile
 
     config = _fullstack(tmp_path)
     config.path.mkdir()
-    (config.path / "Makefile").write_text(generate_makefile(config))
+    justfile = config.path / "justfile"
+    justfile.write_text(generate_justfile(config))
 
-    dry_clean = _run_make(config.path, "-n", "clean")
-    assert dry_clean.returncode == 0
+    dry_clean = _run_just(justfile, "--dry-run", "clean")
+    assert dry_clean.returncode == 0, dry_clean.stderr
     assert "down -v" not in dry_clean.stdout
-    refused = _run_make(config.path, "clean-volumes")
+    refused = _run_just(justfile, "clean-volumes")
     assert refused.returncode != 0
     assert "CONFIRM=1" in refused.stderr
 
 
-@pytest.mark.skipif(shutil.which("make") is None, reason="make is not installed")
+@pytest.mark.skipif(shutil.which("just") is None, reason="just is not installed")
 def test_missing_frontend_test_script_fails_instead_of_passing(tmp_path: Path) -> None:
-    """nextjs-starter ships no test script; `make frontend-test` must not succeed."""
-    from mattstack.templates.root_makefile import generate_makefile
+    """nextjs-starter ships no test script; `just frontend-test` must not succeed."""
+    from mattstack.templates.root_justfile import generate_justfile
 
     config = ProjectConfig(
         name="todoapp", path=tmp_path / "todoapp", frontend_framework=FrontendFramework.NEXTJS
     )
     config.path.mkdir()
-    (config.path / "Makefile").write_text(generate_makefile(config))
+    justfile = config.path / "justfile"
+    justfile.write_text(generate_justfile(config))
 
-    result = _run_make(config.path, "frontend-test")
+    result = _run_just(justfile, "frontend-test")
     assert result.returncode != 0
     assert "no test script" in result.stderr

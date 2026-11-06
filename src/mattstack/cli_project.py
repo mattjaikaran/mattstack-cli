@@ -232,7 +232,7 @@ def workflow(
         typer.Option(
             "--ci",
             help="Opt in to hosted CI: github or gitlab. Gates run locally by default"
-            " (make gauntlet, pre-push hook); hosted runners cost build minutes.",
+            " (just gauntlet, pre-push hook); hosted runners cost build minutes.",
         ),
     ] = None,
     dry_run: Annotated[

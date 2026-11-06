@@ -1,8 +1,8 @@
 """Root .env templates for generated projects.
 
 The ports come first and the ``POSTGRES_*`` credentials come next, because
-later keys refer to them with ``${NAME}``. ``make`` sources the file in a
-shell, Compose interpolates it, and mattstack expands earlier keys, so each
+later keys refer to them with ``${NAME}``. ``just`` loads the file into the
+recipe environment, Compose interpolates it, and mattstack expands earlier keys, so each
 credential has a single source on the host and in the containers.
 
 Every secret named by ``env_secrets.secret_names`` is empty in the committed
@@ -184,7 +184,7 @@ def _realtime_lines(secret: _Lookup) -> list[str]:
     )
     return [
         "",
-        "# === Realtime (Centrifugo; start with: make up-realtime) ===",
+        "# === Realtime (Centrifugo; start with: just up-realtime) ===",
         "CENTRIFUGO_URL=http://localhost:${CENTRIFUGO_PORT}",
         *(f"{name}={secret(name)}" for name in names),
     ]
@@ -345,7 +345,7 @@ def _django_db_lines(*, host: str, port: str | None) -> list[str]:
 def _frontend_lines(config: ProjectConfig, backend_origin: str) -> list[str]:
     """The browser calls a relative prefix; the dev server or nginx proxies it.
 
-    `make frontend-dev` and `make frontend-build` load these, so a fresh clone,
+    `just frontend-dev` and `just frontend-build` load these, so a fresh clone,
     which has no gitignored frontend/.env, still builds with the right values.
     """
     label = "Next.js" if config.is_nextjs else "Frontend"

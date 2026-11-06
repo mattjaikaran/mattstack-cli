@@ -163,11 +163,11 @@ def _env_files_description(config: ProjectConfig) -> str:
 
 def _commands(config: ProjectConfig) -> str:
     api_port = config.backend_api_port
-    lines = ["## Commands", "", "```bash", "make setup              # Install all dependencies"]
+    lines = ["## Commands", "", "```bash", "just setup              # Install all dependencies"]
     if config.has_backend:
-        lines.append("make up                 # Start Docker services (PostgreSQL, Redis)")
-        lines.append("make down               # Stop Docker services")
-        lines.append(f"make backend-dev        # API dev server (port {api_port})")
+        lines.append("just up                 # Start Docker services (PostgreSQL, Redis)")
+        lines.append("just down               # Stop Docker services")
+        lines.append(f"just backend-dev        # API dev server (port {api_port})")
     if config.has_frontend:
         if config.is_nextjs:
             label = "Next.js"
@@ -175,7 +175,7 @@ def _commands(config: ProjectConfig) -> str:
             label = "Rsbuild"
         else:
             label = "Vite"
-        lines.append(f"make frontend-dev       # {label} dev server (port 3000)")
+        lines.append(f"just frontend-dev       # {label} dev server (port 3000)")
     lines.append("mattstack dev          # Start all dev servers")
     lines.append("mattstack test         # Run all tests")
     lines.append("mattstack lint         # Lint all code")

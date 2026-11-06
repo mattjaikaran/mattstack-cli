@@ -378,20 +378,20 @@ def _print_next_steps(config: ProjectConfig) -> None:
     console.print()
     console.print("[bold]Next steps:[/bold]")
     console.print(f"  [cyan]cd {config.name}[/cyan]")
-    console.print("  [cyan]make setup[/cyan]")
+    console.print("  [cyan]just setup[/cyan]")
     if config.has_backend:
         infrastructure = "db redis" if config.use_redis else "db"
         console.print(f"  [cyan]docker compose up -d --wait {infrastructure}[/cyan]")
-        console.print("  [cyan]make backend-migrate[/cyan]")
+        console.print("  [cyan]just backend-migrate[/cyan]")
         if config.backend_framework in {
             BackendFramework.DJANGO_NINJA,
             BackendFramework.DJANGO_MATT,
         }:
-            console.print("  [cyan]make backend-superuser[/cyan]")
+            console.print("  [cyan]just superuser-host[/cyan]")
         if config.task_backend.value != "none":
-            console.print(f"  [cyan]make backend-worker[/cyan]  # {task_summary(config)}")
+            console.print(f"  [cyan]just backend-worker[/cyan]  # {task_summary(config)}")
         if config.use_realtime:
-            console.print("  [cyan]make up-realtime[/cyan]  # Centrifugo; see CLAUDE.md")
+            console.print("  [cyan]just up-realtime[/cyan]  # Centrifugo; see CLAUDE.md")
     console.print("  [cyan]mattstack dev --mode host[/cyan]")
     if config.has_backend:
         console.print(f"  API: http://localhost:{config.backend_api_port}{config.api_prefix}")

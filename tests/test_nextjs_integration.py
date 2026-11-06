@@ -99,23 +99,23 @@ class TestNextjsPresets:
 # --- Templates ---
 
 
-class TestNextjsMakefile:
-    def test_makefile_fullstack(self, tmp_path: Path) -> None:
-        from mattstack.templates.root_makefile import generate_makefile
+class TestNextjsJustfile:
+    def test_justfile_fullstack(self, tmp_path: Path) -> None:
+        from mattstack.templates.root_justfile import generate_justfile
 
         config = _nextjs_config(tmp_path)
-        mk = generate_makefile(config)
-        assert "frontend-dev" in mk
-        assert "backend-dev" in mk
-        assert "bun run dev" in mk
+        content = generate_justfile(config)
+        assert "frontend-dev" in content
+        assert "backend-dev" in content
+        assert "bun run dev" in content
 
-    def test_makefile_frontend_only(self, tmp_path: Path) -> None:
-        from mattstack.templates.root_makefile import generate_makefile
+    def test_justfile_frontend_only(self, tmp_path: Path) -> None:
+        from mattstack.templates.root_justfile import generate_justfile
 
         config = _nextjs_frontend_config(tmp_path)
-        mk = generate_makefile(config)
-        assert "frontend-dev" in mk
-        assert "backend-dev" not in mk
+        content = generate_justfile(config)
+        assert "frontend-dev" in content
+        assert "backend-dev" not in content
 
 
 class TestNextjsDockerCompose:
@@ -299,7 +299,7 @@ class TestNextjsGenerator:
         gen = FullstackGenerator(config)
         result = gen.run()
         assert result is True
-        assert (config.path / "Makefile").exists()
+        assert (config.path / "justfile").exists()
         assert (config.path / "docker-compose.yml").exists()
 
         # Should have cloned nextjs, not react-vite
@@ -316,4 +316,4 @@ class TestNextjsGenerator:
         gen = FrontendOnlyGenerator(config)
         result = gen.run()
         assert result is True
-        assert (config.path / "Makefile").exists()
+        assert (config.path / "justfile").exists()

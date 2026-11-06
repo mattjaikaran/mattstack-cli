@@ -249,7 +249,7 @@ class EndpointAuditor(BaseAuditor):
                         Path("."),
                         0,
                         f"Could not reach {base_url} — is the server running?",
-                        "Start the backend with 'make backend-dev' before using --live",
+                        "Start the backend with 'just backend-dev' before using --live",
                     )
                     break  # No point probing more
                 except httpx.RequestError as exc:

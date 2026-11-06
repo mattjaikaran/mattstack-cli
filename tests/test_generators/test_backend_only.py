@@ -36,6 +36,8 @@ def _mock_clone(url: str, dest: Path, branch: str = "main", depth: int = 1) -> b
     (dest / "scripts" / "env_secrets.py").write_text(_FAKE_SECRETS)
     for f in [
         "Makefile",
+        "Makefile.legacy",
+        "justfile",
         "docker-compose.yml",
         ".env",
         "Dockerfile",
@@ -56,7 +58,7 @@ def test_backend_generates_files(mock_clone, tmp_path: Path) -> None:
     assert result is True
     assert config.path.exists()
     assert (config.path / ".env.production.example").exists()
-    assert (config.path / "Makefile").exists()
+    assert (config.path / "justfile").exists()
     assert (config.path / "docker-compose.yml").exists()
     assert (config.path / "README.md").exists()
 
@@ -69,6 +71,8 @@ def test_backend_consolidates_boilerplate_files(mock_clone, tmp_path: Path) -> N
     assert result is True
     for f in [
         "Makefile",
+        "Makefile.legacy",
+        "justfile",
         "docker-compose.yml",
         ".env",
         "Dockerfile",

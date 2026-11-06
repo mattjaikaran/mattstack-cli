@@ -10,7 +10,7 @@ from mattstack.post_processors.frontend_config import setup_frontend_monorepo
 from mattstack.templates.deploy_files import deployment_files
 from mattstack.templates.pre_commit_config import generate_pre_commit_config
 from mattstack.templates.root_gitignore import generate_gitignore
-from mattstack.templates.root_makefile import generate_makefile
+from mattstack.templates.root_justfile import generate_justfile
 from mattstack.templates.root_readme import generate_readme
 from mattstack.utils.console import print_error, print_info
 
@@ -38,7 +38,7 @@ class FrontendOnlyGenerator(BaseGenerator):
 
     def _step_create_root_files(self) -> bool:
         try:
-            self.write_file("Makefile", generate_makefile(self.config))
+            self.write_file("justfile", generate_justfile(self.config))
             self.write_file("README.md", generate_readme(self.config))
             self.write_agent_files()
             self.write_file(".gitignore", generate_gitignore(self.config))

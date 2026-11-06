@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Generated development Compose now sets `ALLOWED_HOSTS` on `api-dev`, so the frontend proxy's `Host: api-dev:8000` no longer returns a Django 400.
+- Generate one root `justfile` and no `Makefile` for generated projects. The cross-stack recipes run against the monorepo's `api-dev` service, the uv-only backend recipes move to `backend-*` recipes that `cd backend`, and consolidation drops the cloned `backend/justfile` and `backend/Makefile.legacy`, whose recipes targeted the boilerplate's own Compose stack. `set dotenv-load` tolerates a missing `.env`, and the file avoids just features newer than 1.21.
 
 ## [0.9.1] - 2026-10-06
 

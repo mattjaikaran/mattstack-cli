@@ -75,9 +75,9 @@ Realtime and S3 media are opt-in Django Ninja profiles.
 
 | Backend | Task backends | Worker targets |
 |---|---|---|
-| Django Ninja | `celery` (default), `huey`, `django_q`, `django_rq`, `dramatiq`, `none` | `make backend-worker`; `make backend-beat` for Celery only |
-| Django Matt | `celery` (default), `none` | `make backend-worker`; `make backend-beat` for Celery |
-| FastAPI | `celery` (default), `none` | `make backend-worker`; `make backend-beat` for Celery |
+| Django Ninja | `celery` (default), `huey`, `django_q`, `django_rq`, `dramatiq`, `none` | `just backend-worker`; `just backend-beat` for Celery only |
+| Django Matt | `celery` (default), `none` | `just backend-worker`; `just backend-beat` for Celery |
+| FastAPI | `celery` (default), `none` | `just backend-worker`; `just backend-beat` for Celery |
 | NestJS | Bull queues inside the API process | None; the CLI sets the task backend to `none` |
 | Frontend-only | `none` | None |
 
@@ -85,11 +85,11 @@ Use `backend.task_backend`, `backend.realtime`, and `backend.media_storage` in
 scaffold YAML. CLI flags override these values. With `none`, no worker exists,
 and Django Ninja rejects enqueue attempts instead of dropping jobs.
 
-Run `make setup` before you run quality commands. Start the selected queue
+Run `just setup` before you run quality commands. Start the selected queue
 consumer in one of two ways:
 
-- Host: `make backend-worker`, plus `make backend-beat` for the Celery scheduler.
-- Compose: `make up-<profile>`. The profiles are `celery`, `huey`, `django-q`,
+- Host: `just backend-worker`, plus `just backend-beat` for the Celery scheduler.
+- Compose: `just up-<profile>`. The profiles are `celery`, `huey`, `django-q`,
   `django-rq`, and `dramatiq`.
 
 Missing worker targets fail instead of reporting success. Apply migrations with
@@ -103,7 +103,7 @@ with `--task-backend none`. Any task backend other than `none` also needs Redis.
 
 #### Realtime
 
-Run `make up-realtime` to start Centrifugo v5 for development. The development
+Run `just up-realtime` to start Centrifugo v5 for development. The development
 port binds to `127.0.0.1` and defaults to `8800`. The admin UI is off.
 
 The generated `.env` contains the realtime secrets; keep it private. The
@@ -312,7 +312,7 @@ for the two new `GET` operations. The generator does not add them to
 1. Confirm that anonymous reads of this resource are acceptable.
 2. Add only those two `GET` operations to `PUBLIC_OPERATIONS` in
    `backend/core/tests/test_route_auth.py`.
-3. Run `cd backend && just gauntlet-quick`.
+3. Run `just backend-gauntlet-quick`.
 
 For private data, use `--scope owned --owner-field <user-fk>` instead.
 
@@ -477,7 +477,7 @@ version, and `node_modules` must contain that version. A range such as
 pin.
 
 For Django Ninja, the default schema is `backend/docs/openapi/openapi.json`
-(`just openapi` in the backend writes it). Other backends use `openapi.json`
+(`just backend-openapi` writes it). Other backends use `openapi.json`
 at the project root. When the Ninja export is missing, run the export command
 that the CLI prints, then retry. The ownership manifest
 `.mattstack-openapi.json` protects edited or unmanaged files. Exclude the
@@ -489,7 +489,7 @@ Regenerate into a temporary directory and compare every file with the
 committed output. On a difference, list the stale, missing, or extra files,
 print the regenerate command, and exit 1. Options: `--schema`, `-o, --output`,
 and `-p, --path`. Use it as a local gate or pre-push hook. It does not check
-that the backend export is current; run the backend's `just openapi-check`
+that the backend export is current; run `just backend-openapi-check`
 for that.
 
 See [OpenAPI clients with Hey API](ecosystem.md#openapi-clients-with-hey-api)
@@ -518,7 +518,7 @@ Parallel lint includes format checks. Both runners return nonzero when any
 selected job fails. Child output and labels render as literal text.
 
 Generated React frontends use Oxlint (`lint`, `lint:strict`, `lint:fix`) and
-Oxfmt (`format`, `format:check`). Run `make setup` after generation to refresh
+Oxfmt (`format`, `format:check`). Run `just setup` after generation to refresh
 the cloned lockfile and format frontend files changed by postprocessing. Use frozen
 installs only after that refresh. Root hooks run frontend lint and a read-only format check, scoped
 to `frontend/`. Next.js retains its existing lint workflow.
@@ -597,7 +597,7 @@ mattstack dev -s backend,docker     # Select services
 - `--mode container` adds the `api-dev` and `frontend-dev` containers.
 - `--no-docker` skips infrastructure. It cannot be combined with container mode.
 - `mattstack dev` does not start task workers or Centrifugo. Start them with
-  `make backend-worker`, `make up-<profile>`, or `make up-realtime`.
+  `just backend-worker`, `just up-<profile>`, or `just up-realtime`.
 
 Commands use configured ports. Shutdown stops the selected application
 processes or containers and leaves infrastructure running.
@@ -668,7 +668,7 @@ mattstack health --live --json
 
 Install the Git hook stages that the selected source's
 `.pre-commit-config.yaml` declares, then verify the hook files. The Django
-Ninja source runs Ruff at commit time and `just gauntlet-quick` before push,
+Ninja source runs Ruff at commit time and `just backend-gauntlet-quick` before push,
 with locked backend development tools. Install `uv`, `just`, and `bun` as
 required. Missing prerequisites fail before hooks are written.
 pre-commit refuses to install while `core.hooksPath` is set; unset a stale
@@ -682,12 +682,12 @@ Run `mattstack hooks status` to show installed hooks. Run
 
 ### `mattstack workflow`
 
-Generated projects run every gate locally and have no hosted CI. `make
-gauntlet` runs the backend's `just gauntlet` and the frontend's `gauntlet`
-script, or their lint and test targets when a component has no gate. A Django
-or FastAPI fullstack project then runs `mattstack sync check`, and every
-project ends with `mattstack audit --no-todo`. For Django Ninja, the pre-push
-hook from `mattstack hooks install` runs the backend's `just gauntlet-quick`.
+Generated projects run every gate locally and have no hosted CI. `just
+gauntlet` runs the backend's `just backend-gauntlet` and the frontend's
+`gauntlet` script, or their lint and test targets when a component has no
+gate. A Django or FastAPI fullstack project then runs `mattstack sync check`,
+and every project ends with `mattstack audit --no-todo`. For Django Ninja, the
+pre-push hook from `mattstack hooks install` runs `just backend-gauntlet-quick`.
 
 `mattstack workflow` generates hosted CI only when you opt in with `--ci`.
 Without it, the command prints the local gates and exits 2.

@@ -40,7 +40,8 @@ def generate_gauntlet_toml(config: ProjectConfig, tools: Toolchain | None = None
     checks: list[str] = []
     gate = backend_gate(config.backend_dir) if config.has_backend else None
     if gate:
-        checks.append(_check("backend-gauntlet", gate, "backend", ["backend/**/*"]))
+        command, cwd = gate
+        checks.append(_check("backend-gauntlet", command, cwd, ["backend/**/*"]))
     script = frontend_gate_script(config.frontend_dir, quick=False) if config.has_frontend else None
     if script:
         command = [tools.js_pm, "run", script]

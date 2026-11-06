@@ -38,6 +38,8 @@ def _mock_clone(url: str, dest: Path, branch: str = "main", depth: int = 1) -> b
         (dest / "scripts" / "env_secrets.py").write_text(_FAKE_SECRETS)
         for f in [
             "Makefile",
+            "Makefile.legacy",
+            "justfile",
             "docker-compose.yml",
             ".env",
             ".env.example",
@@ -54,6 +56,8 @@ def _mock_clone(url: str, dest: Path, branch: str = "main", depth: int = 1) -> b
         (dest / "src").mkdir()
         for f in [
             "Makefile",
+            "Makefile.legacy",
+            "justfile",
             "docker-compose.yml",
             ".env",
             "env.example",
@@ -77,7 +81,7 @@ def test_fullstack_generates_all_files(mock_clone, tmp_path: Path) -> None:
     result = gen.run()
     assert result is True
     assert config.path.exists()
-    assert (config.path / "Makefile").exists()
+    assert (config.path / "justfile").exists()
     assert (config.path / "docker-compose.yml").exists()
     assert (config.path / "README.md").exists()
     assert (config.path / ".gitignore").exists()
@@ -95,6 +99,8 @@ def test_fullstack_consolidates_boilerplate_files(mock_clone, tmp_path: Path) ->
     # Backend standalone files removed (including .env — nothing regenerates it)
     for f in [
         "Makefile",
+        "Makefile.legacy",
+        "justfile",
         "docker-compose.yml",
         ".env",
         "Dockerfile",

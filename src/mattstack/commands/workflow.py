@@ -1,6 +1,6 @@
 """Workflow command: opt-in hosted CI generation for fullstack monorepos.
 
-Generated projects run every gate locally (``make gauntlet`` and the pre-push
+Generated projects run every gate locally (``just gauntlet`` and the pre-push
 hook). Hosted runners cost build minutes, so this command writes a workflow
 only for an explicit ``--ci github`` or ``--ci gitlab``.
 
@@ -323,7 +323,7 @@ def run_generate_workflow(
     target = _CI_TARGETS.get(ci or "")
     if target is None:
         print_error(
-            "Hosted CI is opt-in. Gates run locally: `make gauntlet` and the "
+            "Hosted CI is opt-in. Gates run locally: `just gauntlet` and the "
             "pre-push hook (`mattstack hooks install`)."
         )
         print_info("To generate a workflow anyway, pass --ci github or --ci gitlab.")

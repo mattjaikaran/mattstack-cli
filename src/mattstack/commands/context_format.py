@@ -36,8 +36,8 @@ def format_context_markdown(ctx: dict[str, Any]) -> str:
         lines.append("")
     if "env_vars" in ctx:
         lines += ["## Environment Variables", f"`{', '.join(ctx['env_vars'])}`", ""]
-    if "makefile_targets" in ctx:
-        lines += ["## Makefile Targets", f"`{', '.join(ctx['makefile_targets'])}`", ""]
+    if "just_recipes" in ctx:
+        lines += ["## Just Recipes", f"`{', '.join(ctx['just_recipes'])}`", ""]
     if "tools" in ctx:
         lines.append("## Dev Tools")
         for tool, ver in ctx["tools"].items():

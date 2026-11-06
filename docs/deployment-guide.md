@@ -124,7 +124,7 @@ route and firewall rules before you expose realtime. Set
 
 ## Production prerequisites
 
-1. Run `make setup`, then review and commit lockfile changes. `make setup` does
+1. Run `just setup`, then review and commit lockfile changes. `just setup` does
    not use locked installs, so it can rewrite `uv.lock` and `bun.lock`.
    Generated Docker and CI Bun installs use `--frozen-lockfile` and fail on
    `bun.lock` drift. The uv installs do not catch `uv.lock` drift: the backend

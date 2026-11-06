@@ -29,7 +29,6 @@ INSTALL_HINTS: dict[str, str] = {
     "git": "brew install git",
     "uv": "curl -LsSf https://astral.sh/uv/install.sh | sh",
     "bun": "curl -fsSL https://bun.sh/install | bash",
-    "make": "xcode-select --install",
     "just": "brew install just",
 }
 
@@ -67,7 +66,7 @@ def _tool_checks() -> list[DoctorCheck]:
     checks.append(
         DoctorCheck("Python >= 3.12", "ok" if sys.version_info >= (3, 12) else "fail", py_version)
     )
-    for cmd in ("git", "uv", "bun", "make"):
+    for cmd in ("git", "uv", "bun"):
         if command_available(cmd):
             checks.append(DoctorCheck(cmd, "ok", _first_line(get_command_version(cmd))))
         else:
@@ -78,10 +77,10 @@ def _tool_checks() -> list[DoctorCheck]:
 
 
 def _just_check(project: ResolvedProject) -> DoctorCheck:
-    """`just` runs the backend gates; it is required only when a justfile exists."""
+    """`just` runs the project gates; it is required only when a justfile exists."""
     if command_available("just"):
         return DoctorCheck("just", "ok", _first_line(get_command_version("just")))
-    required = (project.backend_dir / "justfile").is_file()
+    required = (project.root / "justfile").is_file() or (project.backend_dir / "justfile").is_file()
     return DoctorCheck(
         "just",
         "fail" if required else "optional",

@@ -8,11 +8,11 @@ so the tool reads the component's own configuration and locked version.
 Which component tools survive:
 
 - Django Ninja: the backend's locked ruff (lint with fixes, then format) on
-  commit, and ``just gauntlet-quick`` on push. The quick gauntlet runs the
+  commit, and ``just backend-gauntlet-quick`` on push. The quick gauntlet runs the
   backend's mypy, bandit, convention, dependency, architecture, file-length,
   and pytest checks. The root config does not carry over the backend's djhtml,
   hadolint, shellcheck, YAML/JSON prettier, commit-message, or pip-audit hooks;
-  run ``cd backend && just gauntlet`` for pip-audit.
+  run ``just backend-gauntlet`` for pip-audit.
 - Other Python backends: ``uv run ruff`` inside ``backend/``, so the hook uses
   the version the backend's lockfile resolves instead of a pinned mirror.
 - NestJS: the backend's own ``lint`` script (Biome).
@@ -42,10 +42,7 @@ _NINJA_RUFF = (
 _NINJA_GAUNTLET = (
     "command -v just >/dev/null || "
     '{ echo "backend-gauntlet-quick needs just: uv tool install rust-just" >&2; exit 1; }; '
-    "command -v uv >/dev/null || "
-    '{ echo "backend-gauntlet-quick needs uv: '
-    'curl -LsSf https://astral.sh/uv/install.sh | sh" >&2; exit 1; }; '
-    "cd backend && uv run --extra dev just gauntlet-quick"
+    "just backend-gauntlet-quick"
 )
 # Other Python backends: the ruff their lockfile resolves, never a mirror pin.
 _PROJECT_RUFF = (

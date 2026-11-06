@@ -9,8 +9,8 @@ The boilerplates do not agree on their npm script names:
 - `react-vite-boilerplate` runs `vitest` in watch mode for `test`; the
   others run `vitest run`.
 
-Emitting one hardcoded name breaks `make test` for most presets, so resolve
-the command from the chosen framework. Both the generated Makefile and the
+Emitting one hardcoded name breaks `just test` for most presets, so resolve
+the command from the chosen framework. Both the generated justfile and the
 generated CI workflow read this module, so they cannot drift apart.
 """
 

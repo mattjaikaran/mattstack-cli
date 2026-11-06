@@ -174,8 +174,8 @@ def runtime_guidance(config: ProjectConfig) -> list[str]:
     profile = task_profile(config)
     if profile and not config.is_nestjs_backend:
         lines.append(
-            f"- Background jobs: {task_summary(config)}. Start: `make up-{profile}` (Docker) "
-            "or `make backend-worker` (host)"
+            f"- Background jobs: {task_summary(config)}. Start: `just up-{profile}` (Docker) "
+            "or `just backend-worker` (host)"
         )
     elif _ninja(config):
         lines.append(
@@ -185,7 +185,7 @@ def runtime_guidance(config: ProjectConfig) -> list[str]:
     if config.use_realtime:
         prefix = config.api_prefix
         lines.append(
-            "- Realtime: Centrifugo. Start `make up-realtime`; check "
+            "- Realtime: Centrifugo. Start `just up-realtime`; check "
             f"`curl -fsS http://localhost:${{CENTRIFUGO_PORT:-{CENTRIFUGO_PORT}}}/health`; "
             f"JWT-authenticated tokens from `POST {prefix}/realtime/connection-token` and "
             f"`POST {prefix}/realtime/subscription-token`. Secrets: "
