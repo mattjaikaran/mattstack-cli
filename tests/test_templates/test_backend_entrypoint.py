@@ -26,6 +26,8 @@ NINJA_ENV = {
     "SECRET_KEY": "s" * 50,
     "NINJA_JWT_SIGNING_KEY": "j" * 50,
     "CENTRIFUGO_TOKEN_SECRET": "c" * 50,
+    "CENTRIFUGO_API_KEY": "a" * 50,
+    "USE_TLS": "true",
     "REDIS_URL": "redis://cache:6379/0",
     "ALLOWED_HOSTS": "api.example.com",
 }
@@ -203,12 +205,17 @@ def test_health_probe_skips_the_startup_check(tmp_path: Path) -> None:
     assert _run(_script(tmp_path), {**path, "ALLOWED_HOSTS": "a.example"}, "health").returncode == 0
 
 
-def test_tls_target_requires_use_tls_for_the_web_process(tmp_path: Path) -> None:
-    script = _script(tmp_path, deployment=DeploymentTarget.HETZNER)
-    assert "USE_TLS must be true." in _run(script, NINJA_ENV, "check").stderr
-    assert _run(script, {**NINJA_ENV, "USE_TLS": "true"}, "check").returncode == 0
+@pytest.mark.parametrize("target", [DeploymentTarget.DOCKER, DeploymentTarget.AWS])
+def test_every_ninja_target_requires_use_tls_for_the_web_process(
+    tmp_path: Path, target: DeploymentTarget
+) -> None:
+    """prod.py refuses to import without USE_TLS, including docker and aws."""
+    script = _script(tmp_path, deployment=target)
+    env = {k: v for k, v in NINJA_ENV.items() if k != "USE_TLS"}
+    assert "USE_TLS must be true." in _run(script, env, "check").stderr
+    assert _run(script, {**env, "USE_TLS": "true"}, "check").returncode == 0
     # Workers do not serve requests and need no web settings.
-    assert _run(script, NINJA_ENV, "true").returncode == 0
+    assert _run(script, env, "true").returncode == 0
 
 
 def test_render_allows_its_own_health_check_hosts(tmp_path: Path) -> None:
