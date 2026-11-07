@@ -520,10 +520,12 @@ Parallel lint includes format checks. Both runners return nonzero when any
 selected job fails. Child output and labels render as literal text.
 
 Generated React frontends use Oxlint (`lint`, `lint:strict`, `lint:fix`) and
-Oxfmt (`format`, `format:check`). Run `just setup` after generation to refresh
-the cloned lockfile and format frontend files changed by postprocessing. Use frozen
-installs only after that refresh. Root hooks run frontend lint and a read-only format check, scoped
-to `frontend/`. Next.js retains its existing lint workflow.
+Oxfmt (`format`, `format:check`). `mattstack init` sorts frontend dependencies
+and resolves the cloned lockfiles before the initial commit, so `just setup`
+installs dependencies without rewriting `frontend/package.json`,
+`frontend/bun.lock`, the bundler config, or `backend/uv.lock`. Use frozen
+installs after setup. Root hooks run frontend lint and a read-only format check,
+scoped to `frontend/`. Next.js retains its existing lint workflow.
 
 React Doctor is an application check, distinct from `mattstack doctor`:
 `cd frontend && bun run doctor` uses the pinned local package, disables telemetry

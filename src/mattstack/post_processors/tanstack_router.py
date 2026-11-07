@@ -19,6 +19,7 @@ from mattstack.config import ProjectConfig
 from mattstack.parsers.frontend_routes import tanstack_route_id
 from mattstack.parsers.tanstack_config import RouteNaming, read_tanstack_config
 from mattstack.utils.console import print_info, print_warning
+from mattstack.utils.package_json import write_package_json
 
 # Exact published versions with compatible peers. Devtools does not publish
 # the router's patch numbers: react-router-devtools 1.166.13 declares
@@ -101,7 +102,7 @@ def _align_manifest(manifest: Path) -> bool:
             scripts["build"] = f"{commands[1]} && {commands[0]}"
             changed = True
     if changed:
-        manifest.write_text(json.dumps(data, indent=2) + "\n")
+        write_package_json(manifest, data)
     return changed
 
 

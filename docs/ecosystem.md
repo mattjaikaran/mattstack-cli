@@ -159,9 +159,11 @@ mattstack config init   # Write the template config
 ## Dependency and lock updates
 
 `just setup` installs dependencies without locked mode, so it can update
-`uv.lock` and `bun.lock`. It also requests the backend's `dev` extra when one
-exists. For a Django Ninja task backend other than Celery, it adds that
-backend's extra, for example `uv sync --extra huey`.
+`uv.lock` and `bun.lock`. `mattstack init` resolves both lockfiles after its
+manifest edits, so setup normally leaves them unchanged; a change means the
+dependency graph moved and belongs in its own commit. Setup also requests the
+backend's `dev` extra when one exists. For a Django Ninja task backend other
+than Celery, it adds that backend's extra, for example `uv sync --extra huey`.
 
 `mattstack deps update` runs `uv lock --upgrade`, then syncs the selected
 task-backend extra and declared `dev` extra or dependency group. It removes
