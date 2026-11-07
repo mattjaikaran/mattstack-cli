@@ -4,11 +4,14 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess  # nosec B404 -- CLI executes trusted project tools; no shell.
 import tomllib
 from pathlib import Path
 
 from mattstack.config import BackendFramework, ProjectConfig
-from mattstack.utils.console import print_info
+from mattstack.utils.console import print_info, print_warning
+from mattstack.utils.package_json import write_package_json
+from mattstack.utils.process import command_available
 
 
 def customize_backend(config: ProjectConfig) -> None:
@@ -19,6 +22,7 @@ def customize_backend(config: ProjectConfig) -> None:
         _customize_fastapi_backend(config)
     else:
         _customize_django_backend(config)
+    _refresh_uv_lock(config.backend_dir)
 
 
 def _customize_django_backend(config: ProjectConfig) -> None:
@@ -83,7 +87,7 @@ def _customize_nestjs_backend(config: ProjectConfig) -> None:
         data = json.loads(package_json.read_text())
         data["name"] = f"{config.name}-backend"
         data["description"] = f"{config.display_name} API (NestJS)"
-        package_json.write_text(json.dumps(data, indent=2) + "\n")
+        write_package_json(package_json, data)
         _sync_bun_lock(config.backend_dir, data["name"])
         print_info(f"Renamed backend to {config.name}-backend")
 
@@ -94,9 +98,34 @@ def customize_frontend(config: ProjectConfig) -> None:
     if package_json.exists():
         data = json.loads(package_json.read_text())
         data["name"] = f"{config.name}-frontend"
-        package_json.write_text(json.dumps(data, indent=2) + "\n")
+        write_package_json(package_json, data)
         _sync_bun_lock(config.frontend_dir, data["name"])
         print_info(f"Renamed frontend to {config.name}-frontend")
+
+
+def _refresh_uv_lock(backend_dir: Path) -> None:
+    """Resolve the renamed project into ``uv.lock`` before the initial commit."""
+    lock = backend_dir / "uv.lock"
+    if not lock.is_file() or not command_available("uv"):
+        return
+    try:
+        result = subprocess.run(  # nosec B603, B607 -- argv; trusted project tool.
+            ["uv", "lock"],
+            cwd=backend_dir,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as error:
+        print_warning(f"Could not refresh backend/uv.lock: {error}")
+        return
+    if result.returncode != 0:
+        print_warning(
+            f"Could not refresh backend/uv.lock; `just setup` will update it: "
+            f"{result.stderr.strip()}"
+        )
+        return
+    print_info("Refreshed backend/uv.lock for the generated project")
 
 
 def _sync_uv_lock(pyproject: Path, previous: str) -> None:

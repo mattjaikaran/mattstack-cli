@@ -9,6 +9,7 @@ from pathlib import Path
 from mattstack.config import ProjectConfig
 from mattstack.templates.frontend_runtime import RSBUILD_FRAMEWORKS, VITE_FRAMEWORKS
 from mattstack.utils.console import print_info
+from mattstack.utils.package_json import write_package_json
 
 REACT_TOOL_VERSIONS = {"oxlint": "1.87.0", "oxfmt": "0.72.0", "react-doctor": "0.9.14"}
 REACT_SCRIPTS = {
@@ -64,7 +65,7 @@ def configure_frontend_tooling(config: ProjectConfig) -> None:
     scripts.pop("prettier", None)
     scripts.pop("eslint", None)
     scripts.update(REACT_SCRIPTS)
-    manifest.write_text(json.dumps(package, indent=2) + "\n")
+    write_package_json(manifest, package)
     _remove_legacy_configs(config.frontend_dir)
     old_doctor_config = config.frontend_dir / "react-doctor.config.json"
     doctor_config = config.frontend_dir / "doctor.config.json"

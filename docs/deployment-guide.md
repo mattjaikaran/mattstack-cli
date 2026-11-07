@@ -124,15 +124,15 @@ route and firewall rules before you expose realtime. Set
 
 ## Production prerequisites
 
-1. Run `just setup`, then review and commit lockfile changes. `just setup` does
-   not use locked installs, so it can rewrite `uv.lock` and `bun.lock`.
-   Generated Docker and CI Bun installs use `--frozen-lockfile` and fail on
-   `bun.lock` drift. The uv installs do not catch `uv.lock` drift: the backend
-   image runs `uv sync` without `--locked`, and CI runs `uv sync --frozen`.
-   Commit the reviewed `uv.lock` yourself. Project renaming updates the project
-   name in `uv.lock` and the text `bun.lock`; other lockfiles are not changed.
-   When the CLI changes a frontend dependency pin, it prints the manifest and
-   the setup command.
+1. Run `just setup`, then review and commit any lockfile change. `mattstack init`
+   resolves `uv.lock` and `bun.lock` after its edits, so setup normally leaves
+   both unchanged. `just setup` does not use locked installs, so a change means
+   it rewrote a lock. Generated Docker and CI Bun installs use
+   `--frozen-lockfile` and fail on `bun.lock` drift. The uv installs do not
+   catch `uv.lock` drift: the backend image runs `uv sync` without `--locked`,
+   and CI runs `uv sync --frozen`. Commit the reviewed `uv.lock` yourself.
+   Project renaming updates the project name in `uv.lock` and the text
+   `bun.lock`; the init refresh resolves any newly added dependency.
 2. Copy `.env.production.example` to the ignored `.env.production`, or set the
    same variables through your provider's secret manager.
 3. Replace every placeholder. Use independent secret and signing keys.

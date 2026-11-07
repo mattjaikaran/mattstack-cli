@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess  # nosec B404 -- CLI executes trusted project tools; no shell.
 from pathlib import Path
 
 from mattstack.config import FrontendFramework, ProjectConfig
@@ -24,6 +25,8 @@ from mattstack.templates.frontend_runtime import (
     render_env_file,
 )
 from mattstack.utils.console import print_info, print_warning
+from mattstack.utils.package_json import write_package_json
+from mattstack.utils.process import command_available
 
 _PROXY_CONST = "apiProxyTarget"
 _CONFIG_SUFFIXES = (".ts", ".mts", ".js", ".mjs")
@@ -45,6 +48,7 @@ def setup_frontend_monorepo(config: ProjectConfig) -> None:
         align_tanstack_router(config)
     if config.frontend_framework in RSBUILD_FRAMEWORKS:
         _align_rsbuild_typescript(config.frontend_dir)
+    _refresh_bun_lock(config.frontend_dir)
 
     if config.is_nextjs:
         _inline_next_public_env(config)
@@ -78,6 +82,35 @@ def _align_rsbuild_typescript(frontend_dir: Path) -> None:
         print_info("Aligned Rsbuild TypeScript libraries with ES2023 array helpers")
 
 
+def _refresh_bun_lock(frontend_dir: Path) -> None:
+    """Resolve manifest edits into ``bun.lock`` before the initial commit.
+
+    ``just setup`` installs from the lock; leaving it stale means the first
+    install rewrites it and a fresh project starts dirty.
+    """
+    lock = frontend_dir / "bun.lock"
+    if not lock.is_file() or not command_available("bun"):
+        return
+    try:
+        result = subprocess.run(  # nosec B603, B607 -- argv; trusted project tool.
+            ["bun", "install", "--lockfile-only"],
+            cwd=frontend_dir,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError as error:
+        print_warning(f"Could not refresh frontend/bun.lock: {error}")
+        return
+    if result.returncode != 0:
+        print_warning(
+            "Could not refresh frontend/bun.lock; `just setup` will update it: "
+            f"{result.stderr.strip()}"
+        )
+        return
+    print_info("Refreshed frontend/bun.lock for the generated manifest")
+
+
 def _pin_openapi_generator(config: ProjectConfig) -> None:
     """Pin the OpenAPI client generator exactly, so `mattstack sync check` is reproducible.
 
@@ -96,7 +129,7 @@ def _pin_openapi_generator(config: ProjectConfig) -> None:
     if isinstance(current, str) and EXACT_VERSION.fullmatch(current):
         return
     entries[HEY_API_NAME] = HEY_API_VERSION
-    manifest.write_text(json.dumps(package, indent=2) + "\n")
+    write_package_json(manifest, package)
     print_info(f"Pinned {HEY_API_NAME} to {HEY_API_VERSION} in frontend/package.json")
 
 
@@ -228,13 +261,36 @@ def _patch_config_text(text: str, config: ProjectConfig) -> str:
 
 def _proxy_const(text: str, config: ProjectConfig) -> str:
     semi = ";" if re.search(r"^import .*;\s*$", text, re.MULTILINE) else ""
+    width = _print_width(config.frontend_dir)
+    target = f"`http://localhost:${{process.env.API_PORT ?? {config.backend_api_port}}}`{semi}"
+    one_line = f"const {_PROXY_CONST} = process.env.API_PROXY_TARGET ?? {target}"
+    wrapped = f"  process.env.API_PROXY_TARGET ?? {target}"
+    if len(one_line) <= width:
+        declaration = f"{one_line}\n"
+    elif len(wrapped) <= width:
+        declaration = f"const {_PROXY_CONST} =\n{wrapped}\n"
+    else:
+        declaration = f"const {_PROXY_CONST} =\n  process.env.API_PROXY_TARGET ??\n  {target}\n"
     return (
         "\n// Compose sets API_PROXY_TARGET to the api-dev service. Host runs reach\n"
         "// the backend on API_PORT, which `just frontend-dev` loads from the root .env.\n"
-        f"const {_PROXY_CONST} =\n"
-        "  process.env.API_PROXY_TARGET ??\n"
-        f"  `http://localhost:${{process.env.API_PORT ?? {config.backend_api_port}}}`{semi}\n"
+        f"{declaration}"
     )
+
+
+def _print_width(frontend_dir: Path) -> int:
+    """Return Oxfmt's effective line width for this frontend (default 100).
+
+    Writing the constant in the formatter's own shape keeps the initial commit
+    clean; a mismatch shows up as a dirty ``rsbuild.config.ts`` after setup.
+    """
+    config_path = frontend_dir / ".oxfmtrc.json"
+    try:
+        text = config_path.read_text()
+    except (OSError, ValueError):
+        return 100
+    match = re.search(r'"printWidth"\s*:\s*(\d+)', text)
+    return int(match.group(1)) if match else 100
 
 
 def _insert_after_imports(text: str, block: str) -> str:
