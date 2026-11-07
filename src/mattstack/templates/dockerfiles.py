@@ -39,6 +39,14 @@ _NEXT_HEALTH = (
 )
 
 
+_NINJA_BUILD_KEYS = """\
+    USE_TLS=true \\
+    NINJA_JWT_SIGNING_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(64))')" \\
+    CENTRIFUGO_TOKEN_SECRET="$(python -c 'import secrets; print(secrets.token_urlsafe(64))')" \\
+    CENTRIFUGO_API_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(64))')" \\
+"""
+
+
 def generate_dockerignore() -> str:
     """Keep secrets and host build artifacts outside the root build context."""
     return """\
@@ -256,15 +264,7 @@ COPY backend/ .
 def _django_backend(config: ProjectConfig) -> str:
     port = config.backend_api_port
     build_packages = "build-essential libpq-dev" + (" git" if config.is_django_matt else "")
-    # Only Ninja's prod settings validate these keys during collectstatic.
-    ninja_keys = (
-        ""
-        if config.is_django_matt
-        else """\
-    NINJA_JWT_SIGNING_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(64))')" \\
-    CENTRIFUGO_TOKEN_SECRET="$(python -c 'import secrets; print(secrets.token_urlsafe(64))')" \\
-"""
-    )
+    ninja_keys = "" if config.is_django_matt else _NINJA_BUILD_KEYS
     return f"""\
 {_python_base(config, build_packages)}{_uv_sync(config)}
 

@@ -108,7 +108,13 @@ def _serve(config: ProjectConfig) -> str:
             f"granian --interface asgi {config.wsgi_app}.asgi:application "
             '--host 0.0.0.0 --port "$PORT" --workers 3'
         )
-    return f'gunicorn {config.wsgi_app}.wsgi:application --bind "0.0.0.0:$PORT" --workers 3'
+    # The published Ninja image runs Gunicorn with uvicorn's ASGI worker
+    # (gunicorn.conf.py sets the same class); the WSGI worker cannot serve the
+    # async views and the streaming responses the API defines.
+    return (
+        f'gunicorn {config.wsgi_app}.asgi:application --bind "0.0.0.0:$PORT" '
+        "--workers 3 --worker-class uvicorn_worker.UvicornWorker"
+    )
 
 
 def _health(config: ProjectConfig) -> str:

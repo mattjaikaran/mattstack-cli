@@ -112,9 +112,11 @@ example file has empty placeholders. Centrifugo verifies client tokens with
 connection and channel tokens only from an authenticated API endpoint in your
 backend source.
 
-For production, set `CENTRIFUGO_API_KEY` and `CENTRIFUGO_ALLOWED_ORIGINS`.
-Production Compose always runs Centrifugo for a realtime project. Cloud recipes
-do not deploy it; you supply `CENTRIFUGO_URL` and `CENTRIFUGO_API_KEY`. See
+For production, `api/settings/prod.py` requires `CENTRIFUGO_TOKEN_SECRET` and
+`CENTRIFUGO_API_KEY` even when realtime is not selected. Set both to distinct
+values. A realtime project also sets `CENTRIFUGO_URL` and
+`CENTRIFUGO_ALLOWED_ORIGINS`. Production Compose always runs Centrifugo for a
+realtime project. Cloud recipes do not deploy it. See
 [optional services in production](deployment-guide.md#optional-services-in-production).
 
 #### S3 media

@@ -205,9 +205,9 @@ def generate_copilot_manifest(config: ProjectConfig) -> str:
     if config.is_django_backend and not config.is_django_matt:
         head.extend(
             [
-                "# The load balancer may serve HTTP only. Once the environment has an HTTPS",
-                '# listener (a certificate), add USE_TLS: "true" under variables to enable',
-                "# the HTTPS redirect, HSTS, and secure cookies.",
+                "# api/settings/prod.py requires USE_TLS=true; the variables below set it.",
+                "# Add an HTTPS listener (a certificate) to the environment before deploying.",
+                "# A plain-HTTP load balancer is not a supported production contract.",
             ]
         )
     head.append(f"name: {api_service(config)}")
