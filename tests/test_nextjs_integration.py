@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+from test_generators.boilerplate_clone import write_ninja_settings
+
 from mattstack.config import FrontendFramework, ProjectConfig, ProjectType, Variant
 
 
@@ -281,6 +283,7 @@ class TestNextjsGenerator:
                 "import shutil, sys\na = sys.argv\n"
                 "shutil.copy(a[a.index('--template') + 1], a[a.index('--env-file') + 1])\n"
             )
+            write_ninja_settings(dest)
         elif "nextjs" in url:
             (dest / "package.json").write_text('{"name": "nextjs-starter"}\n')
             (dest / "app").mkdir()

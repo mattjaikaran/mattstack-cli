@@ -226,8 +226,8 @@ def test_aws_reads_every_requirement_from_ssm(tmp_path: Path) -> None:
     task = _parse("t.json", files["ecs-task-definition.json"])
     containers = {c["name"]: c for c in task["containerDefinitions"]}
     api, frontend = containers["my-app-api"], containers["my-app-frontend"]
-    # The load balancer may be HTTP-only, so TLS mode stays an operator opt-in.
-    assert "environment" not in api
+    # prod.py requires USE_TLS; the load balancer must terminate HTTPS.
+    assert api["environment"] == [{"name": "USE_TLS", "value": "true"}]
     assert api["healthCheck"]["command"] == ["CMD", "app-entrypoint", "health"]
     assert [s["name"] for s in api["secrets"]] == [req.name for req in required_env(config)]
     assert {"name": "API_UPSTREAM", "value": "http://localhost:8000"} in frontend["environment"]

@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 from mattstack.config import ProjectConfig, ProjectType, Variant
 from mattstack.generators.fullstack import FullstackGenerator
+from test_generators.boilerplate_clone import write_ninja_settings
 
 
 def _make_config(tmp_path: Path, **kwargs) -> ProjectConfig:
@@ -50,6 +51,7 @@ def _mock_clone(url: str, dest: Path, branch: str = "main", depth: int = 1) -> b
             ".dockerignore",
         ]:
             (dest / f).write_text("x")
+        write_ninja_settings(dest)
         (dest / "nginx").mkdir()
     elif "react" in url:
         (dest / "package.json").write_text('{"name": "test"}\n')
