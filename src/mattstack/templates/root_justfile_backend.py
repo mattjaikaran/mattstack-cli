@@ -232,7 +232,7 @@ def _superuser_recipes(config: ProjectConfig) -> str:
             "-e SUPERUSER_FIRST_NAME -e SUPERUSER_LAST_NAME "
         )
         container = (
-            f"{check}    docker compose exec {envs}api-dev python manage.py create_superuser\n"
+            f"{check}    docker compose exec -T {envs}api-dev python manage.py create_superuser\n"
         )
         host = f"{check}    cd backend && uv run python manage.py create_superuser"
     else:
