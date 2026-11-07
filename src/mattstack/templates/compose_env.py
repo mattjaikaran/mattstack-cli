@@ -22,6 +22,8 @@ from mattstack.templates.frontend_runtime import FRONTEND_PORT
 from mattstack.utils.versions import image_tag, major
 
 ANCHOR = "backend-env"
+# The dev compose one-shot that applies schema migrations before app services.
+MIGRATE_SERVICE = "migrate"
 # Fallbacks when the backend's own Compose file records no tag; they match
 # django-ninja-boilerplate's docker-compose.yml.
 _IMAGE_DEFAULTS = {
@@ -301,9 +303,18 @@ def service_environment(extra: dict[str, str]) -> str:
     return "\n".join(lines)
 
 
-def depends_block(config: ProjectConfig) -> str:
+def depends_block(config: ProjectConfig, *, migrate: bool = False) -> str:
+    """Render ``depends_on``; dev app services wait for the one-shot migration.
+
+    ``migrate`` is off by default because production services use the image
+    entrypoint's ``migrate`` mode instead of a separate Compose service.
+    """
     deps = ["db", "redis"] if config.use_redis else ["db"]
     lines = ["    depends_on:"]
     for dep in deps:
         lines.extend([f"      {dep}:", "        condition: service_healthy"])
+    if migrate:
+        lines.extend(
+            [f"      {MIGRATE_SERVICE}:", "        condition: service_completed_successfully"]
+        )
     return "\n".join(lines)
