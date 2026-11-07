@@ -11,6 +11,8 @@ import pytest
 SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "gauntlet.py"
 SDIST_NAME = "mattstack-0.9.1.tar.gz"
 WHEEL_NAME = "mattstack-0.9.1-py3-none-any.whl"
+TYPO_COMMAND = "sync2"
+TYPO_OUTPUT = "No such command 'sync2'. Did you mean 'sync'?"
 
 
 def _load_gauntlet() -> ModuleType:
@@ -22,15 +24,20 @@ def _load_gauntlet() -> ModuleType:
 
 
 def _record(
-    monkeypatch: pytest.MonkeyPatch, gauntlet: ModuleType, fail_at: int | None = None
+    monkeypatch: pytest.MonkeyPatch,
+    gauntlet: ModuleType,
+    fail_at: int | None = None,
+    typo: tuple[int, str] = (2, TYPO_OUTPUT),
 ) -> list[tuple[list[str], Path | None, int]]:
-    """Replace ``_run`` with a recorder that writes the artifacts a build would."""
+    """Replace ``_run`` with a recorder that answers each argv like the installed CLI."""
     calls: list[tuple[list[str], Path | None, int]] = []
 
     def fake_run(cmd: list[str], cwd: Path | None = None, timeout: int = 120) -> tuple[int, str]:
         calls.append((list(cmd), cwd, timeout))
         if fail_at is not None and len(calls) - 1 == fail_at:
             return 1, "boom"
+        if cmd[-1] == TYPO_COMMAND:
+            return typo
         if "-o" in cmd:
             out_dir = Path(cmd[cmd.index("-o") + 1])
             if "--sdist" in cmd:
@@ -50,7 +57,7 @@ def test_install_gate_builds_the_wheel_and_runs_help(monkeypatch: pytest.MonkeyP
     assert gauntlet._gate_install() is True
 
     assert [cmd[1] for cmd, _, _ in calls[:4]] == ["build", "build", "venv", "pip"]
-    assert len(calls) == 6
+    assert len(calls) == 7
     sdist_call, wheel_call = calls[0][0], calls[1][0]
     assert sdist_call[2] == "--sdist"
     assert wheel_call[2] == "--wheel"
@@ -66,11 +73,12 @@ def test_install_gate_builds_the_wheel_and_runs_help(monkeypatch: pytest.MonkeyP
     executable = str(venv / "bin" / "mattstack")
     assert calls[4][0] == [executable, "--help"]
     assert calls[5][0] == [executable, "sync", "--help"]
+    assert calls[6][0] == [executable, TYPO_COMMAND]
     assert all(timeout > 120 for _, _, timeout in calls)
     assert not work.exists()
 
 
-@pytest.mark.parametrize("fail_at", range(6))
+@pytest.mark.parametrize("fail_at", range(7))
 def test_install_gate_fails_when_a_step_fails(
     monkeypatch: pytest.MonkeyPatch, fail_at: int
 ) -> None:
@@ -92,5 +100,36 @@ def test_install_gate_fails_when_the_build_produces_no_wheel(
         return 0, ""
 
     monkeypatch.setattr(gauntlet, "_run", fake_run)
+
+    assert gauntlet._gate_install() is False
+
+
+def test_install_gate_requires_the_mistyped_group_suggestion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gauntlet = _load_gauntlet()
+    calls = _record(monkeypatch, gauntlet)
+
+    assert gauntlet._gate_install() is True
+
+    executable = calls[6][0][0]
+    assert calls[5][0] == [executable, "sync", "--help"]
+    assert calls[6][0] == [executable, TYPO_COMMAND]
+
+
+def test_install_gate_fails_when_the_suggestion_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gauntlet = _load_gauntlet()
+    _record(monkeypatch, gauntlet, typo=(2, "No such command 'sync2'."))
+
+    assert gauntlet._gate_install() is False
+
+
+def test_install_gate_fails_when_the_mistyped_group_exits_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gauntlet = _load_gauntlet()
+    _record(monkeypatch, gauntlet, typo=(0, TYPO_OUTPUT))
 
     assert gauntlet._gate_install() is False
