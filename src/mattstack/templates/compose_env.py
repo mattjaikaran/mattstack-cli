@@ -248,9 +248,8 @@ def backend_env(config: ProjectConfig, *, production: bool) -> dict[str, str]:
         if not production:
             # Root .env values win over the defaults, so editing them changes
             # the containers. api-dev appends its service host separately.
-            cors_default = f"http://localhost:{FRONTEND_PORT}"
             env["ALLOWED_HOSTS"] = "${ALLOWED_HOSTS:-localhost,127.0.0.1}"
-            env["CORS_ALLOWED_ORIGINS"] = "${CORS_ALLOWED_ORIGINS:-" + cors_default + "}"
+            env["CORS_ALLOWED_ORIGINS"] = "${CORS_ALLOWED_ORIGINS:-" + frontend_origin + "}"
         if not config.is_django_matt:
             # Ninja settings read ENVIRONMENT for logging and the S3 media branch.
             env["ENVIRONMENT"] = "production" if production else "development"
