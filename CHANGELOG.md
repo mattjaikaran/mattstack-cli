@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Align generated deployment targets with the current Django Ninja production settings: bake `USE_TLS=true` everywhere, require distinct `CENTRIFUGO_API_KEY`/`CENTRIFUGO_TOKEN_SECRET` values even without realtime, generate those secrets in `.env.production`, and run the Ninja ASGI server through Gunicorn's uvicorn worker instead of the WSGI worker.
+- Generated development Compose runs a one-shot `migrate` service before `api-dev`, `celery-worker`, and `celery-beat`, which wait for it with `condition: service_completed_successfully`. A fresh `docker compose --profile celery up -d --wait` no longer starts with pending migrations or crashes beat on missing `django_celery_beat` tables.
 - Generated development Compose now sets `ALLOWED_HOSTS` on `api-dev`, so the frontend proxy's `Host: api-dev:8000` no longer returns a Django 400.
 - Generate one root `justfile` and no `Makefile` for generated projects. The cross-stack recipes run against the monorepo's `api-dev` service, the uv-only backend recipes move to `backend-*` recipes that `cd backend`, and consolidation drops the cloned `backend/justfile` and `backend/Makefile.legacy`, whose recipes targeted the boilerplate's own Compose stack. `set dotenv-load` tolerates a missing `.env`, and the file avoids just features newer than 1.21.
 

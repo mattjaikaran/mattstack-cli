@@ -226,8 +226,12 @@ def _services(config: ProjectConfig, backend: BackendFacts) -> str:
     parts = ["## Docker services", "", "- `db`: PostgreSQL"]
     if config.use_redis:
         parts.append("- `redis`: Redis")
+    parts.append(
+        "- `migrate`: one-shot job that applies schema migrations; "
+        "`api-dev` and the task workers wait for it"
+    )
     if config.is_nestjs_backend:
-        parts.append("- `api-dev`: NestJS dev server (auto-migrates on start)")
+        parts.append("- `api-dev`: NestJS dev server (started after migrations)")
     else:
         parts.append(f"- `api-dev`: {backend.service} dev server (when using Docker)")
         parts.extend(runtime_service_lines(config))

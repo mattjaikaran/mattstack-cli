@@ -130,6 +130,11 @@ flowchart TD
 - Dashed edges are optional. Task workers and Centrifugo start only with
   their Compose profile, so `docker compose up` alone starts the same core
   services.
+- A one-shot `migrate` service applies schema migrations before `api-dev`
+  and the task workers start; they depend on it with
+  `condition: service_completed_successfully`. A fresh
+  `docker compose --profile celery up -d --wait` therefore needs no manual
+  `migrate`, and `celery-beat` finds its `django_celery_beat` tables.
 - `mattstack dev` runs in host mode by default: Compose starts only the
   database and Redis, and the app servers run on your machine. Container
   mode runs the `api-dev` and `frontend-dev` Compose services instead. The

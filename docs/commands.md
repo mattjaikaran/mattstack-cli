@@ -93,8 +93,10 @@ consumer in one of two ways:
   `django-rq`, and `dramatiq`.
 
 Missing worker targets fail instead of reporting success. Apply migrations with
-the selected `TASK_BACKEND`; django-q needs its own tables. Production Compose
-runs the selected worker services without a profile. The
+the selected `TASK_BACKEND`; django-q needs its own tables. Development Compose
+runs a one-shot `migrate` service first, and `api-dev` plus the task services
+wait for it to exit zero, so a fresh stack needs no manual `migrate`.
+Production Compose runs the selected worker services without a profile. The
 [deployment guide](deployment-guide.md#generated-recipes) lists how each cloud
 recipe runs them.
 

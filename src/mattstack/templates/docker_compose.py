@@ -5,6 +5,7 @@ from __future__ import annotations
 from mattstack.config import ProjectConfig
 from mattstack.runtime_profiles import TaskProcess, task_processes, task_profile, uv_run
 from mattstack.templates.compose_env import (
+    MIGRATE_SERVICE,
     ai_services,
     backend_build,
     backend_env,
@@ -40,6 +41,10 @@ def generate_docker_compose(config: ProjectConfig) -> str:
             services.append(redis_service(config, production=False))
             volumes.append("  redis_data:")
 
+        # A fresh stack must be migrated before anything reads the schema:
+        # api-dev would serve errors and celery-beat would exit because its
+        # django_celery_beat tables do not exist yet.
+        services.append(_migrate_service(config))
         services.append(_api_dev_service(config))
         # Task workers and Centrifugo start only with their profile, so a
         # plain `docker compose up` keeps the same services.
@@ -64,11 +69,36 @@ def generate_docker_compose(config: ProjectConfig) -> str:
     return result + "\n"
 
 
+def _migrate_service(config: ProjectConfig) -> str:
+    """Apply schema migrations once; app services wait for a zero exit."""
+    volumes = "      - ./backend:/app"
+    if config.is_nestjs_backend:
+        # The bind mount hides the image's node_modules, as it does for api-dev.
+        volumes += "\n      - /app/node_modules"
+    return f"""\
+  {MIGRATE_SERVICE}:
+{backend_build(config, "development")}
+    command: {_migrate_command(config)}
+    volumes:
+{volumes}
+{service_environment({})}
+{depends_block(config)}"""
+
+
+def _migrate_command(config: ProjectConfig) -> str:
+    """Return the backend's migration command without a TTY prompt."""
+    if config.is_nestjs_backend:
+        return "bun run db:migrate"
+    if config.is_fastapi_backend:
+        return f"{uv_run(config)} alembic upgrade head"
+    return f"{uv_run(config)} python manage.py migrate --noinput"
+
+
 def _api_dev_service(config: ProjectConfig) -> str:
     port = config.backend_api_port
     cors = f"http://localhost:${{FRONTEND_PORT:-{FRONTEND_PORT}}}"
     if config.is_nestjs_backend:
-        command = 'sh -c "bun run db:migrate && bun run start:dev"'
+        command = "bun run start:dev"
         extra: dict[str, str] = {}
         volumes = "      - ./backend:/app\n      - /app/node_modules"
     elif config.is_fastapi_backend:
@@ -93,7 +123,7 @@ def _api_dev_service(config: ProjectConfig) -> str:
     volumes:
 {volumes}
 {service_environment(extra)}
-{depends_block(config)}"""
+{depends_block(config, migrate=True)}"""
 
 
 def _task_service(config: ProjectConfig, process: TaskProcess) -> str:
@@ -105,7 +135,7 @@ def _task_service(config: ProjectConfig, process: TaskProcess) -> str:
     volumes:
       - ./backend:/app
 {service_environment({})}
-{depends_block(config)}
+{depends_block(config, migrate=True)}
     profiles:
       - {task_profile(config)}"""
 
