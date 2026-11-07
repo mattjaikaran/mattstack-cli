@@ -245,9 +245,25 @@ def backend_env(config: ProjectConfig, *, production: bool) -> dict[str, str]:
                 "DB_PORT": "5432",
             }
         )
+        if not production:
+            # Root .env values win over the defaults, so editing them changes
+            # the containers. api-dev appends its service host separately.
+            cors_default = f"http://localhost:{FRONTEND_PORT}"
+            env["ALLOWED_HOSTS"] = "${ALLOWED_HOSTS:-localhost,127.0.0.1}"
+            env["CORS_ALLOWED_ORIGINS"] = "${CORS_ALLOWED_ORIGINS:-" + cors_default + "}"
         if not config.is_django_matt:
             # Ninja settings read ENVIRONMENT for logging and the S3 media branch.
             env["ENVIRONMENT"] = "production" if production else "development"
+            if not production:
+                env.update(
+                    {
+                        "SUPERUSER_EMAIL": f"${{SUPERUSER_EMAIL:-admin@{config.name}.localhost}}",
+                        "SUPERUSER_USERNAME": "${SUPERUSER_USERNAME:-admin}",
+                        "SUPERUSER_PASSWORD": "${SUPERUSER_PASSWORD:-}",  # nosec B105 # Env reference, not a credential.
+                        "SUPERUSER_FIRST_NAME": "${SUPERUSER_FIRST_NAME:-Admin}",
+                        "SUPERUSER_LAST_NAME": "${SUPERUSER_LAST_NAME:-User}",
+                    }
+                )
             if production:
                 # prod.py refuses to import without TLS and rejects an empty
                 # Centrifugo API key, even when realtime is not selected.
