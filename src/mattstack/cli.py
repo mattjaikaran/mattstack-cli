@@ -11,7 +11,6 @@ import importlib
 from difflib import get_close_matches
 from typing import Annotated, Any, NamedTuple
 
-import click
 import typer
 from typer.core import TyperGroup
 
@@ -68,35 +67,38 @@ class LazyTyperGroup(TyperGroup):
         super().__init__(**attrs)
         self._listing_help = False
 
-    def list_commands(self, ctx: click.Context) -> list[str]:
+    # `ctx` is `Any` rather than ``typer.Context``: typer's context narrows the
+    # inherited ``click.Context``, which strict mypy rejects as an override.
+    def list_commands(self, ctx: Any) -> list[str]:
         return [*super().list_commands(ctx), *(n for n in LAZY_GROUPS if n not in self.commands)]
 
-    def get_command(self, ctx: click.Context, cmd_name: str) -> click.Command | None:
+    def get_command(self, ctx: Any, cmd_name: str) -> Any:
         spec = LAZY_GROUPS.get(cmd_name)
         if spec is None or cmd_name in self.commands:
             return super().get_command(ctx, cmd_name)
         if self._listing_help:
-            return click.Group(name=cmd_name, short_help=spec.short_help)
+            return TyperGroup(name=cmd_name, short_help=spec.short_help)
         group = typer.main.get_group(getattr(importlib.import_module(spec.module), spec.attr))
         group.name, group.short_help = cmd_name, spec.short_help
         self.commands[cmd_name] = group
         return group
 
-    def resolve_command(
-        self, ctx: click.Context, args: list[str]
-    ) -> tuple[str | None, click.Command | None, list[str]]:
-        try:
-            return super().resolve_command(ctx, args)
-        except click.UsageError as exc:
-            # TyperGroup suggests only loaded commands; include the lazy groups.
-            matches = get_close_matches(args[0], self.list_commands(ctx)) if args else []
-            if not matches or "Did you mean" in exc.message:
-                raise
-            suggestions = ", ".join(repr(match) for match in matches)
-            message = f"{exc.message.rstrip('.')}. Did you mean {suggestions}?"
-            raise click.UsageError(message, ctx=exc.ctx) from None
+    def resolve_command(self, ctx: Any, args: list[str]) -> tuple[str | None, Any, list[str]]:
+        # TyperGroup suggests only loaded commands; include the lazy groups by
+        # checking before delegation, since list_commands does not import them.
+        if (
+            args
+            and not args[0].startswith("-")
+            and not ctx.resilient_parsing
+            and self.get_command(ctx, args[0]) is None
+        ):
+            matches = get_close_matches(args[0], self.list_commands(ctx))
+            if matches:
+                suggestions = ", ".join(repr(match) for match in matches)
+                ctx.fail(f"No such command {args[0]!r}. Did you mean {suggestions}?")
+        return super().resolve_command(ctx, args)
 
-    def format_help(self, ctx: click.Context, formatter: click.HelpFormatter) -> None:
+    def format_help(self, ctx: Any, formatter: Any) -> None:
         self._listing_help = True
         try:
             super().format_help(ctx, formatter)
