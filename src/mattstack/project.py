@@ -318,6 +318,7 @@ def resolve_project(path: Path) -> ResolvedProject:
             deployment=_enum(DeploymentTarget, meta.get("deployment")) or DeploymentTarget.DOCKER,
             init_git=False,
             api_prefix=prefix,
+            ci_runs_on=str(meta.get("ci_runs_on") or "").strip() or "ubuntu-latest",
             **runtime_kwargs(backend_meta, backend_fw, env, manifest, services),
         )
     except ValueError as error:
@@ -359,6 +360,7 @@ def save_project_config(config: ProjectConfig) -> None:
             "variant": config.variant.value,
             "ios": config.include_ios,
             "deployment": config.deployment.value,
+            "ci_runs_on": config.ci_runs_on,
         }
     )
     section.setdefault("execution_mode", "host")

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `mattstack init` writes a checks-only `.github/workflows/ci.yml` whose parallel jobs mirror the root `just ci` recipe: ruff and format checks, Django system checks and migration drift, and frontend lint, typecheck, and build. The workflow runs on pull requests, manual dispatch, and a weekly schedule, needs no `.env` or database, and takes self-hosted runner labels from `--ci-runs-on`.
+
 ### Fixed
 
 - Align generated deployment targets with the current Django Ninja production settings: bake `USE_TLS=true` everywhere, require distinct `CENTRIFUGO_API_KEY`/`CENTRIFUGO_TOKEN_SECRET` values even without realtime, generate those secrets in `.env.production`, and run the Ninja ASGI server through Gunicorn's uvicorn worker instead of the WSGI worker.

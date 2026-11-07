@@ -244,7 +244,12 @@ mattstack completions Shell completions (bash/zsh/fish)
 ```
 
 Generated projects run their gates locally with `just gauntlet` (and, for Django
-Ninja, a pre-push hook). They have no hosted CI unless you run `mattstack workflow --ci`.
+Ninja, a pre-push hook) and ship a checks-only `.github/workflows/ci.yml` that
+mirrors `just ci`: lint, format, Django system checks and migration drift,
+frontend lint, typecheck, and build. It runs on pull requests, manual dispatch,
+and a weekly schedule, needs no `.env` or database, and accepts self-hosted
+runner labels with `mattstack init --ci-runs-on`. `mattstack workflow --ci`
+replaces it with the opt-in hosted test CI.
 
 Full reference: [docs/commands.md](docs/commands.md)
 

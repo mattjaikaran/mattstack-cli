@@ -58,6 +58,7 @@ def run_init(
     media_storage: str | None = None,
     ai: str | None = None,
     graph: str | None = None,
+    ci_runs_on: str | None = None,
 ) -> None:
     """Main init entry point. Routes to interactive, preset, or config-file mode."""
     if output_dir is None:
@@ -73,6 +74,8 @@ def run_init(
         print_error("Use a project name with --preset, or pass --config, without a terminal")
         raise typer.Exit(code=2)
     overrides = runtime_overrides(task_backend, realtime, media_storage, ai, graph)
+    if ci_runs_on:
+        overrides["ci_runs_on"] = ci_runs_on
     try:
         if config_file:
             _run_from_config(
@@ -383,10 +386,7 @@ def _print_next_steps(config: ProjectConfig) -> None:
         infrastructure = "db redis" if config.use_redis else "db"
         console.print(f"  [cyan]docker compose up -d --wait {infrastructure}[/cyan]")
         console.print("  [cyan]just backend-migrate[/cyan]")
-        if config.backend_framework in {
-            BackendFramework.DJANGO_NINJA,
-            BackendFramework.DJANGO_MATT,
-        }:
+        if config.is_django_backend:
             console.print("  [cyan]just superuser-host[/cyan]")
         if config.task_backend.value != "none":
             console.print(f"  [cyan]just backend-worker[/cyan]  # {task_summary(config)}")

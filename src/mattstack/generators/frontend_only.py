@@ -41,6 +41,7 @@ class FrontendOnlyGenerator(BaseGenerator):
             self.write_file("justfile", generate_justfile(self.config))
             self.write_file("README.md", generate_readme(self.config))
             self.write_agent_files()
+            self.write_ci_workflow()
             self.write_file(".gitignore", generate_gitignore(self.config))
             for relative, content in deployment_files(self.config).items():
                 self.write_file(relative, content)

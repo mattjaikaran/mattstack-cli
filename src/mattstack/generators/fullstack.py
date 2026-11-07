@@ -86,6 +86,7 @@ class FullstackGenerator(BaseGenerator):
             self.write_env_files()
             self.write_file("README.md", generate_readme(self.config))
             self.write_agent_files()
+            self.write_ci_workflow()
             self.write_file(".gitignore", generate_gitignore(self.config))
             self.write_file("tasks/todo.md", f"# {self.config.display_name} TODO\n")
             # Consolidated Dockerfiles (build context = repo root)

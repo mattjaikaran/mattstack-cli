@@ -179,6 +179,7 @@ def _commands(config: ProjectConfig) -> str:
     lines.append("mattstack dev          # Start all dev servers")
     lines.append("mattstack test         # Run all tests")
     lines.append("mattstack lint         # Lint all code")
+    lines.append("just ci                 # Run the checks GitHub Actions runs")
     lines.append("mattstack env check    # Verify .env files are in sync")
     lines.append("```")
     return "\n".join(lines)

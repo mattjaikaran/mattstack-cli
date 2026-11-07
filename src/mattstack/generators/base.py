@@ -119,6 +119,12 @@ class BaseGenerator(ABC):
             self.write_file(relative, content)
         self.write_file("gauntlet.toml", generate_gauntlet_toml(self.config))
 
+    def write_ci_workflow(self) -> None:
+        """Write the default checks-only GitHub Actions workflow."""
+        from mattstack.templates.ci_workflow import generate_ci_workflow
+
+        self.write_file(".github/workflows/ci.yml", generate_ci_workflow(self.config))
+
     def write_env_files(self) -> None:
         """Write the env examples, then private env files with generated secrets.
 

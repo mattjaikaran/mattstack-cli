@@ -70,6 +70,14 @@ def init(
             help="AI layer graph: cte (recursive SQL, default) or neo4j (graph profile)",
         ),
     ] = None,
+    ci_runs_on: Annotated[
+        str | None,
+        typer.Option(
+            "--ci-runs-on",
+            help="Runner labels for the generated GitHub Actions workflow,"
+            " comma-separated (default: ubuntu-latest)",
+        ),
+    ] = None,
 ) -> None:
     """Create a new project from boilerplates."""
     from mattstack.commands.init import run_init
@@ -86,6 +94,7 @@ def init(
         media_storage=media_storage,
         ai=ai,
         graph=graph,
+        ci_runs_on=ci_runs_on,
     )
 
 

@@ -137,6 +137,7 @@ def _customize_component(component: str, config: ProjectConfig, *, dry_run: bool
 
 def _root_files(config: ProjectConfig) -> list[tuple[str, str]]:
     from mattstack.templates.agent_files import agent_files
+    from mattstack.templates.ci_workflow import generate_ci_workflow
     from mattstack.templates.docker_compose import generate_docker_compose
     from mattstack.templates.gauntlet_toml import generate_gauntlet_toml
     from mattstack.templates.root_env import generate_env_example
@@ -147,6 +148,7 @@ def _root_files(config: ProjectConfig) -> list[tuple[str, str]]:
         ("justfile", generate_justfile(config)),
         (".env.example", generate_env_example(config)),
         ("README.md", generate_readme(config)),
+        (".github/workflows/ci.yml", generate_ci_workflow(config)),
     ]
     if config.has_backend:
         files.append(("docker-compose.yml", generate_docker_compose(config)))

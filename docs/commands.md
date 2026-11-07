@@ -41,6 +41,7 @@ mattstack init my-app -p kibo-fullstack --dry-run
 | `--media-storage` | Django Ninja production media: `local` (default) or `s3`. |
 | `--ai` | Django Ninja AI layer vector store: `none` (default), `pgvector`, or `qdrant`. See [AI layer](#ai-layer). |
 | `--graph` | Django Ninja AI layer graph queries: `cte` (default) or `neo4j`. |
+| `--ci-runs-on` | Comma-separated GitHub Actions runner labels for the generated workflow. Default: `ubuntu-latest`. |
 
 For unattended use, provide a name and a preset, or a config file. Do not
 combine `--config` with a name or preset. Dry runs do not change files.
@@ -684,15 +685,22 @@ Run `mattstack hooks status` to show installed hooks. Run
 
 ### `mattstack workflow`
 
-Generated projects run every gate locally and have no hosted CI. `just
-gauntlet` runs the backend's `just backend-gauntlet` and the frontend's
+Generated projects run every gate locally and ship a checks-only
+`.github/workflows/ci.yml` that mirrors `just ci`. It runs on pull requests,
+manual dispatches, and a weekly schedule, and needs no `.env`, database, or
+Docker. Its jobs cover ruff and format checks, Django system checks and
+migration drift, and frontend lint, typecheck, and build. `mattstack init
+--ci-runs-on` selects self-hosted runner labels.
+
+`just gauntlet` runs the backend's `just backend-gauntlet` and the frontend's
 `gauntlet` script, or their lint and test targets when a component has no
 gate. A Django or FastAPI fullstack project then runs `mattstack sync check`,
 and every project ends with `mattstack audit --no-todo`. For Django Ninja, the
 pre-push hook from `mattstack hooks install` runs `just backend-gauntlet-quick`.
 
-`mattstack workflow` generates hosted CI only when you opt in with `--ci`.
-Without it, the command prints the local gates and exits 2.
+`mattstack workflow` replaces the generated workflow with the opt-in hosted
+test CI only when you pass `--ci`. Without it, the command prints the local
+gates and exits 2. Pass `--force` because the checks-only file already exists.
 
 ```bash
 mattstack workflow --ci github              # .github/workflows/ci.yml

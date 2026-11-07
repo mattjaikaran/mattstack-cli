@@ -97,7 +97,7 @@ unpublished local changes.
 | Clone the iOS starter into `ios/` | if `--ios` | no | no |
 | Consolidate component root files | yes | yes | no |
 | Check task and realtime prerequisites | yes | yes | no |
-| Write root files (justfile, README, agent files, `gauntlet.toml`, `.gitignore`, deployment files) | yes | yes | yes |
+| Write root files (justfile, README, agent files, `.github/workflows/ci.yml`, `gauntlet.toml`, `.gitignore`, deployment files) | yes | yes | yes |
 | Write Compose files, `.env*`, and Dockerfiles | yes | yes | no |
 | Write the root `.pre-commit-config.yaml` | yes | yes | yes |
 | Customize cloned components (names; frontend bundler config and API proxy) | yes | backend only | frontend only |
@@ -165,11 +165,12 @@ Generated projects keep stack facts and secrets in different files:
 | `.env.production` | Production values with separately generated secrets, mode 0600. Replace the remaining placeholders before you deploy. | No |
 
 `save_project_config()` writes only nonsecret choices under `project:`:
-name, type, variant, iOS, deployment target, execution mode, the backend
-framework, directory, Redis, API prefix, task backend, realtime, media
-storage, AI store (`ai`), graph (`graph`), and settings module, the frontend
-framework and directory, and ports. It overwrites scaffold choices, keeps
-user-tuned values such as ports, and keeps every other key and comment.
+name, type, variant, iOS, deployment target, execution mode, the CI runner
+labels (`ci_runs_on`), the backend framework, directory, Redis, API prefix,
+task backend, realtime, media storage, AI store (`ai`), graph (`graph`), and
+settings module, the frontend framework and directory, and ports. It
+overwrites scaffold choices, keeps user-tuned values such as ports, and keeps
+every other key and comment.
 Configuration that needs a credential names an environment variable, for
 example `board.api_key_env`, instead of the value. `utils/sources.py` adds
 each component's `source` record (`repo`, `commit`, and `dirty`), which
@@ -400,8 +401,12 @@ rule: canonical sources stay, and harness adapters go.
 - The root `just gauntlet` recipe (`templates/root_justfile.py`) runs every
   gate locally: each component's gauntlet (else its lint and test targets),
   `mattstack sync check` for non-NestJS fullstack projects, and
-  `mattstack audit --no-todo`. Generated projects have no hosted CI;
-  `mattstack workflow --ci github|gitlab` writes it only on request.
+  `mattstack audit --no-todo`. The same template emits `just ci`, which runs
+  the checks that need no `.env` or database, and `templates/ci_workflow.py`
+  writes those checks as parallel jobs in `.github/workflows/ci.yml` (pull
+  requests, manual dispatch, and a weekly schedule; runner labels come from
+  `--ci-runs-on`). `mattstack workflow --ci github|gitlab` writes the fuller
+  hosted test CI only on request.
 
 Keep this guidance and these gate scripts during consolidation. Do not
 replace the generated hooks with the open PR #1 implementation.
@@ -439,7 +444,7 @@ src/mattstack/
 ├── post_processors/    # Consolidation, customization, bundler config, task runtime, TLS health
 ├── templates/          # Python functions that return file content (no Jinja2)
 │   ├── agent_files.py, root_agents_md.py  # AGENTS.md, CLAUDE.md, .cursorrules, .claude/, .mcp.json
-│   └── root_justfile*.py, gauntlet_toml.py, ci_toolchain.py  # Local gates; opt-in CI pins
+│   └── root_justfile*.py, ci_workflow.py, gauntlet_toml.py, ci_toolchain.py  # Local gates and default CI
 ├── parsers/            # Contract and source parsers (openapi_spec.py, zod_schemas.py, routes)
 ├── auditors/           # BaseAuditor subclasses; types_parity.py, versions.py (drift)
 ├── boards/             # Board backends (axis, none; Hermes, Jira, Linear are stubs)

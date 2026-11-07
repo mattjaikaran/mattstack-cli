@@ -178,6 +178,9 @@ class ProjectConfig:
     # URL prefix where the backend API is mounted. The Django boilerplates
     # mount the API with ``path("api/", api.urls)``.
     api_prefix: str = "/api"
+    # Runner labels for the generated GitHub Actions workflow. A
+    # comma-separated list selects a self-hosted runner.
+    ci_runs_on: str = "ubuntu-latest"
     # Versions and image tags read from the cloned backend before consolidation
     # removes its Compose files and Dockerfile (utils.versions.snapshot_pins).
     source_pins: dict[str, str] = field(default_factory=dict, repr=False)

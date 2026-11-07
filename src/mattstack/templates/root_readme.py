@@ -211,6 +211,7 @@ def _commands(config: ProjectConfig) -> str:
         ("| `just down` | Stop Docker services |", config.has_backend),
         ("| `just test` | Run all tests |", True),
         ("| `just lint` | Lint all code |", True),
+        ("| `just ci` | Run the checks CI runs (no `.env` or database) |", True),
         ("| `just format` | Format all code |", True),
     ]
 
