@@ -152,6 +152,15 @@ def _quickstart(config: ProjectConfig) -> str:
         lines.append("just frontend-dev  # http://localhost:3000")
 
     lines.append("```")
+
+    if config.is_django_backend:
+        login = (
+            "The superuser logs in with `SUPERUSER_EMAIL` and `SUPERUSER_PASSWORD` "
+            "from the root `.env`; the username is not the login field."
+            if config.is_ninja_backend
+            else "Log in to the admin with the email address, not the username."
+        )
+        lines.extend(["", login])
     return "\n".join(lines)
 
 
