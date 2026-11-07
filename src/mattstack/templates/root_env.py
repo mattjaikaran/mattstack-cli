@@ -99,6 +99,15 @@ def generate_env_example(config: ProjectConfig, *, values: dict[str, str] | None
                 # DB_* is what the Django settings read; DATABASE_URL alone
                 # leaves settings.DATABASES with an empty NAME.
                 # DB_PORT is already set above: the host reaches the published port.
+                lines.extend(
+                    [
+                        "# Host mode: `just` recipes reach the published ports, so",
+                        "# DATABASE_URL, DB_HOST, REDIS_URL, and CELERY_* point at",
+                        "# localhost. Container mode derives them from POSTGRES_* and",
+                        "# REDIS_PASSWORD, and reads ALLOWED_HOSTS, CORS_ALLOWED_ORIGINS,",
+                        "# and (Django Ninja) SUPERUSER_* from this file.",
+                    ]
+                )
                 lines.extend(_django_db_lines(host="localhost", port=None))
                 if not config.is_django_matt:
                     lines.extend(["DJANGO_ENVIRONMENT=development", "ENVIRONMENT=development"])

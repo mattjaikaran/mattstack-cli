@@ -96,7 +96,6 @@ def _migrate_command(config: ProjectConfig) -> str:
 
 def _api_dev_service(config: ProjectConfig) -> str:
     port = config.backend_api_port
-    cors = f"http://localhost:${{FRONTEND_PORT:-{FRONTEND_PORT}}}"
     if config.is_nestjs_backend:
         command = "bun run start:dev"
         extra: dict[str, str] = {}
@@ -108,10 +107,10 @@ def _api_dev_service(config: ProjectConfig) -> str:
     else:
         command = f"{uv_run(config)} python manage.py runserver 0.0.0.0:{port}"
         extra = {
-            "CORS_ALLOWED_ORIGINS": cors,
             # frontend-dev forwards the browser request with Host: api-dev:8000;
-            # Django answers 400 unless that host is allowed.
-            "ALLOWED_HOSTS": f"localhost,127.0.0.1,{DEV_API_SERVICE}",
+            # Django answers 400 unless that host is allowed. The root .env
+            # value wins, and the service host is appended to it.
+            "ALLOWED_HOSTS": f"${{ALLOWED_HOSTS:-localhost,127.0.0.1}},{DEV_API_SERVICE}",
         }
         volumes = "      - ./backend:/app"
     return f"""\

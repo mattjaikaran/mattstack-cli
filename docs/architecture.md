@@ -140,7 +140,11 @@ flowchart TD
   mode runs the `api-dev` and `frontend-dev` Compose services instead. The
   frontend dev server proxies the API prefix to `api-dev`, whose generated
   environment allows that service host in `ALLOWED_HOSTS` (Django otherwise
-  answers 400).
+  answers 400). Compose reads `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS`, and,
+  for Django Ninja, `SUPERUSER_*` from the root `.env`, so editing those keys
+  changes the containers. The `localhost` `DATABASE_URL`, `DB_*`,
+  `REDIS_URL`, and `CELERY_*` values are host-mode only; the containers derive
+  them from `POSTGRES_*` and `REDIS_PASSWORD`.
 - The production Compose file and deployment recipes follow the same
   selection. See the [deployment guide](deployment-guide.md) for the
   production prerequisites and the verification boundary.

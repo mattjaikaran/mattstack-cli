@@ -55,7 +55,8 @@ def _header(config: ProjectConfig) -> str:
 # {config.display_name} developer tasks. Run `just` with no arguments to list recipes.
 #
 # `set dotenv-load` exports the root .env to every recipe; a missing .env is
-# not an error. Host commands therefore see the same settings as the containers.
+# not an error. Host commands read the same keys as the containers, except the
+# localhost URLs that Compose derives for the containers.
 
 set shell := ["bash", "-cu"]
 set dotenv-load
