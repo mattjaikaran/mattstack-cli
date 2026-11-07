@@ -30,7 +30,7 @@ WORKERS = {
     TaskBackend.DJANGO_RQ: ({"django-rq-worker"}, "django-rq", "django-rq"),
     TaskBackend.DRAMATIQ: ({"dramatiq-worker"}, "dramatiq", "dramatiq"),
 }
-PLAIN_SERVICES = {"db", "redis", "api-dev", "frontend-dev"}
+PLAIN_SERVICES = {"db", "redis", "migrate", "api-dev", "frontend-dev"}
 
 
 def _config(tmp_path: Path, task_backend: TaskBackend, *, realtime: bool = False) -> ProjectConfig:
