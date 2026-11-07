@@ -9,8 +9,9 @@ Each requirement comes from the boilerplate settings:
 
 - django-ninja ``api/settings/common.py`` reads ``DB_*`` (not ``DATABASE_URL``),
   ``REDIS_URL`` with a Compose-only ``valkey`` default, and ``CENTRIFUGO_*``;
-  ``api/settings/prod.py`` rejects a missing or ``SECRET_KEY``-equal
-  ``NINJA_JWT_SIGNING_KEY`` and the default ``CENTRIFUGO_TOKEN_SECRET``.
+  ``api/settings/prod.py`` requires ``USE_TLS=true``, rejects a missing or
+  ``SECRET_KEY``-equal ``NINJA_JWT_SIGNING_KEY``, and rejects empty or default
+  ``CENTRIFUGO_TOKEN_SECRET``/``CENTRIFUGO_API_KEY`` values.
 - django-matt-starter ``config/settings.py`` reads ``DB_*`` with
   ``postgres``/``localhost`` defaults, ``SECRET_KEY`` with a
   ``change-me-in-production`` default, and ``DEBUG`` with a ``True`` default.
@@ -70,22 +71,17 @@ def production_mode_env(config: ProjectConfig) -> dict[str, str]:
 
 
 def tls_env(config: ProjectConfig) -> dict[str, str]:
-    """Return the web settings for a target that always serves HTTPS at its edge.
+    """Return the TLS mode the Ninja production settings require.
 
-    Ninja's api/settings/prod.py enables the HTTPS redirect, HSTS, secure
-    cookies, and trusts ``X-Forwarded-Proto: https`` only when USE_TLS=true.
-    ``docker`` serves plain HTTP. On ``aws`` the load balancer may have only
-    an HTTP listener (Copilot's default, or an operator ALB on :80), where the
-    redirect points at nothing; set USE_TLS=true there once HTTPS exists.
+    Ninja's api/settings/prod.py refuses to import when ``ENVIRONMENT`` is
+    production and USE_TLS is false, and enables the HTTPS redirect, HSTS,
+    secure cookies, and ``X-Forwarded-Proto`` trust only when USE_TLS=true.
+    Every generated production target therefore sets it: a plain-HTTP listener
+    is not a supported production contract, including ``docker`` and ``aws``.
     The other backends do not read USE_TLS.
     """
     ninja = config.is_django_backend and not config.is_django_matt
-    if not ninja or config.deployment in _PLAIN_HTTP_POSSIBLE:
-        return {}
-    return {"USE_TLS": "true"}
-
-
-_PLAIN_HTTP_POSSIBLE = (DeploymentTarget.DOCKER, DeploymentTarget.AWS)
+    return {"USE_TLS": "true"} if ninja else {}
 
 
 def required_env(config: ProjectConfig) -> tuple[EnvRequirement, ...]:
@@ -111,7 +107,12 @@ def distinct_secrets(config: ProjectConfig) -> tuple[str, ...]:
         return ("SECRET_KEY", "JWT_SECRET_KEY")
     if config.is_django_matt:
         return ()
-    return ("SECRET_KEY", "NINJA_JWT_SIGNING_KEY", "CENTRIFUGO_TOKEN_SECRET")
+    return (
+        "SECRET_KEY",
+        "NINJA_JWT_SIGNING_KEY",
+        "CENTRIFUGO_TOKEN_SECRET",
+        "CENTRIFUGO_API_KEY",
+    )
 
 
 def health_path(config: ProjectConfig) -> str:
@@ -206,10 +207,12 @@ _COMPOSE_TARGETS = (
 
 
 _TLS_RECIPE_FILES = {
+    DeploymentTarget.DOCKER: "docker-compose.prod.yml",
     DeploymentTarget.RAILWAY: ".railway/railway.ts",
     DeploymentTarget.RENDER: "render.yaml",
     DeploymentTarget.FLY_IO: "fly.toml",
     DeploymentTarget.DIGITAL_OCEAN: ".do/app.yaml",
+    DeploymentTarget.AWS: "ecs-task-definition.json or copilot/<api>/manifest.yml",
     DeploymentTarget.GCP: "service.yaml",
     DeploymentTarget.HETZNER: "docker-compose.caddy.yml",
     DeploymentTarget.CLOUDFLARE: "docker-compose.caddy.yml",
@@ -264,24 +267,22 @@ def _ninja_env(config: ProjectConfig) -> tuple[EnvRequirement, ...]:
             rejected=("centrifugo-token-secret", "dev-centrifugo-token-secret"),
         ),
         EnvRequirement(
+            "CENTRIFUGO_API_KEY",
+            "api/settings/prod.py rejects an empty or default Centrifugo API key.",
+            secret=True,
+            rejected=("centrifugo-api-key",),
+        ),
+        EnvRequirement(
             "REDIS_URL",
             "The cache, sessions, and throttles use it; the default host exists only in Compose.",
         ),
     ]
     if config.use_realtime:
-        reqs.extend(
-            [
-                EnvRequirement(
-                    "CENTRIFUGO_URL",
-                    "Realtime publishes to Centrifugo; the default host exists only in Compose.",
-                ),
-                EnvRequirement(
-                    "CENTRIFUGO_API_KEY",
-                    "Realtime authenticates to the Centrifugo API with it.",
-                    secret=True,
-                    rejected=("centrifugo-api-key",),
-                ),
-            ]
+        reqs.append(
+            EnvRequirement(
+                "CENTRIFUGO_URL",
+                "Realtime publishes to Centrifugo; the default host exists only in Compose.",
+            )
         )
     if config.media_storage == MediaStorage.S3:
         s3_why = "Media storage is S3; ENVIRONMENT=production enables the S3 branch."

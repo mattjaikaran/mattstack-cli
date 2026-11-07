@@ -261,7 +261,17 @@ def generate_env_production_example(
             if config.is_django_backend:
                 lines.append("DJANGO_ENVIRONMENT=production")
                 if not config.is_django_matt:
-                    lines.extend(["ENVIRONMENT=production", *_ninja_lines(config, secret)])
+                    lines.extend(
+                        [
+                            "ENVIRONMENT=production",
+                            "USE_TLS=true",
+                            *_ninja_lines(config, secret),
+                            "# api/settings/prod.py rejects empty or default realtime",
+                            "# secrets even when --realtime is not selected.",
+                            f"CENTRIFUGO_API_KEY={secret('CENTRIFUGO_API_KEY')}",
+                            f"CENTRIFUGO_TOKEN_SECRET={secret('CENTRIFUGO_TOKEN_SECRET')}",
+                        ]
+                    )
                 lines.extend(_django_db_lines(host="db", port="5432"))
                 lines.extend(
                     [
@@ -287,12 +297,20 @@ def generate_env_production_example(
             lines.extend(f"{key}={value}" for key, value in celery_env(config, redis).items())
             lines.extend(_task_lines(config))
             if config.use_realtime:
+                # Ninja already wrote both values above for every production file.
+                shared = (
+                    []
+                    if config.is_django_backend and not config.is_django_matt
+                    else [
+                        f"CENTRIFUGO_API_KEY={secret('CENTRIFUGO_API_KEY')}",
+                        f"CENTRIFUGO_TOKEN_SECRET={secret('CENTRIFUGO_TOKEN_SECRET')}",
+                    ]
+                )
                 lines.extend(
                     [
                         "",
                         "# === Realtime (Centrifugo) ===",
-                        f"CENTRIFUGO_API_KEY={secret('CENTRIFUGO_API_KEY')}",
-                        f"CENTRIFUGO_TOKEN_SECRET={secret('CENTRIFUGO_TOKEN_SECRET')}",
+                        *shared,
                         f"CENTRIFUGO_ADMIN_PASSWORD={secret('CENTRIFUGO_ADMIN_PASSWORD')}",
                         f"CENTRIFUGO_ADMIN_SECRET={secret('CENTRIFUGO_ADMIN_SECRET')}",
                         "# Browser origins allowed to open a WebSocket, space separated",

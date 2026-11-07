@@ -247,8 +247,12 @@ def backend_env(config: ProjectConfig, *, production: bool) -> dict[str, str]:
             # Ninja settings read ENVIRONMENT for logging and the S3 media branch.
             env["ENVIRONMENT"] = "production" if production else "development"
             if production:
+                # prod.py refuses to import without TLS and rejects an empty
+                # Centrifugo API key, even when realtime is not selected.
+                env["USE_TLS"] = "true"
                 env["NINJA_JWT_SIGNING_KEY"] = secret("NINJA_JWT_SIGNING_KEY", "")
                 env["CENTRIFUGO_TOKEN_SECRET"] = secret("CENTRIFUGO_TOKEN_SECRET", "")
+                env["CENTRIFUGO_API_KEY"] = secret("CENTRIFUGO_API_KEY", "")
     if config.use_redis:
         redis = redis_url("redis", production=production)
         env["REDIS_URL"] = f"{redis}/0"

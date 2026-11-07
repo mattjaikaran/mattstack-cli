@@ -114,7 +114,7 @@ Realtime and S3 are Django Ninja profiles. Cloud recipes do not provision them.
 
 | Service | Compose targets (Docker, Hetzner, self-hosted, Cloudflare) | Cloud targets |
 |---|---|---|
-| Centrifugo | Production Compose runs it for realtime projects. | Run Centrifugo yourself. Set `CENTRIFUGO_URL` and `CENTRIFUGO_API_KEY`. |
+| Centrifugo | Production Compose runs it for realtime projects. | Run Centrifugo yourself. Set `CENTRIFUGO_URL` for a realtime project and `CENTRIFUGO_ALLOWED_ORIGINS` when the browser connects. |
 | S3 media | Compose passes the S3 variables. `AWS_S3_REGION_NAME` defaults to `us-east-1`. | Set the bucket, access key, and secret. Set `AWS_S3_REGION_NAME` yourself. |
 
 The generated edges do not route traffic to Centrifugo. Production Compose
@@ -144,8 +144,11 @@ route and firewall rules before you expose realtime. Set
    for example `["https://app.example.com"]`. FastAPI production also requires
    a non-localhost `WEBAUTHN_RP_ID` and an HTTPS `WEBAUTHN_ORIGIN`.
 6. For Django in production, set `DJANGO_ENVIRONMENT=production`. Django Ninja
-   also sets `ENVIRONMENT=production` and requires distinct `SECRET_KEY`,
-   `NINJA_JWT_SIGNING_KEY`, and `CENTRIFUGO_TOKEN_SECRET` values.
+   also sets `ENVIRONMENT=production` and `USE_TLS=true`. It requires four
+   distinct values: `SECRET_KEY`, `NINJA_JWT_SIGNING_KEY`,
+   `CENTRIFUGO_TOKEN_SECRET`, and `CENTRIFUGO_API_KEY`. The last two are
+   required even without `--realtime`, because `api/settings/prod.py` rejects
+   empty or default realtime secrets.
 7. For selected realtime or S3 profiles, set their
    [additional values](#optional-services-in-production). Do not commit them.
 8. Build from the repository root, deploy the selected worker processes, apply
@@ -155,8 +158,9 @@ The production image starts through `app-entrypoint`. Modes are `serve`
 (default), `migrate`, `check`, and `health`. Any other command, such as a worker
 command, runs after the runtime checks.
 
-The entrypoint rejects empty values, known placeholder defaults, and a Ninja JWT
-signing key equal to `SECRET_KEY`. FastAPI secrets need at least 32 characters,
+The entrypoint rejects empty values, known placeholder defaults, a Ninja
+environment without `USE_TLS=true`, and any two Ninja signing or realtime
+secrets holding the same value. FastAPI secrets need at least 32 characters,
 and NestJS JWT secrets need at least 16. Each failure prints the fix and a local
 verification command. Run that command before you deploy:
 
@@ -175,15 +179,20 @@ health endpoint.
 
 ## TLS and health probes
 
-Django Ninja enables `USE_TLS` behind the generated TLS edges. Only the three
-public health routes bypass SSL redirects; admin and staff detail routes still
-redirect. Host validation remains active. Fresh clones of the published source
-receive the same narrow settings change during initialization.
+Django Ninja production requires `USE_TLS=true`. `api/settings/prod.py`
+refuses to import without it, so every generated production image and target
+sets it, including Docker and AWS. Only the three public health routes bypass
+the SSL redirect; admin and staff detail routes still redirect. Host validation
+remains active. Fresh clones of the published source receive the same narrow
+settings change during initialization.
 
-AWS recipes leave `USE_TLS` off until you configure an HTTPS listener. Then set
-`USE_TLS=true` and keep the forwarded-proto headers. Docker's local plain-HTTP
-recipe does not enable TLS and publishes the production API port on every host
-interface. Do not expose either plain-HTTP recipe as a secure public deployment.
+A plain-HTTP listener is not a supported production contract. Put an HTTPS
+terminating proxy or load balancer in front of every Ninja target and keep the
+forwarded-proto headers. Docker's production recipe bakes `USE_TLS=true`, so
+plain-HTTP API requests redirect to HTTPS. Use `app-entrypoint health` or the
+Compose `check` command for a local check, and put a TLS proxy in front before
+using the API. The generated AWS recipes require an HTTPS listener; add the
+certificate to the environment before deploying.
 
 Health probes send a Host header that Django accepts:
 
