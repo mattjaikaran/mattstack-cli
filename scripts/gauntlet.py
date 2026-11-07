@@ -232,6 +232,10 @@ def _gate_install() -> bool:
             if code != 0:
                 print(out)
                 return False
+        code, out = _run([executable, "sync2"], timeout=timeout)
+        if code == 0 or "Did you mean" not in out:
+            print(out)
+            return False
         return True
 
 
