@@ -115,8 +115,27 @@ app = typer.Typer(
 )
 
 
+def _show_version(value: bool) -> bool:
+    """Print the installed version and exit when `--version` is passed."""
+    if value:
+        from mattstack.commands.version import version_line
+
+        typer.echo(version_line())
+        raise typer.Exit()
+    return value
+
+
 @app.callback()
 def main(
+    version: Annotated[
+        bool,
+        typer.Option(
+            "--version",
+            is_eager=True,
+            callback=_show_version,
+            help="Show the installed version and exit.",
+        ),
+    ] = False,
     verbose: Annotated[
         bool,
         typer.Option("--verbose", "-v", help="Enable verbose output"),
