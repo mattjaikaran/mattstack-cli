@@ -8,6 +8,7 @@ written without a matching row makes a fresh scaffold fail that gate.
 from __future__ import annotations
 
 import json
+import re
 
 from mattstack.config import ProjectConfig
 from mattstack.parsers.openapi_spec import EXACT_VERSION, HEY_API_NAME, HEY_API_VERSION
@@ -15,6 +16,7 @@ from mattstack.utils.console import print_info
 from mattstack.utils.package_json import write_package_json
 
 _TABLE_SECTIONS = ("devDependencies", "dependencies")
+_SEPARATOR_CELL = re.compile(r":?-+:?")
 
 
 def pin_openapi_generator(config: ProjectConfig) -> None:
@@ -69,8 +71,11 @@ def _document_dependency(config: ProjectConfig) -> None:
     )
     if row is not None:
         lines[row] = _replace_version(lines[row], version)
+        target = row
     else:
-        lines.insert(_insert_at(lines, newline), f"| {HEY_API_NAME} | {version} |{newline}")
+        target = _insert_at(lines, newline)
+        lines.insert(target, f"| {HEY_API_NAME} | {version} |{newline}")
+    _align_table(lines, target)
     path.write_text("".join(lines))
 
 
@@ -112,3 +117,68 @@ def _insert_at(lines: list[str], newline: str) -> int:
     if not lines[last_row].endswith(("\n", "\r")):
         lines[last_row] += newline
     return last_row + 1
+
+
+def _table_cells(line: str) -> list[str] | None:
+    """Split a Markdown table row into trimmed cells, else ``None`` for other lines."""
+    text = line.strip()
+    if len(text) < 2 or not text.startswith("|") or not text.endswith("|"):
+        return None
+    return [cell.strip() for cell in text[1:-1].split("|")]
+
+
+def _align_table(lines: list[str], index: int) -> None:
+    """Pad the table around ``index`` the way the frontend formatter expects.
+
+    The boilerplates commit column-aligned tables and ``oxfmt --check`` (part of
+    the frontend gauntlet) reports a row whose cells are padded differently.
+    Leave single-space tables alone; only re-pad a table that is already aligned.
+    """
+    start = index
+    while start > 0 and _table_cells(lines[start - 1]) is not None:
+        start -= 1
+    end = index
+    while end + 1 < len(lines) and _table_cells(lines[end + 1]) is not None:
+        end += 1
+
+    rows = [_table_cells(line) for line in lines[start : end + 1]]
+    table = [row for row in rows if row is not None]
+    separator = next(
+        (
+            offset
+            for offset, row in enumerate(table)
+            if all(_SEPARATOR_CELL.fullmatch(cell) for cell in row)
+        ),
+        None,
+    )
+    if separator is None or any(len(row) != len(table[separator]) for row in table):
+        return
+    raw = [lines[position].strip()[1:-1].split("|") for position in range(start, end + 1)]
+    if all(len(cell) == len(cell.strip()) + 2 for row in raw for cell in row):
+        return
+
+    widths = [
+        max(3, *(len(row[column]) for offset, row in enumerate(table) if offset != separator))
+        for column in range(len(table[separator]))
+    ]
+    for offset, row in enumerate(table):
+        rendered = [
+            _separator_cell(cell, widths[column])
+            if offset == separator
+            else cell.ljust(widths[column])
+            for column, cell in enumerate(row)
+        ]
+        line = lines[start + offset]
+        ending = line[len(line.rstrip("\r\n")) :]
+        lines[start + offset] = "| " + " | ".join(rendered) + " |" + ending
+
+
+def _separator_cell(marker: str, width: int) -> str:
+    """Render an alignment separator cell at ``width``, keeping its colons."""
+    if marker.startswith(":") and marker.endswith(":") and len(marker) > 1:
+        return ":" + "-" * max(width - 2, 1) + ":"
+    if marker.startswith(":"):
+        return ":" + "-" * (width - 1)
+    if marker.endswith(":"):
+        return "-" * (width - 1) + ":"
+    return "-" * width

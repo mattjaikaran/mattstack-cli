@@ -483,7 +483,8 @@ schema.
 The frontend `package.json` must pin `@hey-api/openapi-ts` to an exact
 version, and `node_modules` must contain that version. A range such as
 `^0.99.0` fails. `mattstack init` pins `0.99.0` when the frontend has no exact
-pin.
+pin, and records the pinned version in `frontend/DEPENDENCIES.md` when that
+file exists, so `bun run check-dependencies` still passes.
 
 For Django Ninja, the default schema is `backend/docs/openapi/openapi.json`
 (`just backend-openapi` writes it). Other backends use `openapi.json`
