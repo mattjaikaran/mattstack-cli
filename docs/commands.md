@@ -734,6 +734,7 @@ ruleset that requires the `gauntlet` check. Use `--dry-run` to preview. Only a
 | `mattstack env [check\|sync\|show\|secrets]` | Compare `.env` with `.env.example`, append missing variables, show masked values, or create missing `.env` and `.env.production` files with generated secrets. |
 | `mattstack doctor [--path P] [--json]` | Check required tools (`uv`, `bun`, Docker, and `just` when the backend has a `justfile`), the installed `pre-push` hook, and each `.mcp.json` server. Busy ports are informational; a missing project directory fails. |
 | `mattstack version` | Show the version and check for updates, unless `--quiet` is set. |
+| `mattstack --version` | Print the installed version and exit, without the update check. A VCS install appends the short commit. |
 | `mattstack completions --install` | Install shell completions. `--show` prints the script. |
 | `mattstack verify --scope` | Fail when changed files are outside `SCOPE.md` or `--scope-file`. |
 | `mattstack notify` | Send a deploy notification through the backend in `mattstack.yml`. |

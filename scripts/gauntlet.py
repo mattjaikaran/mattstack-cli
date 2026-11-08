@@ -11,7 +11,7 @@ Gates:
     7. TEST — pytest with coverage
     8. MUTATION — mutmut (skipped in quick mode)
     9. AUDIT — pip-audit (skipped in quick mode)
-   10. INSTALL — wheel built from the sdist, installed into a fresh venv, help runs
+   10. INSTALL — wheel built from the sdist, installed into a fresh venv, help and --version run
 
 Usage:
     python scripts/gauntlet.py          # full gauntlet
@@ -227,6 +227,11 @@ def _gate_install() -> bool:
             print(out)
             return False
         executable = str(venv / "bin" / "mattstack")
+        code, out = _run([executable, "--version"], timeout=timeout)
+        wheel_version = wheels[0].name.split("-")[1]
+        if code != 0 or out.strip() != f"mattstack {wheel_version}":
+            print(out)
+            return False
         for command in ([executable, "--help"], [executable, "sync", "--help"]):
             code, out = _run(command, timeout=timeout)
             if code != 0:
