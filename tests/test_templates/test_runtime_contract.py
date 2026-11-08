@@ -144,7 +144,11 @@ _REFERENCE = re.compile(r"\$\{(\w+)(?::([-?])([^}]*))?\}")
 
 
 def _interpolate(value: str, env: dict[str, str]) -> str:
-    """Resolve Compose ``${NAME}``, ``${NAME:-default}``, and ``${NAME:?error}``."""
+    """Resolve Compose ``${NAME}``, ``${NAME:-default}``, and ``${NAME:?error}``.
+
+    Compose nests references inside a default (``${A:-http://x:${P:-3000}}``),
+    so substitute until the value stops changing.
+    """
 
     def resolve(match: re.Match[str]) -> str:
         name, operator, argument = match.groups()
@@ -154,7 +158,12 @@ def _interpolate(value: str, env: dict[str, str]) -> str:
             raise KeyError(f"{name}: {argument}")
         return argument if operator == "-" else ""
 
-    return _REFERENCE.sub(resolve, value)
+    for _ in range(5):
+        resolved = _REFERENCE.sub(resolve, value)
+        if resolved == value:
+            break
+        value = resolved
+    return value
 
 
 def _resolved_env(compose_text: str, service: str, env: dict[str, str]) -> dict[str, str]:
