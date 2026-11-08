@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Record the pinned `@hey-api/openapi-ts` in `frontend/DEPENDENCIES.md` in the column-aligned form the frontend formatter expects, so a fresh scaffold passes both `bun run check-dependencies` and `bun run format:check`.
 - Write `backend/.python-version` with the backend image's Python (`3.13`) during `mattstack init` and `mattstack add backend`, so uv on a host with a newer interpreter no longer provisions it and fails to build wheels such as `ormsgpack`. An existing pin is kept.
 - Leave a fresh project's tree clean after `just setup`: `mattstack init` now sorts `package.json` dependencies the way Oxfmt does, writes the generated proxy constant in the formatter's own shape, and resolves `backend/uv.lock` and `frontend/bun.lock` before the initial commit.
 - Align generated deployment targets with the current Django Ninja production settings: bake `USE_TLS=true` everywhere, require distinct `CENTRIFUGO_API_KEY`/`CENTRIFUGO_TOKEN_SECRET` values even without realtime, generate those secrets in `.env.production`, and run the Ninja ASGI server through Gunicorn's uvicorn worker instead of the WSGI worker.
