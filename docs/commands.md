@@ -150,9 +150,14 @@ and `project.backend.graph`.
 `init` writes `.env.example` and `.env.production.example` with empty secret
 values, then creates the gitignored `.env` and `.env.production` with mode
 0600. Each file gets its own fresh values for the secrets the selected stack
-reads, such as `POSTGRES_PASSWORD`, `SECRET_KEY`, and `REDIS_PASSWORD`. Keys
-are 64 URL-safe characters; passwords are 48 hexadecimal characters. `init`
-prints only the names and never replaces an existing file.
+reads, such as `POSTGRES_PASSWORD`, `SECRET_KEY`, and `REDIS_PASSWORD`. Only
+the names the selected features declare are generated: no Centrifugo secrets
+without `--realtime`, no `NEO4J_PASSWORD` without `--graph neo4j`, and no
+development-only Django MCP or Flower secrets. `.env.production` still gets
+`CENTRIFUGO_API_KEY` and `CENTRIFUGO_TOKEN_SECRET` because
+`api/settings/prod.py` requires them even without realtime. Keys are 64
+URL-safe characters; passwords are 48 hexadecimal characters. `init` prints
+only the names and never replaces an existing file.
 
 To create a missing file later, for example in a fresh clone, run:
 

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Generate only the secrets the selected features use: `init` now asks the cloned django-ninja backend for its secret list and passes `--only` with the names the generated env examples declare, so a project without `--realtime` or `--ai` no longer gets Centrifugo admin, Neo4j, Django MCP, or Flower secrets in `.env` and `.env.production`. `.env.production` keeps `CENTRIFUGO_API_KEY` and `CENTRIFUGO_TOKEN_SECRET`, which `api/settings/prod.py` requires even without realtime.
+
 ### Fixed
 
 - Leave a fresh project's tree clean after `just setup`: `mattstack init` now sorts `package.json` dependencies the way Oxfmt does, writes the generated proxy constant in the formatter's own shape, and resolves `backend/uv.lock` and `frontend/bun.lock` before the initial commit.

@@ -52,9 +52,40 @@ def secret_names(config: ProjectConfig) -> dict[str, str]:
     return names
 
 
+def _template_secrets(template: Path) -> list[str]:
+    """Return the empty-valued names in an env template, in file order."""
+    names: list[str] = []
+    for line in template.read_text(encoding="utf-8").splitlines():
+        name, separator, value = line.partition("=")
+        name = name.strip()
+        if separator and name and not value.strip() and name not in names:
+            names.append(name)
+    return names
+
+
+def _script_secrets(script: Path, backend_dir: Path) -> set[str] | None:
+    """Return the names the backend script can generate, or None without ``list``.
+
+    An older clone has no ``list`` command; callers then keep the script's
+    whole list instead of stopping the init.
+    """
+    result = subprocess.run(  # nosec B603 # Argv; the cloned backend's own script.
+        [sys.executable, str(script), "list"],
+        cwd=backend_dir,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return None
+    return set(result.stdout.split())
+
+
 def run_backend_script(backend_dir: Path, env_file: Path, template: Path) -> str:
     """Create ``env_file`` (mode 0600) with the backend script; return its summary.
 
+    Generate only the secrets the template declares empty, so a project gets
+    the names its selected features use and not the script's whole list.
     Raise ``SecretsScriptError`` with the exit code when the script is missing
     or fails. The script prints names only.
     """
@@ -64,8 +95,12 @@ def run_backend_script(backend_dir: Path, env_file: Path, template: Path) -> str
             f"{script} is missing; this django-ninja backend cannot generate its "
             "secrets. Update django-ninja-boilerplate (docs/ENV_SECRETS.md)."
         )
+    known = _script_secrets(script, backend_dir)
+    names = [] if known is None else [name for name in _template_secrets(template) if name in known]
     command = [sys.executable, str(script), "create", "--root", str(backend_dir)]
     command += ["--env-file", str(env_file), "--template", str(template)]
+    if names:
+        command += ["--only", ",".join(names)]
     result = subprocess.run(  # nosec B603 # Argv; the cloned backend's own script.
         command, cwd=backend_dir, capture_output=True, text=True, check=False
     )
