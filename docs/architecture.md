@@ -165,6 +165,13 @@ flowchart TD
 `project.ports` in `mattstack.yml`, then from these defaults. Commands use
 the resolved project. Do not add a second detection path.
 
+`init` probes these defaults on `127.0.0.1` before it writes `.env` and records
+the first free port for each service in that file, so a Homebrew PostgreSQL on
+5432 never makes host mode reach the host server instead of the container.
+`.env.example` keeps the defaults; a taken port therefore appears only in the
+gitignored `.env`. Delete that file and `mattstack env secrets` recreates it
+from the example, defaults included.
+
 ## Project metadata and secret environment
 
 Generated projects keep stack facts and secrets in different files:
@@ -455,7 +462,7 @@ src/mattstack/
 ├── parsers/            # Contract and source parsers (openapi_spec.py, zod_schemas.py, routes)
 ├── auditors/           # BaseAuditor subclasses; types_parity.py, versions.py (drift)
 ├── boards/             # Board backends (axis, none; Hermes, Jira, Linear are stubs)
-└── utils/              # Console, Git, Docker, processes; env_secrets.py, sources.py, versions.py
+└── utils/              # Console, Git, Docker, processes, ports; env_secrets.py, sources.py, versions.py
 ```
 
 `scripts/check_architecture.py` enforces the layers: `commands/` can import

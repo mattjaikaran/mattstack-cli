@@ -137,6 +137,8 @@ class BaseGenerator(ABC):
         are never overwritten. A django-ninja backend's own
         ``scripts/env_secrets.py`` generates them from the examples; a missing
         or failing script raises ``SecretsScriptError``. Only names print.
+        ``.env`` records a free host port for each published service, so it
+        never points host-mode commands at a host server on a Compose default.
         """
         from mattstack.templates.root_env import (
             generate_env_example,
@@ -150,7 +152,9 @@ class BaseGenerator(ABC):
             secret_names,
             write_private_file,
         )
+        from mattstack.utils.ports import free_host_ports, write_env_ports
 
+        ports = free_host_ports(self._preferred_ports())
         self.write_file(".env.example", generate_env_example(self.config))
         self.write_file(".env.production.example", generate_env_production_example(self.config))
         delegate = delegates_secrets(self.config)
@@ -172,7 +176,21 @@ class BaseGenerator(ABC):
                 print_info(f"{relative} (mode 0600): {summary}")
             elif write_private_file(path, render(self.config)):
                 print_info(f"Generated {relative} (mode 0600; secrets: {names})")
+            if relative == ".env" and path.is_file():
+                write_env_ports(path, ports)
             self.created_files.append(path)
+
+    def _preferred_ports(self) -> dict[str, int]:
+        """Return the host-side env names and defaults the root Compose publishes."""
+        from mattstack.templates.frontend_runtime import FRONTEND_PORT
+        from mattstack.templates.root_env import DB_PORT, REDIS_PORT
+
+        ports = {"API_PORT": self.config.backend_api_port, "FRONTEND_PORT": FRONTEND_PORT}
+        if self.config.has_backend:
+            ports["DB_PORT"] = DB_PORT
+            if self.config.use_redis:
+                ports["REDIS_PORT"] = REDIS_PORT
+        return ports
 
     def update_file(
         self,
