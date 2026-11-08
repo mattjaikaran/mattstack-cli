@@ -57,7 +57,9 @@ mattstack dev --mode host
 Run application commands from the generated project root. `just up` starts the
 shared infrastructure; host mode runs the selected applications on your machine.
 Use `mattstack dev --mode container` for container application development instead.
-Do not run both modes on the same ports.
+Do not run both modes on the same ports. `mattstack init` records a free host
+port for each service in the generated `.env`, so a host PostgreSQL on 5432 or
+Redis on 6379 does not shadow the containers.
 
 For unattended scaffolding, use a preset or a
 [scaffold YAML file](docs/commands.md#mattstack-init), not the interactive wizard.

@@ -30,6 +30,8 @@ from mattstack.templates.frontend_runtime import (
 )
 from mattstack.utils.env_secrets import generate_secrets
 
+DB_PORT = 5432
+REDIS_PORT = 6379
 _DB = "${POSTGRES_DB}"
 _USER = "${POSTGRES_USER}"
 _PASSWORD = "${POSTGRES_PASSWORD}"  # nosec B105 # Environment reference, not a credential.
@@ -54,9 +56,9 @@ def generate_env_example(config: ProjectConfig, *, values: dict[str, str] | None
         f"FRONTEND_PORT={FRONTEND_PORT}",
     ]
     if config.has_backend:
-        lines.append("DB_PORT=5432")
+        lines.append(f"DB_PORT={DB_PORT}")
         if config.use_redis:
-            lines.append("REDIS_PORT=6379")
+            lines.append(f"REDIS_PORT={REDIS_PORT}")
         if config.use_realtime:
             lines.append(f"CENTRIFUGO_PORT={CENTRIFUGO_PORT}")
     lines.append("")

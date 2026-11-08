@@ -70,7 +70,9 @@ changes, and skips files that `.gitignore` excludes. See
 [source provenance](ecosystem.md#source-provenance).
 
 Generated projects store nonsecret stack metadata in `mattstack.yml`. Do not
-store credentials there.
+store credentials there. Before writing `.env`, `init` probes `API_PORT`,
+`FRONTEND_PORT`, `DB_PORT`, and `REDIS_PORT` on `127.0.0.1` and records the
+first free value in that gitignored file; `.env.example` keeps the defaults.
 
 ### Choose runtime services
 
