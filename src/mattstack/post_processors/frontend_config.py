@@ -13,7 +13,7 @@ import subprocess  # nosec B404 -- CLI executes trusted project tools; no shell.
 from pathlib import Path
 
 from mattstack.config import FrontendFramework, ProjectConfig
-from mattstack.parsers.openapi_spec import EXACT_VERSION, HEY_API_NAME, HEY_API_VERSION
+from mattstack.post_processors.frontend_openapi_pin import pin_openapi_generator
 from mattstack.post_processors.frontend_tooling import configure_frontend_tooling
 from mattstack.post_processors.tanstack_router import align_tanstack_router
 from mattstack.templates.frontend_runtime import (
@@ -25,7 +25,6 @@ from mattstack.templates.frontend_runtime import (
     render_env_file,
 )
 from mattstack.utils.console import print_info, print_warning
-from mattstack.utils.package_json import write_package_json
 from mattstack.utils.process import command_available
 
 _PROXY_CONST = "apiProxyTarget"
@@ -42,7 +41,7 @@ def setup_frontend_monorepo(config: ProjectConfig) -> None:
         return
     configure_frontend_tooling(config)
     if config.has_backend:
-        _pin_openapi_generator(config)
+        pin_openapi_generator(config)
 
     if config.frontend_framework == FrontendFramework.REACT_VITE:
         align_tanstack_router(config)
@@ -109,28 +108,6 @@ def _refresh_bun_lock(frontend_dir: Path) -> None:
         )
         return
     print_info("Refreshed frontend/bun.lock for the generated manifest")
-
-
-def _pin_openapi_generator(config: ProjectConfig) -> None:
-    """Pin the OpenAPI client generator exactly, so `mattstack sync check` is reproducible.
-
-    An existing exact pin is the frontend's choice and stays; a range or a
-    missing entry becomes the version mattstack's parity audit is verified with.
-    """
-    manifest = config.frontend_dir / "package.json"
-    if not manifest.is_file():
-        return
-    package = json.loads(manifest.read_text())
-    sections = ("devDependencies", "dependencies")
-    owned = [name for name in sections if HEY_API_NAME in package.get(name, {})]
-    section = owned[0] if owned else sections[0]
-    entries = package.setdefault(section, {})
-    current = entries.get(HEY_API_NAME)
-    if isinstance(current, str) and EXACT_VERSION.fullmatch(current):
-        return
-    entries[HEY_API_NAME] = HEY_API_VERSION
-    write_package_json(manifest, package)
-    print_info(f"Pinned {HEY_API_NAME} to {HEY_API_VERSION} in frontend/package.json")
 
 
 # --- Next.js -----------------------------------------------------------------
