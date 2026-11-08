@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Write `backend/.python-version` with the backend image's Python (`3.13`) during `mattstack init` and `mattstack add backend`, so uv on a host with a newer interpreter no longer provisions it and fails to build wheels such as `ormsgpack`. An existing pin is kept.
+- Development images install the backend's `dev` extra, so `docker compose exec api-dev uv run ruff` and pytest work in the container; production images keep the runtime-only install.
 - Leave a fresh project's tree clean after `just setup`: `mattstack init` now sorts `package.json` dependencies the way Oxfmt does, writes the generated proxy constant in the formatter's own shape, and resolves `backend/uv.lock` and `frontend/bun.lock` before the initial commit.
 - Align generated deployment targets with the current Django Ninja production settings: bake `USE_TLS=true` everywhere, require distinct `CENTRIFUGO_API_KEY`/`CENTRIFUGO_TOKEN_SECRET` values even without realtime, generate those secrets in `.env.production`, and run the Ninja ASGI server through Gunicorn's uvicorn worker instead of the WSGI worker.
 - Generated development Compose runs a one-shot `migrate` service before `api-dev`, `celery-worker`, and `celery-beat`, which wait for it with `condition: service_completed_successfully`. A fresh `docker compose --profile celery up -d --wait` no longer starts with pending migrations or crashes beat on missing `django_celery_beat` tables.
