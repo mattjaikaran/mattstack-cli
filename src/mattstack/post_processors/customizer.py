@@ -9,6 +9,7 @@ import tomllib
 from pathlib import Path
 
 from mattstack.config import BackendFramework, ProjectConfig
+from mattstack.templates.dockerfiles import python_minor
 from mattstack.utils.console import print_info, print_warning
 from mattstack.utils.package_json import write_package_json
 from mattstack.utils.process import command_available
@@ -22,7 +23,24 @@ def customize_backend(config: ProjectConfig) -> None:
         _customize_fastapi_backend(config)
     else:
         _customize_django_backend(config)
+    _pin_python_version(config)
     _refresh_uv_lock(config.backend_dir)
+
+
+def _pin_python_version(config: ProjectConfig) -> None:
+    """Pin the backend to the image's Python so uv ignores a newer host.
+
+    ``requires-python`` is a floor, so without a pin uv provisions the newest
+    release and some wheels, such as ``ormsgpack``, fail to build.
+    """
+    if config.is_nestjs_backend or not config.backend_dir.is_dir():
+        return
+    pin = config.backend_dir / ".python-version"
+    if pin.exists():
+        return
+    version = python_minor(config)
+    pin.write_text(f"{version}\n")
+    print_info(f"Pinned backend Python to {version}")
 
 
 def _customize_django_backend(config: ProjectConfig) -> None:
