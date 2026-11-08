@@ -209,7 +209,7 @@ def _uv_image(config: ProjectConfig) -> str:
     return f"ghcr.io/astral-sh/uv:{_pin(config, 'uv') or UV_FALLBACK}"
 
 
-def _python_minor(config: ProjectConfig) -> str:
+def python_minor(config: ProjectConfig) -> str:
     """Return the backend's ``major.minor`` Python (``.python-version``, pyproject)."""
     parts = (_pin(config, "python") or "").split(".")
     return ".".join(parts[:2]) if len(parts) >= 2 else _PYTHON_FALLBACK
@@ -236,7 +236,7 @@ def _env_line(env: dict[str, str]) -> str:
 
 
 def _python_base(config: ProjectConfig, build_packages: str) -> str:
-    python = _python_minor(config)
+    python = python_minor(config)
     return f"""\
 FROM python:{python}-slim AS base
 ENV PYTHONDONTWRITEBYTECODE=1 \\
