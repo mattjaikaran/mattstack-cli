@@ -71,7 +71,12 @@ def redis_url(host: str, *, production: bool) -> str:
 
 
 def backend_build(config: ProjectConfig, target: str) -> str:
-    """Render a backend ``build:`` block; Python images take ``UV_EXTRAS``."""
+    """Render a backend ``build:`` block; Python images take ``UV_EXTRAS``.
+
+    The development target also installs the backend's ``dev`` extra, so
+    ``docker compose exec api-dev uv run ruff`` and pytest work in the
+    container. Production keeps the runtime-only install.
+    """
     block = f"""\
     build:
       context: .
@@ -79,7 +84,8 @@ def backend_build(config: ProjectConfig, target: str) -> str:
       target: {target}"""
     if config.is_nestjs_backend:
         return block
-    return block + '\n      args:\n        UV_EXTRAS: "${UV_EXTRAS:-}"'
+    extras = "dev${UV_EXTRAS:+ $UV_EXTRAS}" if target == "development" else "${UV_EXTRAS:-}"
+    return block + f'\n      args:\n        UV_EXTRAS: "{extras}"'
 
 
 def ai_services(config: ProjectConfig) -> list[str]:

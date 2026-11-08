@@ -145,6 +145,9 @@ flowchart TD
   changes the containers. The `localhost` `DATABASE_URL`, `DB_*`,
   `REDIS_URL`, and `CELERY_*` values are host-mode only; the containers derive
   them from `POSTGRES_*` and `REDIS_PASSWORD`.
+- Development images install the backend's `dev` extra, so
+  `docker compose exec api-dev uv run ruff` and pytest work in the container.
+  Production images keep the runtime-only install.
 - The production Compose file and deployment recipes follow the same
   selection. See the [deployment guide](deployment-guide.md) for the
   production prerequisites and the verification boundary.
