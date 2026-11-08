@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Generate only the secrets the selected features use: `init` now asks the cloned django-ninja backend for its secret list and passes `--only` with the names the generated env examples declare, so a project without `--realtime` or `--ai` no longer gets Centrifugo admin, Neo4j, Django MCP, or Flower secrets in `.env` and `.env.production`. `.env.production` keeps `CENTRIFUGO_API_KEY` and `CENTRIFUGO_TOKEN_SECRET`, which `api/settings/prod.py` requires even without realtime.
+
 ### Fixed
 
 - Write `backend/.python-version` with the backend image's Python (`3.13`) during `mattstack init` and `mattstack add backend`, so uv on a host with a newer interpreter no longer provisions it and fails to build wheels such as `ormsgpack`. An existing pin is kept.
