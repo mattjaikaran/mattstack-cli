@@ -32,6 +32,11 @@ from mattstack.utils.sources import record_sources, redact_repo, source_revision
 from mattstack.utils.versions import snapshot_pins
 
 
+def project_dir_is_free(path: Path) -> bool:
+    """Return True when the path is absent or an empty directory."""
+    return not path.exists() or (path.is_dir() and not any(path.iterdir()))
+
+
 class BaseGenerator(ABC):
     """Base class for project generators."""
 
@@ -39,6 +44,7 @@ class BaseGenerator(ABC):
         self.config = config
         self.created_files: list[Path] = []
         self._owns_root = False
+        self._preexisting_empty_root = False
         # Component dir name -> {repo, commit[, dirty]} for mattstack.yml.
         self.sources: dict[str, dict[str, Any]] = {}
 
@@ -47,14 +53,19 @@ class BaseGenerator(ABC):
         if self.config.dry_run:
             print_info(f"[dry-run] Would create directory: {self.config.path}")
             return True
+        if not project_dir_is_free(self.config.path):
+            print_error(f"Directory already exists: {self.config.path}")
+            return False
+        existed = self.config.path.exists()
         try:
-            self.config.path.mkdir(parents=True, exist_ok=False)
-            self._owns_root = True
-            print_success(f"Created directory: {self.config.path}")
-            return True
+            self.config.path.mkdir(parents=True, exist_ok=True)
         except FileExistsError:
             print_error(f"Directory already exists: {self.config.path}")
             return False
+        self._owns_root = not existed
+        self._preexisting_empty_root = existed
+        print_success(f"Created directory: {self.config.path}")
+        return True
 
     def clone_and_strip(self, repo_key: str, dest_name: str) -> bool:
         """Clone a repo and strip its .git history."""
@@ -220,10 +231,21 @@ class BaseGenerator(ABC):
         return True
 
     def cleanup(self) -> None:
-        """Remove the project directory on failure."""
-        if self._owns_root and not self.config.dry_run and self.config.path.exists():
+        """Remove what this run wrote when a step fails."""
+        if self.config.dry_run or not self.config.path.exists():
+            return
+        if self._owns_root:
             shutil.rmtree(self.config.path, ignore_errors=True)
-            print_warning(f"Cleaned up partial project: {self.config.path}")
+        elif self._preexisting_empty_root:
+            # The user created the root, so keep it and remove only this run's files.
+            for child in self.config.path.iterdir():
+                if child.is_dir() and not child.is_symlink():
+                    shutil.rmtree(child, ignore_errors=True)
+                else:
+                    child.unlink(missing_ok=True)
+        else:
+            return
+        print_warning(f"Cleaned up partial project: {self.config.path}")
 
     @property
     @abstractmethod

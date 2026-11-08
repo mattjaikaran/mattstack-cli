@@ -150,9 +150,48 @@ def test_create_root_directory(tmp_path: Path) -> None:
 def test_create_root_directory_exists(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
     config.path.mkdir(parents=True)
+    (config.path / "notes.txt").write_text("Keep user data.")
     gen = _ConcreteGenerator(config)
     result = gen.create_root_directory()
     assert result is False
+
+
+def test_create_root_directory_accepts_empty_dir(tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    config.path.mkdir(parents=True)
+    gen = _ConcreteGenerator(config)
+    result = gen.create_root_directory()
+    assert result is True
+    assert config.path.exists()
+
+
+def test_cleanup_preserves_preexisting_empty_root(tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    config.path.mkdir(parents=True)
+    gen = _ConcreteGenerator(config)
+    assert gen.create_root_directory()
+    gen.write_file("some_file.txt", "data")
+    gen.cleanup()
+    assert config.path.exists()
+    assert list(config.path.iterdir()) == []
+
+
+def test_failed_run_into_empty_dir_keeps_root(tmp_path: Path) -> None:
+    config = _make_config(tmp_path)
+    config.path.mkdir(parents=True)
+
+    class _FailingGenerator(_ConcreteGenerator):
+        @property
+        def steps(self) -> list[tuple[str, Callable]]:
+            return [
+                ("create root", self.create_root_directory),
+                ("write", lambda: self.write_file("some_file.txt", "data")),
+                ("fail", lambda: False),
+            ]
+
+    assert _FailingGenerator(config).run() is False
+    assert config.path.exists()
+    assert list(config.path.iterdir()) == []
 
 
 def test_create_root_directory_dry_run(tmp_path: Path) -> None:

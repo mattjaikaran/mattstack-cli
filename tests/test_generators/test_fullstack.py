@@ -179,6 +179,7 @@ def test_fullstack_dry_run(mock_clone, mock_be, mock_fe, mock_setup, tmp_path: P
 def test_fullstack_existing_dir_fails(tmp_path: Path) -> None:
     config = _make_config(tmp_path)
     config.path.mkdir(parents=True)
+    (config.path / "notes.txt").write_text("Keep user data.")
     gen = FullstackGenerator(config)
     result = gen.run()
     assert result is False
