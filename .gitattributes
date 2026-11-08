@@ -1,0 +1,2 @@
+# Parallel PRs each add a CHANGELOG entry: a rebase keeps both sides.
+CHANGELOG.md merge=union
