@@ -78,8 +78,10 @@ flowchart TD
    - An unsupported task backend, realtime, or media choice raises
      `ValueError`. `init` prints the valid choices and exits before it
      creates any file.
-4. `_generate()` refuses an existing directory and a deployment target that
-   cannot run the stack, for example Next.js on Cloudflare.
+4. `_generate()` accepts an absent or empty project directory and refuses a
+   non-empty one, plus a deployment target that cannot run the stack, for
+   example Next.js on Cloudflare. A directory the user created survives a
+   failed run; cleanup removes only what that run wrote.
 
 ### What each generator writes
 

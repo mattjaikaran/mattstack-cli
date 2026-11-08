@@ -42,6 +42,11 @@ mattstack init my-app -p kibo-fullstack --dry-run
 | `--ai` | Django Ninja AI layer vector store: `none` (default), `pgvector`, or `qdrant`. See [AI layer](#ai-layer). |
 | `--graph` | Django Ninja AI layer graph queries: `cte` (default) or `neo4j`. |
 
+The project path (`DIR/NAME`, where `DIR` is `--output`) must be absent or an
+empty directory, so `mkdir my-app` before `init` is supported. `init` refuses
+a non-empty directory, or a file at that path, and leaves its contents
+untouched.
+
 For unattended use, provide a name and a preset, or a config file. Do not
 combine `--config` with a name or preset. Dry runs do not change files.
 Initialization failures return nonzero.
