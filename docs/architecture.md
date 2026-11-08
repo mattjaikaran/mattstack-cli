@@ -444,7 +444,7 @@ src/mattstack/
 ├── runtime_profiles.py # Task workers, realtime, and runtime prerequisites
 ├── notify.py           # Deploy notification backends
 ├── commands/
-│   ├── init.py, init_runtime.py   # Entry modes, wizard, runtime flags
+│   ├── init.py, init_runtime.py, init_steps.py  # Entry modes, wizard, runtime flags, next steps
 │   ├── generate.py, generate_crud.py  # generate subgroup
 │   ├── codegen/        # FilePlan, layouts, resource policy, router planners, CRUD TS
 │   ├── add.py, upgrade.py, upgrade_merge.py  # Add a component; three-way boilerplate upgrade
