@@ -25,6 +25,7 @@ from mattstack.config import (
     normalize_name,
 )
 from mattstack.generators.backend_only import BackendOnlyGenerator
+from mattstack.generators.base import project_dir_is_free
 from mattstack.generators.frontend_only import FrontendOnlyGenerator
 from mattstack.generators.fullstack import FullstackGenerator
 from mattstack.presets import get_all_presets, get_preset
@@ -339,14 +340,13 @@ def _show_summary(config: ProjectConfig) -> None:
 
 def _generate(config: ProjectConfig) -> bool:
     """Run the appropriate generator."""
-    if config.path.exists() and not config.dry_run:
+    if not project_dir_is_free(config.path) and not config.dry_run:
         print_error(f"Directory already exists: {config.path}")
         raise typer.Exit(code=1)
     reason = unsupported_deployment_reason(config)
     if reason:
         print_error(reason)
         raise typer.Exit(code=2)
-
     generator: FullstackGenerator | BackendOnlyGenerator | FrontendOnlyGenerator
     if config.project_type == ProjectType.FULLSTACK:
         generator = FullstackGenerator(config)

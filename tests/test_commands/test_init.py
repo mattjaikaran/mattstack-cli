@@ -74,6 +74,7 @@ def test_yaml_config_nonexistent_file(tmp_path: Path) -> None:
 def test_generate_existing_dir_exits(tmp_path: Path) -> None:
     proj_dir = tmp_path / "existing"
     proj_dir.mkdir()
+    (proj_dir / "notes.txt").write_text("Keep this project.\n")
     config = ProjectConfig(
         name="existing",
         path=proj_dir,
@@ -81,6 +82,20 @@ def test_generate_existing_dir_exits(tmp_path: Path) -> None:
     )
     with pytest.raises((SystemExit, click.exceptions.Exit)):
         _generate(config)
+
+
+def test_generate_accepts_empty_dir(tmp_path: Path) -> None:
+    proj_dir = tmp_path / "existing"
+    proj_dir.mkdir()
+    config = ProjectConfig(
+        name="existing",
+        path=proj_dir,
+        project_type=ProjectType.FULLSTACK,
+    )
+    with patch("mattstack.generators.fullstack.FullstackGenerator.run", return_value=True):
+        result = _generate(config)
+    assert result is True
+    assert proj_dir.exists()
 
 
 def test_generate_dry_run_skips_dir_check(tmp_path: Path) -> None:
