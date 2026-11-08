@@ -16,6 +16,7 @@ from mattstack.commands.init_runtime import (
     ask_runtime,
     runtime_overrides,
 )
+from mattstack.commands.init_steps import print_next_steps
 from mattstack.config import (
     BackendFramework,
     FrontendFramework,
@@ -31,7 +32,7 @@ from mattstack.generators.fullstack import FullstackGenerator
 from mattstack.presets import get_all_presets, get_preset
 from mattstack.runtime_profiles import task_summary
 from mattstack.templates.deploy_files import unsupported_deployment_reason
-from mattstack.utils.console import console, print_error, print_info, print_success
+from mattstack.utils.console import console, print_error, print_info
 from mattstack.utils.git import get_git_user
 from mattstack.utils.yaml_config import load_config_file
 
@@ -368,33 +369,5 @@ def _generate(config: ProjectConfig) -> bool:
     if config.dry_run:
         print_info("Dry-run completed; no project files were written")
     else:
-        _print_next_steps(config)
+        print_next_steps(config)
     return True
-
-
-def _print_next_steps(config: ProjectConfig) -> None:
-    console.print()
-    print_success(f"Project '{config.name}' created successfully!")
-    console.print()
-    console.print("[bold]Next steps:[/bold]")
-    console.print(f"  [cyan]cd {config.name}[/cyan]")
-    console.print("  [cyan]just setup[/cyan]")
-    if config.has_backend:
-        infrastructure = "db redis" if config.use_redis else "db"
-        console.print(f"  [cyan]docker compose up -d --wait {infrastructure}[/cyan]")
-        console.print("  [cyan]just backend-migrate[/cyan]")
-        if config.backend_framework in {
-            BackendFramework.DJANGO_NINJA,
-            BackendFramework.DJANGO_MATT,
-        }:
-            console.print("  [cyan]just superuser-host[/cyan]")
-        if config.task_backend.value != "none":
-            console.print(f"  [cyan]just backend-worker[/cyan]  # {task_summary(config)}")
-        if config.use_realtime:
-            console.print("  [cyan]just up-realtime[/cyan]  # Centrifugo; see CLAUDE.md")
-    console.print("  [cyan]mattstack dev --mode host[/cyan]")
-    if config.has_backend:
-        console.print(f"  API: http://localhost:{config.backend_api_port}{config.api_prefix}")
-    if config.has_frontend:
-        console.print("  Frontend: http://localhost:3000")
-    console.print()
