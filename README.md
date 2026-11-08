@@ -214,6 +214,7 @@ Other generators include `model`, `endpoint`, `component`, `page`, `hook`, and `
 ## Command overview
 
 ```
+mattstack --version   Show the installed version (adds the git commit for VCS installs)
 mattstack init        Scaffold a new project (generates .env secrets)
 mattstack add         Add frontend/backend/ios to existing project
 mattstack upgrade     Three-way merge boilerplate changes since the recorded commit
