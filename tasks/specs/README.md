@@ -85,3 +85,7 @@ a claimed spec. The claim is the push that creates `agent/<Spec ID>`.
 | [S-CLI-10](S-CLI-10-gauntlet-install-typo-check.md) gate 10 mistyped-group check | READY | S-CLI-09 | S-CLI-09 |
 | [S-CLI-11](S-CLI-11-lazy-group-without-click.md) LazyTyperGroup without click import | READY | none | none |
 | [S-CLI-12](S-CLI-12-release-steps-doc.md) manual release steps doc | READY | none | none |
+| [S-CLI-13](S-CLI-13-version-flag.md) `--version` flag | READY | none | none |
+| [S-CLI-14](S-CLI-14-init-empty-directory.md) init into an empty directory | READY | none | none |
+| [S-CLI-15](S-CLI-15-openapi-ts-dependencies-entry.md) openapi-ts in DEPENDENCIES.md | READY | none | S-CLI-16 |
+| [S-CLI-16](S-CLI-16-backend-python-version-pin.md) backend `.python-version` | READY | none | S-CLI-15 |
