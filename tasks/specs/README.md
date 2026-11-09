@@ -88,4 +88,4 @@ a claimed spec. The claim is the push that creates `agent/<Spec ID>`.
 | [S-CLI-13](S-CLI-13-version-flag.md) `--version` flag | READY | none | S-CLI-11 |
 | [S-CLI-14](S-CLI-14-init-empty-directory.md) init into an empty directory | READY | none | none |
 | [S-CLI-15](S-CLI-15-openapi-ts-dependencies-entry.md) openapi-ts in DEPENDENCIES.md | READY | none | S-CLI-16 |
-| [S-CLI-16](S-CLI-16-backend-python-version-pin.md) backend `.python-version` | READY | none | S-CLI-15 |
+| [S-CLI-16](S-CLI-16-backend-python-version-pin.md) install gate smokes the backend `.python-version` pin | READY | none | S-CLI-15 |
