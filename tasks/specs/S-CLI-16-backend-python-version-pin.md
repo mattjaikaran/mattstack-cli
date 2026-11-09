@@ -9,7 +9,7 @@
 | Assigned executor | unattended executor (agent-run) |
 | Base commit | 440133b |
 | Branch | agent/S-CLI-16 |
-| Depends on | none |
+| Depends on | S-CLI-09, S-CLI-10 (both merged: `03caad9`, `6acde5c`) |
 | Conflicts with | S-CLI-15 |
 | Files owned | `scripts/gauntlet.py` |
 | Migrations | none |

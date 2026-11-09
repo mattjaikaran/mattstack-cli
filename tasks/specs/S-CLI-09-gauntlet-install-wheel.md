@@ -5,7 +5,7 @@
 | Spec ID | S-CLI-09 |
 | Backlog item | Gate 10 passed while a dependency was missing: build and install the wheel |
 | Role | coding |
-| Status | READY |
+| Status | DONE |
 | Assigned executor | agent-run |
 | Base commit | 9bf4cfe |
 | Branch | agent/S-CLI-09 |

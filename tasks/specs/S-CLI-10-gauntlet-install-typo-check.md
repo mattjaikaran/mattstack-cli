@@ -5,7 +5,7 @@
 | Spec ID | S-CLI-10 |
 | Backlog item | `tasks/todo.md:11-15` (release process): the INSTALL gate must also run a mistyped group that prints "Did you mean" |
 | Role | coding |
-| Status | READY |
+| Status | DONE |
 | Assigned executor | unattended executor (agent-run) |
 | Base commit | 9337e65 |
 | Branch | agent/S-CLI-10 |
