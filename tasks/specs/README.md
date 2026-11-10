@@ -23,8 +23,9 @@ Name each spec `S-<AREA>-<NN>-<slug>.md`. Start it with this header table:
 | Migrations | `none` |
 | Runtime locks | `none` |
 | Human needed | `none`, or the open decision |
-| Max files | At most 6 |
-| Max changed lines | At most 300, insertions plus deletions |
+| Size | `S`, `M` or `L`: at most 8 files and 300 changed lines, 15 files and 800 lines, or 30 files and 2000 lines (insertions plus deletions) |
+| Max files | At most the Size limit |
+| Max changed lines | At most the Size limit, insertions plus deletions |
 | Verification commands | Commands from `Makefile` and the quick gates of `scripts/gauntlet.py` |
 | Acceptance criteria | Criterion IDs, detailed in the acceptance table |
 
