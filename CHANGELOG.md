@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `make smoke-scaffold` scaffolds the default presets into temporary directories and runs each generated project's `just ci`, reporting pass or fail per preset. It needs network access, `just`, `uv` and `bun`, so it is not a gauntlet gate; `--all` covers every preset.
 - `mattstack --version` prints the installed version without a subcommand or a network call, and appends the short commit when installed from a git URL. The install gate now runs it against the built wheel.
 
 ### Changed
