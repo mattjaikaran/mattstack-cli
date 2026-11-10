@@ -11,7 +11,8 @@ Gates:
     7. TEST — pytest with coverage
     8. MUTATION — mutmut (skipped in quick mode)
     9. AUDIT — pip-audit (skipped in quick mode)
-   10. INSTALL — wheel built from the sdist, installed into a fresh venv, help and --version run
+   10. INSTALL — wheel built from the sdist, installed into a fresh venv, help and --version run,
+       then the backend Python pin smoke test
 
 Usage:
     python scripts/gauntlet.py          # full gauntlet
@@ -190,6 +191,64 @@ def _gate_audit() -> bool:
     return code == 0
 
 
+_PIN_SMOKE_PROGRAM = """
+import sys
+from pathlib import Path
+
+from mattstack.config import BackendFramework, ProjectConfig
+from mattstack.post_processors.customizer import customize_backend
+
+root = Path(sys.argv[1])
+
+django = root / "django-ninja"
+(django / "backend").mkdir(parents=True)
+(django / "backend" / "pyproject.toml").write_text(
+    '[project]\\nname = "django-ninja-boilerplate"\\nrequires-python = ">=3.13"\\n'
+)
+customize_backend(
+    ProjectConfig(
+        name="pin-django", path=django, backend_framework=BackendFramework.DJANGO_NINJA
+    )
+)
+pin = django / "backend" / ".python-version"
+assert pin.read_text() == "3.13\\n", f"django pin: {pin.read_text()!r}"
+
+fastapi = root / "fastapi"
+(fastapi / "backend").mkdir(parents=True)
+(fastapi / "backend" / "pyproject.toml").write_text(
+    '[project]\\nname = "fastapi-postgres-boilerplate"\\nrequires-python = ">=3.13"\\n'
+)
+fastapi_pin = fastapi / "backend" / ".python-version"
+fastapi_pin.write_text("3.12\\n")
+customize_backend(
+    ProjectConfig(
+        name="pin-fastapi", path=fastapi, backend_framework=BackendFramework.FASTAPI
+    )
+)
+assert fastapi_pin.read_text() == "3.12\\n", f"fastapi pin: {fastapi_pin.read_text()!r}"
+
+nestjs = root / "nestjs"
+(nestjs / "backend").mkdir(parents=True)
+customize_backend(
+    ProjectConfig(
+        name="pin-nestjs", path=nestjs, backend_framework=BackendFramework.NESTJS
+    )
+)
+assert not (nestjs / "backend" / ".python-version").exists(), "nestjs pin"
+"""
+
+
+def _smoke_python_pin(venv_python: Path, work: Path, timeout: int) -> bool:
+    """Prove the installed wheel writes the backend Python pin."""
+    root = work / "pin-smoke"
+    root.mkdir()
+    code, out = _run([str(venv_python), "-c", _PIN_SMOKE_PROGRAM, str(root)], timeout=timeout)
+    if code != 0:
+        print(out)
+        return False
+    return True
+
+
 def _gate_install() -> bool:
     """Gate 10: build a wheel from the sdist and smoke-test it in a fresh venv."""
     bin_ = shutil.which("uv") or "uv"
@@ -241,7 +300,7 @@ def _gate_install() -> bool:
         if code == 0 or "Did you mean" not in out:
             print(out)
             return False
-        return True
+        return _smoke_python_pin(venv / "bin" / "python", work, timeout)
 
 
 # ---------------------------------------------------------------------------
@@ -258,7 +317,7 @@ GATES: list[Gate] = [
     Gate("test", "pytest + coverage", quick=True, run=_gate_test),
     Gate("mutation", "mutmut", quick=False, run=_gate_mutation),
     Gate("audit", "pip-audit", quick=False, run=_gate_audit),
-    Gate("install", "wheel build + help smoke test", quick=True, run=_gate_install),
+    Gate("install", "wheel build + installed smoke test", quick=True, run=_gate_install),
 ]
 
 
