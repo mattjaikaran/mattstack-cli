@@ -17,6 +17,12 @@ repos:
         language: system
         types: [python]
         pass_filenames: false
+      - id: agent-docs
+        name: agent docs (AGENTS.md is the source)
+        entry: uv run python scripts/check_agent_docs.py
+        language: system
+        files: ^(AGENTS|CLAUDE|CONTRIBUTING)\.md$
+        pass_filenames: false
       - id: gauntlet-quick
         name: make gauntlet-quick
         entry: make gauntlet-quick
