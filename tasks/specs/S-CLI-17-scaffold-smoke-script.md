@@ -25,7 +25,7 @@
 
 Verified on `e9b6016` (2026-11-10).
 
-- `tasks/todo.md:46-49` lists the done check (`init`, setup, gauntlet, `sync check`) with no record that anyone ran it. `tasks/prompt-frontend-runtime.md:181-188` repeats the check per frontend preset. Nothing in the repository automates it: `scripts/` holds `check_architecture.py`, `check_file_length.py` and `gauntlet.py` only.
+- `tasks/todo.md:46-49` lists the done check (`init`, setup, gauntlet, `sync check`) with no record that anyone ran it. `tasks/prompt-frontend-runtime.md:176-191` repeats the check for every frontend preset (step 6, lines 189-191). Nothing in the repository automates it: `scripts/` holds `check_architecture.py`, `check_file_length.py` and `gauntlet.py` only.
 - `src/mattstack/templates/root_justfile.py:178-212` (`_ci_recipe`) generates a `ci` recipe that needs no `.env`, database or Docker; `root_justfile.py:45` emits it for every project type.
 - `src/mattstack/presets.py:65` defines `PRESETS`, a dict keyed by preset name; `starter-fullstack`, `starter-api` and `starter-frontend` are keys (lines 66, 79, 91). `src/mattstack/cli_scaffold.py:11` is `init`, with `--preset/-p` and `--output/-o`. `src/mattstack/__main__.py` makes `python -m mattstack` work.
 - Measured on this base: `mattstack init smokeapp -p starter-fullstack -o <dir>` exits 0 in about 2 s and `just ci` in the result exits 0 in about 55 s; `starter-frontend` and `starter-api` each pass `just ci` in under 10 s. A bare `init` fails inside the agent environment because its global Git config sets `core.hooksPath` (`tasks/specs/README.md:55-58`); the same call with `GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_COUNT=0` succeeds.
@@ -56,7 +56,7 @@ Stage only the Files owned, with explicit paths. Commit subject: `feat(scripts):
 | A2 | repo root | `make -n smoke-scaffold` | 0 | Prints `uv run python scripts/smoke_scaffold.py` |
 | A3 | repo root | `make smoke-scaffold ARGS="--preset starter-frontend"` | 0 | Output contains `PASS starter-frontend` |
 | A4 | repo root | `uv run python scripts/smoke_scaffold.py --preset nope` | 2 | stderr lists the valid preset names; nothing is scaffolded |
-| A5 | repo root | `grep -c smoke scripts/gauntlet.py` | 1 | Prints `0`: the gauntlet does not run the smoke script |
+| A5 | repo root | `grep -c smoke_scaffold scripts/gauntlet.py` | 1 | Prints `0`: the gauntlet does not run the smoke script |
 
 ## Stop conditions and PR evidence
 
