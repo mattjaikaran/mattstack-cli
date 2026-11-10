@@ -490,6 +490,11 @@ including mypy, Bandit, and PyYAML stubs. This repository has no hosted CI:
 the pre-commit hook runs Ruff, and the pre-push hook runs
 `make gauntlet-quick` with the committed lockfile.
 
+`make smoke-scaffold` scaffolds the default presets into temporary
+directories and runs each generated project's `just ci`, reporting pass or
+fail per preset. It needs network access, `just`, `uv` and `bun`, so it is
+not a gauntlet gate. Pass `ARGS="--all"` to cover every preset.
+
 Keep the Bandit gate blocking at every severity. Do not add global rule
 skips, a blanket baseline, or a lower severity threshold. Add an exact
 rule-ID annotation with a reason only after you review its trust boundary.

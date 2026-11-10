@@ -348,7 +348,13 @@ uv run pytest -x -q
 uv run ruff check src/ tests/
 uv run ruff format src/ tests/
 make gauntlet-quick     # Format, lint, types, security, architecture, length, tests, install
+make smoke-scaffold     # Scaffold presets and run just ci in each (network)
 ```
+
+`make smoke-scaffold` scaffolds the default presets into a temporary directory
+and runs each generated project's `just ci`. It needs network access, `just`,
+`uv` and `bun`, so it is not part of `make gauntlet-quick`. Pass
+`ARGS="--all"` or `ARGS="--preset starter-api"` to change the selection.
 
 This repository has no hosted CI. Install the hooks once with
 `uv run mattstack hooks install`; the pre-push hook runs `make gauntlet-quick`.
