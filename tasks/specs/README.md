@@ -93,3 +93,6 @@ a claimed spec. The claim is the push that creates `agent/<Spec ID>`.
 | [S-CLI-17](S-CLI-17-scaffold-smoke-script.md) scaffold smoke script (`just ci` per preset) | READY | none | none |
 | [S-CLI-18](S-CLI-18-agents-md-source-of-truth.md) AGENTS.md as the single instruction file | READY | none | none |
 | [S-CLI-19](S-CLI-19-contributing-and-pr-template.md) CONTRIBUTING.md and PR template | READY | S-CLI-18 | none |
+| [S-CLI-20](S-CLI-20-github-workflow-triggers-runner.md) GitHub workflow: dispatch, weekly schedule, `--runs-on`, `just ci` checks | READY | none | S-CLI-01 |
+| [S-CLI-21](S-CLI-21-frontend-dev-server-smoke.md) frontend dev server smoke script | READY | none | S-CLI-17 |
+| [S-CLI-22](S-CLI-22-endpoint-audit-controller-scope.md) endpoint audit: controller prefix and class auth | READY | none | none |
