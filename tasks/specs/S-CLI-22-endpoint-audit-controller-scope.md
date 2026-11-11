@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Spec ID | S-CLI-22 |
-| Backlog item | `tasks/todo.md:46-49` (done check: `make gauntlet` on a fresh `starter-fullstack` scaffold; `mattstack audit` is part of it) and Phase 18D (controller prefix and class-level auth, in `tasks/completed.md`), found on a real scaffold: 8 false `Duplicate route` errors and 44 `No auth on write endpoint` warnings |
+| Backlog item | `tasks/todo.md:46-49` (done check: `make gauntlet` on a fresh `starter-fullstack` scaffold; `mattstack audit` is part of it) and `tasks/completed.md:53-54` (`@api_controller`/`@http_*` support in `parsers/django_routes.py`), found on a real scaffold: 8 false `Duplicate route` errors and 44 `No auth on write endpoint` warnings |
 | Role | coding |
 | Status | READY |
 | Assigned executor | unattended executor (agent-run) |
