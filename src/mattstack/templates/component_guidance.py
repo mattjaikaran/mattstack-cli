@@ -1,10 +1,8 @@
 """Point the root agent instructions at each component's own guidance.
 
-Consolidation keeps canonical component guidance (``AGENTS.md``, ``.omp/rules/``,
-``.context/``, committed ``.claude/skills/``, and a ``CLAUDE.md`` that no
-``AGENTS.md`` duplicates) and removes per-harness adapters. The root
-``AGENTS.md`` names those files instead of copying them. Each entry is listed
-only when it exists on disk.
+Each component keeps its own ``AGENTS.md``. The root ``AGENTS.md`` lists those
+files and the quality gate for each component. It does not copy their rules.
+An entry appears only when its file or gate exists on disk.
 """
 
 from __future__ import annotations
@@ -16,7 +14,6 @@ from pathlib import Path
 from mattstack.config import ProjectConfig
 from mattstack.templates.stack_facts import Toolchain
 
-_GUIDANCE = ("AGENTS.md", "CLAUDE.md", ".omp/rules", ".context", ".claude/skills")
 _JUST_RECIPE = re.compile(r"^gauntlet-quick\s*:", re.M)
 _JUST_ROOT_RECIPE = re.compile(r"^backend-gauntlet-quick\s*:", re.M)
 
@@ -69,23 +66,37 @@ def _quality_gate(name: str, directory: Path, tools: Toolchain) -> str | None:
     return f"cd frontend && {tools.js_run(script)}" if script else None
 
 
-def component_guidance(config: ProjectConfig, tools: Toolchain) -> str | None:
-    """Return the "Component guidance" section, or None when no component exists."""
+def _components(config: ProjectConfig) -> list[tuple[str, Path]]:
     components: list[tuple[str, Path]] = []
     if config.has_backend:
         components.append(("backend", config.backend_dir))
     if config.has_frontend:
         components.append(("frontend", config.frontend_dir))
+    return components
+
+
+def nested_guidance(config: ProjectConfig) -> str | None:
+    """Return the "Nested files" section, or None when the project has no component."""
     lines: list[str] = []
-    for name, directory in components:
-        sources = [f"`{name}/{rel}`" for rel in _GUIDANCE if (directory / rel).exists()]
-        if sources:
-            lines.append(f"- `{name}/`: read {', '.join(sources)} before changing it.")
+    for name, directory in _components(config):
+        if (directory / "AGENTS.md").is_file():
+            lines.append(f"- `{name}/AGENTS.md`: {name} rules and commands.")
         else:
-            lines.append(f"- `{name}/`: has no agent guidance; follow the rules below.")
+            lines.append(f"- `{name}/` has no `AGENTS.md`. Follow the rules in this file there.")
+    if not lines:
+        return None
+    return (
+        "## Nested files\n\n"
+        "The nearest AGENTS.md wins when two files disagree. Read the nested file "
+        "before you change its directory.\n\n" + "\n".join(lines)
+    )
+
+
+def component_gates(config: ProjectConfig, tools: Toolchain) -> list[str]:
+    """Return one bullet per component that has a quick quality gate."""
+    lines: list[str] = []
+    for name, directory in _components(config):
         gate = _quality_gate(name, directory, tools)
         if gate:
             lines.append(f"- `{name}/`: run `{gate}` before you finish a change there.")
-    if not lines:
-        return None
-    return "## Component guidance\n\n" + "\n".join(lines)
+    return lines

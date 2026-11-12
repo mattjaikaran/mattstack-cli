@@ -181,15 +181,6 @@ class TestNextjsReadme:
         assert "Next.js App" in readme
 
 
-class TestNextjsAgentsMd:
-    def test_agents_md_names_nextjs_api_variable(self, tmp_path: Path) -> None:
-        from mattstack.templates.root_agents_md import generate_agents_md
-
-        md = generate_agents_md(_nextjs_config(tmp_path))
-        assert "Next.js" in md
-        assert "NEXT_PUBLIC_API_BASE_URL" in md
-
-
 # --- Post Processors ---
 
 

@@ -25,27 +25,24 @@ def _backend(tmp_path: Path, files: dict[str, str]) -> Path:
 
 
 @pytest.mark.parametrize(
-    ("files", "expected", "forbidden"),
+    ("files", "forbidden"),
     [
         (
             {"pyproject.toml": '[project]\ndependencies = ["fastapi"]\n'},
-            "alembic",
             ("django-ninja", "manage.py"),
         ),
         (
             {"package.json": '{"dependencies": {"@nestjs/core": "11"}}'},
-            "bun run db:migrate",
             ("django-ninja", "manage.py", "uv run"),
         ),
         (
             {"pyproject.toml": '[project]\ndependencies = ["django-matt"]\n'},
-            "django-matt",
             ("django-ninja (",),
         ),
     ],
 )
-def test_agent_files_describe_the_actual_backend(
-    tmp_path: Path, files: dict[str, str], expected: str, forbidden: tuple[str, ...]
+def test_agent_files_never_name_another_backend(
+    tmp_path: Path, files: dict[str, str], forbidden: tuple[str, ...]
 ) -> None:
     _backend(tmp_path, files)
     run_rules(tmp_path, gsd=True)
@@ -53,7 +50,6 @@ def test_agent_files_describe_the_actual_backend(
         text = (tmp_path / name).read_text(encoding="utf-8")
         for phrase in forbidden:
             assert phrase not in text, f"{name} mentions {phrase!r}"
-    assert expected in (tmp_path / "AGENTS.md").read_text(encoding="utf-8")
 
 
 def test_agents_md_points_at_existing_component_guidance(tmp_path: Path) -> None:

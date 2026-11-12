@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `mattstack init` scaffolds into an existing empty project directory, so creating the directory with `mkdir` first works; a non-empty directory is still refused and its files are left untouched.
+- Root `AGENTS.md` now holds global rules only and lists the nested `AGENTS.md` files that exist; the nearest file wins. Components keep their own `AGENTS.md` and get no `CLAUDE.md`.
 - Generate only the secrets the selected features use: `init` now asks the cloned django-ninja backend for its secret list and passes `--only` with the names the generated env examples declare, so a project without `--realtime` or `--ai` no longer gets Centrifugo admin, Neo4j, Django MCP, or Flower secrets in `.env` and `.env.production`. `.env.production` keeps `CENTRIFUGO_API_KEY` and `CENTRIFUGO_TOKEN_SECRET`, which `api/settings/prod.py` requires even without realtime.
 
 ### Fixed

@@ -194,18 +194,6 @@ def runtime_guidance(config: ProjectConfig) -> list[str]:
     return lines
 
 
-def runtime_service_lines(config: ProjectConfig) -> list[str]:
-    """Return Docker service bullets for task processes and Centrifugo."""
-    profile = task_profile(config)
-    lines = [
-        f"- `{process.service}`: `{process.command}` (profile: {profile})"
-        for process in task_processes(config, production=False)
-    ]
-    if config.use_realtime:
-        lines.append(f"- `{CENTRIFUGO_SERVICE}`: Centrifugo (profile: {REALTIME_PROFILE})")
-    return lines
-
-
 def _metadata_choice(enum_type: type[StrEnum], source: str, value: object) -> Any:
     try:
         if not isinstance(value, str):

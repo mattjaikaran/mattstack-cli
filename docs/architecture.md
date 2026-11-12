@@ -395,17 +395,16 @@ rule: canonical sources stay, and harness adapters go.
 
 - **Kept in the component:** `AGENTS.md`, `SKILLS.md`, `.agents/skills/`,
   `.omp/`, `.context/`, and committed `.claude/skills/<name>/` that no
-  `.agents/skills/` or `.omp/skills/` entry duplicates. `CLAUDE.md` and
-  `.cursorrules` stay when the component has no `AGENTS.md`.
+  `.agents/skills/` or `.omp/skills/` entry duplicates.
 - **Removed from the component:** `CLAUDE.md` and `.cursorrules` that an
   `AGENTS.md` duplicates, the rest of `.claude/` (local settings,
-  worktrees), `.cursor/`, `.windsurf/`, `.kiro/`, and `.continue/`.
-- **Written at the root** (`templates/agent_files.py`): `AGENTS.md` is the
-  one root source. It lists each component's guidance files that exist, its
-  quick gate (`just backend-gauntlet-quick`, or the frontend's
-  `gauntlet:quick`/`gauntlet` script), cross-stack rules, the testing
-  policy, and versions read by `utils/versions.py`. `CLAUDE.md` is the
-  one-line import `@AGENTS.md`; `.cursorrules` points at `AGENTS.md`.
+  worktrees), `.cursor/`, `.windsurf/`, `.kiro/`, and `.continue/`. Agents
+  that follow the AGENTS.md standard read the nearest `AGENTS.md`.
+- **Written at the root** (`templates/agent_files.py`): `AGENTS.md` holds
+  global rules only: package managers, root commands, the root gate
+  (`just gauntlet`), cross-stack rules, git rules, and the nested
+  `AGENTS.md` files that exist. `CLAUDE.md` is the one line `@AGENTS.md`.
+  `.cursorrules` points at the root `AGENTS.md`.
   `.claude/settings.json` denies `git push` and `rm -rf`; mattstack never
   writes `.claude/settings.local.json`. `.mcp.json` is written only when
   every component's `.mcp.json` declares the same server.
@@ -459,7 +458,7 @@ src/mattstack/
 ├── generators/         # BaseGenerator and the fullstack, backend-only, frontend-only, iOS generators
 ├── post_processors/    # Consolidation, customization, bundler config, task runtime, TLS health
 ├── templates/          # Python functions that return file content (no Jinja2)
-│   ├── agent_files.py, root_agents_md.py  # AGENTS.md, CLAUDE.md, .cursorrules, .claude/, .mcp.json
+│   ├── agent_files.py, root_agents_md.py  # Root AGENTS.md, root CLAUDE.md pointer, .cursorrules, .claude/, .mcp.json
 │   └── root_justfile*.py, gauntlet_toml.py, ci_toolchain.py  # Local gates; opt-in CI pins
 ├── parsers/            # Contract and source parsers (openapi_spec.py, zod_schemas.py, routes)
 ├── auditors/           # BaseAuditor subclasses; types_parity.py, versions.py (drift)

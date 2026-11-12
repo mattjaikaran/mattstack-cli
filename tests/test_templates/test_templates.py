@@ -1,8 +1,8 @@
 """Tests for template generation."""
 
-from pathlib import Path
+import pytest
 
-from mattstack.config import BackendFramework, ProjectConfig, ProjectType, TaskBackend
+from mattstack.config import ProjectConfig, TaskBackend
 from mattstack.templates.docker_compose import generate_docker_compose
 from mattstack.templates.docker_compose_override import generate_docker_compose_override
 from mattstack.templates.docker_compose_prod import generate_docker_compose_prod
@@ -142,31 +142,22 @@ def test_docker_compose_override_frontend(frontend_only_config: ProjectConfig):
     assert "api-dev" not in content
 
 
-# --- Backend env vars in AGENTS.md ---
+# --- Root and component agent files ---
 
 
-def _root_env_line(content: str) -> str:
-    return next(line for line in content.splitlines() if line.startswith("- Root `.env`: "))
+@pytest.mark.parametrize(
+    "fixture_name", ["starter_fullstack_config", "backend_only_config", "frontend_only_config"]
+)
+def test_root_agents_md_stays_under_sixty_lines(request: pytest.FixtureRequest, fixture_name: str):
+    config = request.getfixturevalue(fixture_name)
+    assert len(generate_agents_md(config).splitlines()) < 60
 
 
-def test_agents_md_django_lists_db_env_vars(starter_fullstack_config: ProjectConfig):
-    """Django settings read DB_*; DATABASE_URL alone leaves NAME empty."""
-    line = _root_env_line(generate_agents_md(starter_fullstack_config))
-    assert "`DB_NAME`" in line
-    assert "`DB_HOST`" in line
-    assert "DATABASE_URL" not in line
-
-
-def test_agents_md_fastapi_lists_jwt_secret_key(tmp_path: Path):
-    """FastAPI settings require JWT_SECRET_KEY; Django has no such variable."""
-    config = ProjectConfig(
-        name="test-api",
-        path=tmp_path / "test-api",
-        project_type=ProjectType.BACKEND_ONLY,
-        backend_framework=BackendFramework.FASTAPI,
-        task_backend=TaskBackend.NONE,
-        use_redis=False,
-    )
-    line = _root_env_line(generate_agents_md(config))
-    assert "`JWT_SECRET_KEY`" in line
-    assert "`DATABASE_URL`" in line
+def test_root_agents_md_lists_only_existing_nested_files(starter_fullstack_config: ProjectConfig):
+    config = starter_fullstack_config
+    config.backend_dir.mkdir(parents=True)
+    (config.backend_dir / "AGENTS.md").write_text("# Backend\n", encoding="utf-8")
+    content = generate_agents_md(config)
+    assert "`backend/AGENTS.md`" in content
+    assert "`frontend/AGENTS.md`" not in content
+    assert "nearest AGENTS.md wins" in content

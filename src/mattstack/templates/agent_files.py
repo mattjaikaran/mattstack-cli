@@ -1,7 +1,8 @@
-"""Root agent files for generated projects and `mattstack rules`.
+"""Root and component agent files for generated projects and `mattstack rules`.
 
-``AGENTS.md`` is the one root source. ``CLAUDE.md`` imports it and
-``.cursorrules`` points at it, so no harness gets a second copy.
+``AGENTS.md`` is the root source. ``CLAUDE.md`` imports it and ``.cursorrules``
+points at it, so no harness gets a second copy. Components keep their own
+``AGENTS.md``; agents that follow the AGENTS.md standard read the nearest one.
 ``.claude/settings.json`` denies `git push` and `rm -rf`; mattstack never
 writes ``settings.local.json``, which belongs to each developer.
 ``.mcp.json`` lists only the MCP servers every component declares the same way.
@@ -22,7 +23,7 @@ CLAUDE_POINTER = "@AGENTS.md\n"
 
 CURSOR_ADAPTER = (
     "# Cursor adapter\n\n"
-    "Read and follow `AGENTS.md` at the repository root. It points to each "
+    "Read and follow `AGENTS.md` at the repository root. It lists each "
     "component's own rules. Do not add rules to this file.\n"
 )
 
@@ -75,21 +76,10 @@ def component_dirs(config: ProjectConfig) -> list[Path]:
     return dirs
 
 
-def agent_files(
-    config: ProjectConfig,
-    tools: Toolchain | None = None,
-    versions: dict[str, str] | None = None,
-) -> dict[str, str]:
-    """Return root agent files, keyed by path relative to the project root.
-
-    ``versions`` defaults to the versions read from ``config.path``.
-    """
-    if versions is None:
-        from mattstack.utils.versions import read_versions
-
-        versions = read_versions(config.path) if config.path.is_dir() else {}
+def agent_files(config: ProjectConfig, tools: Toolchain | None = None) -> dict[str, str]:
+    """Return root and component agent files, keyed by path relative to the project root."""
     files = {
-        "AGENTS.md": generate_agents_md(config, tools, versions),
+        "AGENTS.md": generate_agents_md(config, tools),
         "CLAUDE.md": CLAUDE_POINTER,
         ".cursorrules": CURSOR_ADAPTER,
         ".claude/settings.json": claude_settings(),
