@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 from types import ModuleType
 
@@ -12,6 +13,8 @@ SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "gauntlet.py"
 SDIST_NAME = "mattstack-0.9.1.tar.gz"
 WHEEL_NAME = "mattstack-0.9.1-py3-none-any.whl"
 TYPO_COMMAND = "sync2"
+# sdist, wheel, venv, install, --version, --help, sync --help, typo, Python pin.
+INSTALL_STEPS = 9
 TYPO_OUTPUT = "No such command 'sync2'. Did you mean 'sync'?"
 
 
@@ -19,6 +22,8 @@ def _load_gauntlet() -> ModuleType:
     spec = importlib.util.spec_from_file_location("gauntlet_script", SCRIPT)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
+    # dataclasses resolves string annotations through sys.modules.
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -38,6 +43,8 @@ def _record(
             return 1, "boom"
         if cmd[-1] == TYPO_COMMAND:
             return typo
+        if cmd[-1] == "--version":
+            return 0, f"mattstack {WHEEL_NAME.split('-')[1]}"
         if "-o" in cmd:
             out_dir = Path(cmd[cmd.index("-o") + 1])
             if "--sdist" in cmd:
@@ -57,7 +64,7 @@ def test_install_gate_builds_the_wheel_and_runs_help(monkeypatch: pytest.MonkeyP
     assert gauntlet._gate_install() is True
 
     assert [cmd[1] for cmd, _, _ in calls[:4]] == ["build", "build", "venv", "pip"]
-    assert len(calls) == 7
+    assert len(calls) == INSTALL_STEPS
     sdist_call, wheel_call = calls[0][0], calls[1][0]
     assert sdist_call[2] == "--sdist"
     assert wheel_call[2] == "--wheel"
@@ -71,14 +78,16 @@ def test_install_gate_builds_the_wheel_and_runs_help(monkeypatch: pytest.MonkeyP
     assert install_call[3:5] == ["--python", python]
     assert install_call[-1] == str(work / WHEEL_NAME)
     executable = str(venv / "bin" / "mattstack")
-    assert calls[4][0] == [executable, "--help"]
-    assert calls[5][0] == [executable, "sync", "--help"]
-    assert calls[6][0] == [executable, TYPO_COMMAND]
+    assert calls[4][0] == [executable, "--version"]
+    assert calls[5][0] == [executable, "--help"]
+    assert calls[6][0] == [executable, "sync", "--help"]
+    assert calls[7][0] == [executable, TYPO_COMMAND]
+    assert calls[8][0][:2] == [python, "-c"]
     assert all(timeout > 120 for _, _, timeout in calls)
     assert not work.exists()
 
 
-@pytest.mark.parametrize("fail_at", range(7))
+@pytest.mark.parametrize("fail_at", range(INSTALL_STEPS))
 def test_install_gate_fails_when_a_step_fails(
     monkeypatch: pytest.MonkeyPatch, fail_at: int
 ) -> None:
@@ -112,9 +121,9 @@ def test_install_gate_requires_the_mistyped_group_suggestion(
 
     assert gauntlet._gate_install() is True
 
-    executable = calls[6][0][0]
-    assert calls[5][0] == [executable, "sync", "--help"]
-    assert calls[6][0] == [executable, TYPO_COMMAND]
+    executable = calls[7][0][0]
+    assert calls[6][0] == [executable, "sync", "--help"]
+    assert calls[7][0] == [executable, TYPO_COMMAND]
 
 
 def test_install_gate_fails_when_the_suggestion_is_missing(
