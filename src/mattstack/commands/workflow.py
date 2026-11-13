@@ -20,10 +20,16 @@ from rich.markup import escape
 
 from mattstack.config import ProjectConfig
 from mattstack.stack import load_stack, unknown_framework_message
+from mattstack.templates.ci_github_jobs import (
+    backend_check_job,
+    gauntlet_job,
+    github_triggers,
+    python_steps,
+    with_runner,
+)
 from mattstack.templates.ci_toolchain import (
     CHECKOUT,
     NODE_VERSION,
-    SETUP_UV,
     CiLayout,
     CiTools,
     JsCi,
@@ -47,25 +53,6 @@ from mattstack.utils.console import (
 from mattstack.utils.package_manager import PackageManager
 
 
-def _gauntlet_job(tools: CiTools) -> str:
-    """Build the Gauntlet job; its name is the status check `mattstack protect` requires.
-
-    It installs mattstack from git and runs the built-in auditors, which exit 1
-    on any error-severity finding. `--no-todo` keeps CI from writing tasks/todo.md.
-    """
-    return f"""  gauntlet:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: {CHECKOUT}
-      - uses: {SETUP_UV}
-        with:
-          version: {yaml_str(tools.uv)}
-      - name: Install mattstack
-        run: uv tool install git+https://github.com/mattjaikaran/mattstack-cli
-      - name: Run the Gauntlet gate
-        run: mattstack audit --no-todo"""
-
-
 def _default_layout(config: ProjectConfig) -> CiLayout:
     return CiLayout(config.path, config.backend_dir, config.frontend_dir)
 
@@ -84,12 +71,15 @@ def _generate_github_actions(
     jobs: list[str] = []
 
     if with_gauntlet:
-        jobs.append(_gauntlet_job(tools))
+        jobs.append(gauntlet_job(tools))
 
     if config.has_backend:
         backend = backend_facts(config.backend_framework)
         if backend.is_python:
             jobs.append(_backend_lint_job(backend, backend_dir, tools))
+            if config.is_ninja_backend:
+                steps = python_steps(backend, tools)
+                jobs.append(backend_check_job(steps, config.django_package, backend_dir))
             jobs.append(_backend_test_job(backend, backend_dir, tools, ai=config.use_ai))
         else:
             js = js_ci(layout.backend, layout.root)
@@ -104,16 +94,13 @@ def _generate_github_actions(
             jobs.append(_js_job("frontend-test", js.run(cmds.test), js, frontend_dir))
         if cmds.typecheck:
             jobs.append(_js_job("frontend-typecheck", js.run(cmds.typecheck), js, frontend_dir))
+        jobs.append(_js_job("frontend-build", js.run("bun run build"), js, frontend_dir))
 
     jobs_block = "\n\n".join(jobs)
 
     return f"""name: CI
 
-on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+{github_triggers()}
 
 concurrency:
   group: ${{{{ github.workflow }}}}-${{{{ github.ref }}}}
@@ -124,15 +111,6 @@ jobs:
 """
 
 
-def _python_steps(backend: BackendFacts, tools: CiTools) -> str:
-    return f"""      - uses: {CHECKOUT}
-      - uses: {SETUP_UV}
-        with:
-          version: {yaml_str(tools.uv)}
-          enable-cache: true
-      - run: uv sync --frozen --python {tools.python}{backend.ci_sync_args}"""
-
-
 def _backend_lint_job(backend: BackendFacts, directory: str, tools: CiTools) -> str:
     return f"""  backend-lint:
     runs-on: ubuntu-latest
@@ -140,7 +118,7 @@ def _backend_lint_job(backend: BackendFacts, directory: str, tools: CiTools) -> 
       run:
         working-directory: {yaml_str(directory)}
     steps:
-{_python_steps(backend, tools)}
+{python_steps(backend, tools)}
       - run: uv run ruff check .
       - run: uv run ruff format --check ."""
 
@@ -177,7 +155,7 @@ def _backend_test_job(backend: BackendFacts, directory: str, tools: CiTools, ai:
     env:
 {yaml_mapping(backend_test_env(backend, "localhost", "localhost"), 6)}
     steps:
-{_python_steps(backend, tools)}
+{python_steps(backend, tools)}
       - run: uv run pytest -x -q"""
 
 
@@ -314,6 +292,7 @@ def run_generate_workflow(
     ci: str | None = None,
     dry_run: bool = False,
     force: bool = False,
+    runs_on: str | None = None,
 ) -> None:
     """Generate an opt-in hosted CI workflow; without ``ci``, explain the local gates.
 
@@ -327,6 +306,9 @@ def run_generate_workflow(
             "pre-push hook (`mattstack hooks install`)."
         )
         print_info("To generate a workflow anyway, pass --ci github or --ci gitlab.")
+        raise typer.Exit(code=2)
+    if runs_on is not None and ci != "github":
+        print_error("GitLab selects runners with tags; --runs-on applies to --ci github.")
         raise typer.Exit(code=2)
     path = path.resolve()
     if not path.is_dir():
@@ -359,6 +341,8 @@ def run_generate_workflow(
     print_warning(f"--ci {ci}: every push and pull request will spend hosted CI minutes.")
     generate, relative = target
     content = generate(config, with_gauntlet=True, layout=layout)
+    if runs_on is not None:
+        content = with_runner(content, runs_on)
     output_path = stack.root / relative
 
     exists = output_path.exists()
