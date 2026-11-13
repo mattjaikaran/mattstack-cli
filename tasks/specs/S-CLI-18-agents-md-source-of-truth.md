@@ -1,3 +1,4 @@
+e8888db
 # S-CLI-18: Make AGENTS.md the single agent instruction file and check its links
 
 | Field | Value |
@@ -35,7 +36,7 @@ Verified on `4215076` (2026-11-12).
 
 ## Implementation steps
 
-1. Create `tests/test_agent_docs_script.py` that loads `scripts/check_agent_docs.py` as `tests/test_gauntlet_script.py` does and calls `check(tmp_path)` on small trees: a valid tree returns no problems; a missing required heading is named; a `CLAUDE.md` that starts with prose fails; a broken relative link is named; a link inside a fenced block and an `https://` link are ignored; `CONTRIBUTING.md` is skipped when absent and checked when present.
+1. Create `tests/test_agent_docs_script.py` that loads `scripts/check_agent_docs.py` as `tests/test_gauntlet_script.py` does and calls `check(tmp_path)`. The signature is `check(root: Path) -> list[str]`: it reads only `root` and returns one `<file>: <problem>` string per problem. Build each tree with the seven headings in `REQUIRED_HEADINGS` as `## ` lines. Cover: a valid tree returns `[]`; a tree missing one required heading names `AGENTS.md` and that heading; a `CLAUDE.md` whose first non-blank line is prose fails; a relative link to a missing file is named; a link inside a fenced block and an `https://` link are ignored; `CONTRIBUTING.md` is skipped when absent and checked when present.
 
 Stage only the Files owned, with explicit paths. Commit subject: `test(agents): Cover the agent docs check`.
 
