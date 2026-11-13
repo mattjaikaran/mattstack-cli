@@ -1,4 +1,3 @@
-e8888db
 # S-CLI-18: Make AGENTS.md the single agent instruction file and check its links
 
 | Field | Value |
