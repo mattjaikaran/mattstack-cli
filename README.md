@@ -418,6 +418,7 @@ See [docs/plugin-guide.md](docs/plugin-guide.md).
 
 ## Docs
 
+- [Contributing](CONTRIBUTING.md)
 - [Commands reference](docs/commands.md)
 - [Architecture](docs/architecture.md)
 - [Ecosystem & customization](docs/ecosystem.md)
