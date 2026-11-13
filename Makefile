@@ -1,4 +1,4 @@
-.PHONY: help setup dev test lint format clean gauntlet gauntlet-quick gauntlet-gate arch-check filelength-check typecheck smoke-scaffold
+.PHONY: help setup dev test lint format clean gauntlet gauntlet-quick gauntlet-gate arch-check filelength-check typecheck smoke-scaffold smoke-frontend-dev
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -35,6 +35,9 @@ gauntlet-gate: ## Run a single gauntlet gate (usage: make gauntlet-gate GATE=lin
 
 smoke-scaffold: ## Scaffold presets and run just ci in each (needs network, just, uv, bun; usage: make smoke-scaffold ARGS="--preset starter-api")
 	uv run python scripts/smoke_scaffold.py $(ARGS)
+
+smoke-frontend-dev: ## Boot each frontend preset's dev server and check the shell, a route and the API proxy (needs network and bun; usage: make smoke-frontend-dev ARGS="--preset starter-fullstack")
+	uv run python scripts/smoke_frontend_dev.py $(ARGS)
 
 arch-check: ## Check architecture layer enforcement
 	uv run python scripts/check_architecture.py
