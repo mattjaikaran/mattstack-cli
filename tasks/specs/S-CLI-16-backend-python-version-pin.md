@@ -5,7 +5,7 @@
 | Spec ID | S-CLI-16 |
 | Backlog item | GitHub issue #43 (backend `.python-version` pin, shipped in `03b7cc1`) and spec-gap issue #74: the pin has no coverage; the executor may not add unit tests, so the install gate proves it |
 | Role | coding |
-| Status | READY |
+| Status | DONE |
 | Assigned executor | unattended executor (agent-run) |
 | Base commit | 440133b |
 | Branch | agent/S-CLI-16 |
