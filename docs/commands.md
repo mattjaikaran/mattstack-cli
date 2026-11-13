@@ -717,6 +717,16 @@ mattstack workflow --ci gitlab              # .gitlab-ci.yml
 mattstack workflow --ci github --dry-run
 ```
 
+`--runs-on LABEL` sets the runner for every GitHub job. The default is
+`ubuntu-latest`; pass a self-hosted runner label to change it. It exits 2 with
+`--ci gitlab`.
+
+The GitHub workflow runs on pushes and pull requests to `main`, on demand
+(`workflow_dispatch`), and weekly on Mondays at 06:00 UTC (`schedule`). Ninja
+backends get a `backend-check` job (`manage.py check` and
+`makemigrations --check --dry-run`), and every frontend gets a `frontend-build`
+job (`bun run build`).
+
 Each push and pull request then spends hosted CI minutes. Existing workflow
 files stay unchanged unless you pass `--force`. Every workflow includes a
 `gauntlet` job that installs mattstack from the CLI repository's default
