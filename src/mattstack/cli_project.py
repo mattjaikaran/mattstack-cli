@@ -243,11 +243,21 @@ def workflow(
         bool,
         typer.Option("--force", help="Replace an existing workflow file"),
     ] = False,
+    runs_on: Annotated[
+        str | None,
+        typer.Option(
+            "--runs-on",
+            help="Runner label for every job of the GitHub workflow, for example a"
+            " self-hosted runner label. Default: ubuntu-latest.",
+        ),
+    ] = None,
 ) -> None:
     """Generate an opt-in hosted CI workflow (GitHub Actions or GitLab CI)."""
     from mattstack.commands.workflow import run_generate_workflow
 
-    run_generate_workflow(path=path or Path.cwd(), ci=ci, dry_run=dry_run, force=force)
+    run_generate_workflow(
+        path=path or Path.cwd(), ci=ci, dry_run=dry_run, force=force, runs_on=runs_on
+    )
 
 
 def protect(
