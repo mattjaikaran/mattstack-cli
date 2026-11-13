@@ -7,7 +7,7 @@ for self-hosted runners. The GitLab generator and shared helpers stay in
 
 from __future__ import annotations
 
-from mattstack.templates.ci_toolchain import CHECKOUT, SETUP_UV, CiTools, yaml_str
+from mattstack.templates.ci_toolchain import CHECKOUT, SETUP_UV, CiTools, in_dir, yaml_str
 from mattstack.templates.stack_facts import BackendFacts
 
 DEFAULT_RUNNER = "ubuntu-latest"
@@ -48,29 +48,40 @@ def gauntlet_job(tools: CiTools) -> str:
         run: mattstack audit --no-todo"""
 
 
-def python_steps(backend: BackendFacts, tools: CiTools) -> str:
+def _run(command: str, directory: str | None) -> str:
+    """Return a `run:` step; with ``directory``, the command changes into it first."""
+    if directory is None:
+        return f"      - run: {command}"
+    return f"      - run: {yaml_str(in_dir(directory, command))}"
+
+
+def python_steps(backend: BackendFacts, tools: CiTools, directory: str | None = None) -> str:
+    sync = f"uv sync --frozen --python {tools.python}{backend.ci_sync_args}"
     return f"""      - uses: {CHECKOUT}
       - uses: {SETUP_UV}
         with:
           version: {yaml_str(tools.uv)}
           enable-cache: true
-      - run: uv sync --frozen --python {tools.python}{backend.ci_sync_args}"""
+{_run(sync, directory)}"""
 
 
 def backend_check_job(steps: str, django_package: str, directory: str) -> str:
-    """Build the Django job that runs the system and migration checks from `just ci`."""
+    """Build the Django job that runs the system and migration checks from `just ci`.
+
+    ``steps`` come from ``python_steps(backend, tools, directory)``. The check
+    commands also change into ``directory``, so the job sets no working-directory default.
+    """
     settings = f"{django_package}.settings.test"
+    check = "uv run python manage.py check"
+    migrations = "uv run python manage.py makemigrations --check --dry-run"
     return f"""  backend-check:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: {yaml_str(directory)}
     env:
       DJANGO_SETTINGS_MODULE: {yaml_str(settings)}
     steps:
 {steps}
-      - run: uv run python manage.py check
-      - run: uv run python manage.py makemigrations --check --dry-run"""
+{_run(check, directory)}
+{_run(migrations, directory)}"""
 
 
 def with_runner(workflow: str, label: str) -> str:

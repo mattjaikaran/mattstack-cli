@@ -78,7 +78,7 @@ def _generate_github_actions(
         if backend.is_python:
             jobs.append(_backend_lint_job(backend, backend_dir, tools))
             if config.is_ninja_backend:
-                steps = python_steps(backend, tools)
+                steps = python_steps(backend, tools, backend_dir)
                 jobs.append(backend_check_job(steps, config.django_package, backend_dir))
             jobs.append(_backend_test_job(backend, backend_dir, tools, ai=config.use_ai))
         else:
@@ -309,6 +309,9 @@ def run_generate_workflow(
         raise typer.Exit(code=2)
     if runs_on is not None and ci != "github":
         print_error("GitLab selects runners with tags; --runs-on applies to --ci github.")
+        raise typer.Exit(code=2)
+    if runs_on is not None and not runs_on.strip():
+        print_error("--runs-on needs a runner label, for example ci-runner.")
         raise typer.Exit(code=2)
     path = path.resolve()
     if not path.is_dir():
