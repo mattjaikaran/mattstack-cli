@@ -11,7 +11,7 @@
 | Branch | agent/S-CLI-20 |
 | Depends on | none |
 | Conflicts with | S-CLI-01 |
-| Files owned | `src/mattstack/commands/workflow.py`, `src/mattstack/cli_project.py`, `src/mattstack/templates/ci_github_jobs.py` (new), `tests/test_commands/test_workflow_triggers.py` (new) |
+| Files owned | `src/mattstack/commands/workflow.py`, `src/mattstack/cli_project.py`, `src/mattstack/templates/ci_github_jobs.py` (new), `tests/test_commands/test_workflow_triggers.py` (new), `docs/commands.md` (the `mattstack workflow` section) |
 | Migrations | none |
 | Runtime locks | none |
 | Human needed | none |
