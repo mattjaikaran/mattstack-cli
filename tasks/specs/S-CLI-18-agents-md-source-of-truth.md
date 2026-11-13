@@ -27,7 +27,7 @@ Verified on `eb306fa` (2026-11-12). This amends the merged S-CLI-18 (PR #113), w
 
 - PR #102 (merged, branch `agent/issue-97`) already delivered the agent-docs steps on `main`: `AGENTS.md` has the seven `##` headings, `CLAUDE.md` is exactly `@AGENTS.md`, `scripts/check_agent_docs.py` defines `REQUIRED_HEADINGS` (line 21), `check` (line 76) and `main` (lines 116-127), and `.pre-commit-config.yaml:20` defines the `agent-docs` hook. Do not redo these steps.
 - `scripts/check_agent_docs.py:122-127` returns 1 when `check` reports problems, and returns 0 with a confirmation line otherwise.
-- `scripts/gauntlet.py:252-253` is `_gate_install`; its `uv` lookup is `bin_ = shutil.which("uv") or "uv"`.
+- `scripts/gauntlet.py:252` is `_gate_install`; its `uv` lookup at line 254 is `bin_ = shutil.which("uv") or "uv"`.
 - `scripts/gauntlet.py:310-321` is the `GATES` registry. The `install` entry is at line 320. The adapter runs `--gate install` at `repos/mattstack-cli.yml:159`.
 - `S-CLI-16` also owns `scripts/gauntlet.py`, but it is DONE: PR #100 merged its change as `b790c22` on `main`. No declared conflict is needed.
 
