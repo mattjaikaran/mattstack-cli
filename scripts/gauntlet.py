@@ -23,6 +23,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
 import shutil
 import signal
@@ -249,8 +250,47 @@ def _smoke_python_pin(venv_python: Path, work: Path, timeout: int) -> bool:
     return True
 
 
+def _check_agent_docs() -> bool:
+    """Prove the agent-docs check passes here and rejects a broken copy."""
+    script = Path(__file__).resolve().parent / "check_agent_docs.py"
+    spec = importlib.util.spec_from_file_location("check_agent_docs", script)
+    if spec is None or spec.loader is None:
+        print(f"agent-docs: cannot load {script}")
+        return False
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    root = Path(__file__).resolve().parent.parent
+
+    problems = module.check(root)
+    if problems:
+        print("\n".join(problems))
+        return False
+
+    heading = module.REQUIRED_HEADINGS[0]
+    with tempfile.TemporaryDirectory(prefix="mattstack-agent-docs-") as tmp:
+        broken = Path(tmp)
+        for name in ("AGENTS.md", "CLAUDE.md"):
+            shutil.copy(root / name, broken / name)
+        agents = broken / "AGENTS.md"
+        kept = [
+            line
+            for line in agents.read_text(encoding="utf-8").splitlines(keepends=True)
+            if heading not in line
+        ]
+        agents.write_text("".join(kept), encoding="utf-8")
+        rejected = [problem for problem in module.check(broken) if heading in problem]
+
+    if not rejected:
+        print(f"agent-docs: broken copy without {heading!r} still passed")
+        return False
+    print("agent-docs: repo passes; broken copy rejected")
+    return True
+
+
 def _gate_install() -> bool:
     """Gate 10: build a wheel from the sdist and smoke-test it in a fresh venv."""
+    if not _check_agent_docs():
+        return False
     bin_ = shutil.which("uv") or "uv"
     timeout = 600
     with tempfile.TemporaryDirectory(prefix="mattstack-install-") as tmp:
