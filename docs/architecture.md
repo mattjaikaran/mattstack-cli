@@ -482,6 +482,35 @@ core modules, and core modules cannot import from `commands/`.
 6. Code generators plan into a `FilePlan` and write only through
    `finish()`.
 
+## Design principles
+
+These principles guide new code. Only the layer rules are machine-checked.
+
+- **Single responsibility.** A template returns text. A generator plans its
+  writes into a `FilePlan` and runs its `steps`. An auditor returns
+  `AuditFinding` objects. A parser reads one contract or source format.
+- **Open/closed.** Extend behavior through the seams in
+  [Extension workflows](#extension-workflows): subclass `BaseGenerator` or
+  `BaseAuditor`, add an adapter to `get_board_backend()`, or load a plugin
+  from `mattstack-plugins/`. Add a subclass before you add a branch to a
+  shared dispatcher.
+- **Liskov substitution.** A subclass or adapter returns the base class's
+  types and raises no exception that callers do not already handle.
+- **Dependency inversion.** Commands depend on `BaseGenerator`,
+  `BaseAuditor` and the `BoardBackend` protocol, not on a concrete adapter.
+
+### Module boundaries
+
+- `commands/` is the CLI layer. It may import the core modules: generators,
+  auditors, parsers, post_processors, templates, utils, and the top-level
+  `config`, `presets`, `user_config`, `project`, `config_file`,
+  `stack_detection` and `stack` modules.
+- Core modules never import `commands/`, and no two core modules import
+  each other in a cycle.
+- `scripts/check_architecture.py` enforces both rules (`make arch-check`,
+  gauntlet gate 5). Put CLI wiring in `commands/` and reusable logic in the
+  core modules.
+
 ## Development tools and security gate
 
 Run `uv sync --locked --extra dev` to install the development tools,
