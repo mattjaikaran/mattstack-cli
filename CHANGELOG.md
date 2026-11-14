@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `make smoke-scaffold` scaffolds the default presets into temporary directories and runs each generated project's `just ci`, reporting pass or fail per preset. It needs network access, `just`, `uv` and `bun`, so it is not a gauntlet gate; `--all` covers every preset.
 - `mattstack --version` prints the installed version without a subcommand or a network call, and appends the short commit when installed from a git URL. The install gate now runs it against the built wheel.
+- Django Ninja + frontend projects get the journeys tooling: `init` writes `JOURNEYS_E2E_DIR=../frontend/e2e` and `JOURNEYS_E2E_REPORT=../frontend/test-results/journeys.json` to `.env` and `.env.example`, `just test-e2e` runs the frontend Playwright suite, and `just verify` runs the backend's `check-journeys` and `sync-frontend --check` against `frontend/`. The frontend presets already write the Playwright JSON report to `test-results/journeys.json`, so `/admin/journeys/` shows status after `just test-e2e`.
 
 ### Changed
 
