@@ -513,10 +513,9 @@ def test_consolidate_backend_removes_standalone_files(tmp_path: Path) -> None:
     for d in ["cli", "docker", "deploy", "nginx", "env", "media", "files", ".claude"]:
         assert not (config.backend_dir / d).exists(), f"{d}/ should be removed"
     # Canonical agent guidance stays: the gauntlet's cross-stack rules check
-    # and scripts/export_rules.py read .omp/, and AGENTS.md names .agents/.
+    # and scripts/export_rules.py read .omp/, and the root AGENTS.md names .agents/.
     for d in [".omp", ".agents"]:
         assert (config.backend_dir / d).is_dir(), f"{d}/ should be kept"
-    assert (config.backend_dir / "AGENTS.md").is_file()
     for d in [".cursor", ".windsurf", ".kiro", ".continue"]:
         assert not (config.backend_dir / d).exists(), f"{d}/ adapter should be removed"
     assert (config.backend_dir / "pyproject.toml").exists()

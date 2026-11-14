@@ -18,10 +18,16 @@ settings, worktrees) goes. ``CLAUDE.md`` and ``.cursorrules`` go only when the
 component has an ``AGENTS.md`` they duplicate; without one they are the
 canonical guidance and stay. The ``.cursor/``, ``.windsurf/``, ``.kiro/``, and
 ``.continue/`` adapters go; the generated root ``AGENTS.md`` replaces them.
+
+The backend's standalone agent workflow (tickets, worker, nested ``AGENTS.md``
+and ``CLAUDE.md``, recipe-citing docs) names a root the monorepo lacks, so
+``_BACKEND_AGENT_PATHS`` removes it and ``_drop_backend_gates`` removes the
+gauntlet gates that call what was removed.
 """
 
 from __future__ import annotations
 
+import ast
 import shutil
 from pathlib import Path
 
@@ -85,6 +91,42 @@ _BACKEND_DIRS: list[str] = [
     "files",
 ]
 
+# Standalone-backend agent workflow, removed from the cloned backend. Each doc
+# cites backend-only `just` recipes; the ticket tooling and dev MCP server go
+# with `scripts/tickets.py`, which they import, and their smoke tests go too.
+_BACKEND_AGENT_PATHS: list[str] = [
+    "AGENTS.md",
+    "CLAUDE.md",
+    "docs/tickets",
+    "scripts/agent_status.py",
+    "scripts/check_agent_docs.py",
+    "scripts/run_dev_mcp.py",
+    "scripts/tickets.py",
+    "scripts/worker_once.py",
+    "tests/smoke/test_dev_mcp.py",
+    "tests/smoke/test_worker_once.py",
+    "docs/ADOPTION_PROMPT.md",
+    "docs/AGENT_HANDOFF.md",
+    "docs/AI_LAYER.md",
+    "docs/ARCHITECTURE.md",
+    "docs/CONSTRAINT_TOOLS.md",
+    "docs/DEEPSEC.md",
+    "docs/MATTSTACK_INTEGRATION.md",
+    "docs/MIGRATION.md",
+    "docs/PORTABLE_GAUNTLET.md",
+    "docs/REALTIME.md",
+    "docs/TASK_BACKENDS.md",
+    "docs/openapi/README.md",
+    "docs/product/journeys.md",
+]
+
+# Gauntlet gates that run the files above, keyed by gate name.
+_BACKEND_DROPPED_GATES: dict[str, str] = {
+    "agent-docs": "_gate_agent_docs",  # runs scripts/check_agent_docs.py, which needs AGENTS.md
+    "tickets": "_gate_tickets",  # runs scripts/tickets.py
+    "cli-test": "_gate_cli_test",  # runs cli/tests; backend/cli is not copied
+}
+
 _FRONTEND_DIRS: list[str] = [
     *_EDITOR_DIRS,
     "nginx",
@@ -97,12 +139,40 @@ def consolidate_backend(config: ProjectConfig) -> None:
     """Remove standalone-project files from the cloned backend directory."""
     dirs = [name for name in _BACKEND_DIRS if not (config.use_realtime and name == "deploy")]
     _consolidate(config.backend_dir, _BACKEND_GLOBS, dirs)
+    for relative in _BACKEND_AGENT_PATHS:
+        _remove(config.backend_dir / relative)
+    _drop_backend_gates(config.backend_dir)
     if config.use_realtime:
         deploy = config.backend_dir / "deploy"
         if deploy.is_dir() and not _is_django_app(deploy):
             for path in deploy.iterdir():
                 if path.name != "centrifugo":
                     _remove(path)
+
+
+def _drop_backend_gates(backend: Path) -> None:
+    """Remove the gauntlet gates that call the files this module removed."""
+    path = backend / "scripts" / "gauntlet.py"
+    if not path.is_file():
+        return
+    source = path.read_text(encoding="utf-8")
+    lines = source.splitlines(keepends=True)
+    drop: set[int] = set()
+    methods = set(_BACKEND_DROPPED_GATES.values())
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.FunctionDef) and node.name in methods:
+            start = min([node.lineno, *(dec.lineno for dec in node.decorator_list)])
+            end = node.end_lineno or node.lineno
+            drop.update(range(start - 1, end))
+            # Drop the one blank line that separates this method from the next.
+            if end < len(lines) and not lines[end].strip():
+                drop.add(end)
+    for name, method in _BACKEND_DROPPED_GATES.items():
+        registration = f'gates["{name}"] = self.{method}'
+        drop.update(i for i, line in enumerate(lines) if line.strip() == registration)
+    if drop:
+        kept = (line for i, line in enumerate(lines) if i not in drop)
+        path.write_text("".join(kept), encoding="utf-8")
 
 
 def consolidate_frontend(config: ProjectConfig) -> None:
