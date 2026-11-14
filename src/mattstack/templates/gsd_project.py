@@ -83,7 +83,7 @@ def _gsd_structure(config: ProjectConfig, backend: BackendFacts) -> str:
     if config.has_backend:
         lines.append("- `docker-compose.yml` — Infrastructure")
     lines.append("- `justfile` — All commands")
-    lines.append("- `CLAUDE.md` — AI agent context")
+    lines.append("- `AGENTS.md` — AI agent context")
     return "\n".join(lines)
 
 
