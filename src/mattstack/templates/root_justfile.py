@@ -42,6 +42,7 @@ def generate_justfile(config: ProjectConfig) -> str:
     if config.include_ios:
         sections.append(_ios_recipes(config))
     sections.append(_combined_recipes(config))
+    sections.append(_journeys_recipes(config))
     sections.append(_ci_recipe(config))
     sections.append(_gauntlet_recipe(config))
     sections.append(_clean_recipes(config))
@@ -171,6 +172,27 @@ def _combined_recipes(config: ProjectConfig) -> str:
             "# Regenerate the OpenAPI client (types, SDK, Zod, TanStack Query)",
             "sync-api:",
             "    mattstack sync openapi",
+        ]
+    return "\n".join(lines)
+
+
+def _journeys_recipes(config: ProjectConfig) -> str:
+    """Frontend Playwright run and the journeys gate; both read the frontend repo."""
+    lines: list[str] = []
+    if config.has_frontend:
+        lines += [
+            "",
+            "# Run the frontend Playwright e2e tests; writes frontend/test-results/journeys.json",
+            "test-e2e:",
+            "    cd frontend && bun run test:e2e",
+        ]
+    if config.has_frontend and config.is_ninja_backend:
+        lines += [
+            "",
+            "# Check journeys against the e2e report and the frontend's OpenAPI copy (read-only)",
+            "verify:",
+            "    cd backend && uv run python scripts/check_journeys.py",
+            "    cd backend && uv run python scripts/sync_frontend.py ../frontend --check",
         ]
     return "\n".join(lines)
 
