@@ -400,7 +400,7 @@ rule: canonical sources stay, and harness adapters go.
   `AGENTS.md` duplicates, the rest of `.claude/` (local settings,
   worktrees), `.cursor/`, `.windsurf/`, `.kiro/`, and `.continue/`. Agents
   that follow the AGENTS.md standard read the nearest `AGENTS.md`.
-- **Backend only:** `backend/AGENTS.md`, `backend/CLAUDE.md`, the ticket scripts and `docs/tickets/`, `scripts/check_agent_docs.py`, the agent-status and dev MCP scripts with their smoke tests, and the backend docs that cite backend-only `just` recipes are removed (`_BACKEND_AGENT_PATHS`). The backend gauntlet's TICKETS, CLI-TEST, and AGENT-DOCS gates are dropped with them (`_drop_backend_gates`), so the root `AGENTS.md` lists no `backend/AGENTS.md`.
+- **Backend only:** `backend/AGENTS.md`, `backend/CLAUDE.md`, the ticket scripts and `backend/docs/tickets/`, `scripts/check_agent_docs.py`, the agent-status and dev MCP scripts with their smoke tests, and the backend docs that cite backend-only `just` recipes are removed (`_BACKEND_AGENT_PATHS`). The backend gauntlet's TICKETS, CLI-TEST, and AGENT-DOCS gates are dropped with them (`_drop_backend_gates`), so the root `AGENTS.md` lists no `backend/AGENTS.md`.
 - **Written at the root** (`templates/agent_files.py`): `AGENTS.md` holds
   global rules only: package managers, root commands, the root gate
   (`just gauntlet`), cross-stack rules, git rules, and the nested
