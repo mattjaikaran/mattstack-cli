@@ -403,11 +403,9 @@ rule: canonical sources stay, and harness adapters go.
 - **Written at the root** (`templates/agent_files.py`): `AGENTS.md` holds
   global rules only: package managers, root commands, the root gate
   (`just gauntlet`), cross-stack rules, git rules, and the nested
-  `AGENTS.md` files that exist. `CLAUDE.md` is the one line `@AGENTS.md`.
-  `.cursorrules` points at the root `AGENTS.md`.
-  `.claude/settings.json` denies `git push` and `rm -rf`; mattstack never
-  writes `.claude/settings.local.json`. `.mcp.json` is written only when
-  every component's `.mcp.json` declares the same server.
+  `AGENTS.md` files that exist. `.cursorrules` points at the root `AGENTS.md`.
+  `.mcp.json` is written only when every component's `.mcp.json` declares the
+  same server. No `CLAUDE.md` or `.claude/` file is generated.
 - `gauntlet.toml` (`templates/gauntlet_toml.py`) wraps the local gates as
   Gauntlet `[checks.custom.*]` entries: the backend `just backend-gauntlet-quick`,
   the frontend `gauntlet` script, and `mattstack sync check` for Django
@@ -458,7 +456,7 @@ src/mattstack/
 ├── generators/         # BaseGenerator and the fullstack, backend-only, frontend-only, iOS generators
 ├── post_processors/    # Consolidation, customization, bundler config, task runtime, TLS health
 ├── templates/          # Python functions that return file content (no Jinja2)
-│   ├── agent_files.py, root_agents_md.py  # Root AGENTS.md, root CLAUDE.md pointer, .cursorrules, .claude/, .mcp.json
+│   ├── agent_files.py, root_agents_md.py  # Root AGENTS.md, .cursorrules, .mcp.json
 │   └── root_justfile*.py, gauntlet_toml.py, ci_toolchain.py  # Local gates; opt-in CI pins
 ├── parsers/            # Contract and source parsers (openapi_spec.py, zod_schemas.py, routes)
 ├── auditors/           # BaseAuditor subclasses; types_parity.py, versions.py (drift)

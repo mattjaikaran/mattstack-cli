@@ -179,7 +179,7 @@ def _project_structure_fullstack(config: ProjectConfig) -> str:
 ├── docker-compose.prod.yml
 ├── justfile              # All commands
 ├── .env.example
-└── CLAUDE.md
+└── AGENTS.md
 ```"""
 
 
@@ -194,7 +194,7 @@ def _project_structure_backend(config: ProjectConfig) -> str:
 ├── docker-compose.yml    # Dev services
 ├── justfile
 ├── .env.example
-└── CLAUDE.md
+└── AGENTS.md
 ```"""
 
 
