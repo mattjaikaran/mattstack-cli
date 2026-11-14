@@ -7,7 +7,8 @@ from pathlib import Path
 
 import httpx
 
-from mattstack.auditors.base import AuditFinding, AuditType, BaseAuditor, Severity
+from mattstack.auditors.base import AuditConfig, AuditFinding, AuditType, BaseAuditor, Severity
+from mattstack.parsers.controller_scope import ControllerIndex
 from mattstack.parsers.django_routes import (
     DjangoMattController,
     Route,
@@ -26,6 +27,10 @@ from mattstack.parsers.nextjs_routes import (
 
 class EndpointAuditor(BaseAuditor):
     audit_type = AuditType.ENDPOINTS
+
+    def __init__(self, config: AuditConfig) -> None:
+        super().__init__(config)
+        self._controllers: dict[Path, ControllerIndex] = {}
 
     def run(self) -> list[AuditFinding]:
         project = self.config.project_path
@@ -64,8 +69,15 @@ class EndpointAuditor(BaseAuditor):
     def _parse_all_routes(self, project: Path) -> list[Route]:
         routes: list[Route] = []
         for f in find_route_files(project):
+            self._controllers[f] = ControllerIndex(f.read_text(encoding="utf-8", errors="replace"))
             routes.extend(parse_routes_file(f))
         return routes
+
+    def _full_path(self, route: Route) -> str:
+        return self._controllers[route.file].full_path(route)
+
+    def _has_auth(self, route: Route) -> bool:
+        return self._controllers[route.file].has_auth(route)
 
     def _parse_django_matt_controllers(self, project: Path) -> list[DjangoMattController]:
         if not is_django_matt_project(project):
@@ -147,12 +159,12 @@ class EndpointAuditor(BaseAuditor):
                 )
 
     def _check_duplicates(self, routes: list[Route]) -> None:
-        """Find duplicate method+path combinations."""
+        """Find duplicate method+full-path combinations."""
         counter: Counter[tuple[str, str]] = Counter()
         route_map: dict[tuple[str, str], list[Route]] = {}
 
         for r in routes:
-            key = (r.method, r.path)
+            key = (r.method, self._full_path(r))
             counter[key] += 1
             route_map.setdefault(key, []).append(r)
 
@@ -185,12 +197,12 @@ class EndpointAuditor(BaseAuditor):
         """Find write endpoints without explicit auth."""
         write_methods = {"POST", "PUT", "DELETE", "PATCH"}
         for r in routes:
-            if r.method in write_methods and not r.has_auth:
+            if r.method in write_methods and not self._has_auth(r):
                 self.add_finding(
                     Severity.WARNING,
                     self._rel(r.file),
                     r.line,
-                    f"No auth on write endpoint: {r.method} {r.path}",
+                    f"No auth on write endpoint: {self._full_path(r)}",
                     "Add auth=... parameter to protect write operations",
                 )
 
