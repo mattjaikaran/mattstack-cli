@@ -119,7 +119,8 @@ def health_path(config: ProjectConfig) -> str:
     """Return the unauthenticated liveness route each backend defines."""
     prefix = api_prefix(config)
     if config.is_nestjs_backend:
-        # main.ts: setGlobalPrefix('api') plus URI versioning, default version 1.
+        # main.ts: setGlobalPrefix('api') plus URI versioning, default version 1. Keep
+        # this until nestjs-boilerplate drops URI versioning on main and that is released.
         return f"{prefix}/v1/health"
     if config.is_fastapi_backend:
         return f"{prefix}/health/live"

@@ -44,6 +44,19 @@ def api_prefix(config: ProjectConfig) -> str:
     return prefix if prefix != "/" else "/api"
 
 
+def api_version_note(config: ProjectConfig) -> str:
+    """Return the API versioning rule the generated README and AGENTS.md state."""
+    if config.is_nestjs_backend:
+        return (
+            "The NestJS API keeps URI version 1 at `/api/v1/` until its boilerplate drops "
+            "URI versioning; the generated health check follows it."
+        )
+    return (
+        "The API has no version prefix: it lives at `/api/`. A `/api/v2/` prefix is "
+        "added only when a breaking v2 ships; `/api/` stays v1."
+    )
+
+
 def api_base_env_var(config: ProjectConfig) -> str:
     """Return the variable the frontend reads for the API base URL."""
     return _API_BASE_VAR[config.frontend_framework]

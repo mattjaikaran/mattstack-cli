@@ -5,6 +5,7 @@ from __future__ import annotations
 from mattstack.config import FrontendFramework, ProjectConfig
 from mattstack.runtime_profiles import task_summary
 from mattstack.templates.compose_env import service_major
+from mattstack.templates.frontend_runtime import api_version_note
 
 
 def generate_readme(config: ProjectConfig) -> str:
@@ -235,17 +236,22 @@ Run `just --list` to see all available commands.
 
 def _api_docs(config: ProjectConfig) -> str:
     api_port = config.backend_api_port
+    policy = api_version_note(config)
     if config.is_nestjs_backend:
         return f"""\
 ## API Documentation
 
 - Swagger UI: http://localhost:{api_port}/api/docs
-- OpenAPI JSON: http://localhost:{api_port}/api-json"""
+- OpenAPI JSON: http://localhost:{api_port}/api-json
+
+{policy}"""
     return f"""\
 ## API Documentation
 
 - Swagger UI: http://localhost:{api_port}/api/docs
-- OpenAPI JSON: http://localhost:{api_port}/api/openapi.json"""
+- OpenAPI JSON: http://localhost:{api_port}/api/openapi.json
+
+{policy}"""
 
 
 def _b2b_features() -> str:

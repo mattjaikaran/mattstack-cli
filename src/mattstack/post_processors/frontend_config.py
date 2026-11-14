@@ -113,6 +113,11 @@ def _refresh_bun_lock(frontend_dir: Path) -> None:
 # --- Next.js -----------------------------------------------------------------
 
 
+# The published nextjs-starter mounts its rewrite under a version segment. Match
+# with or without one so the rewrite follows the backend's prefix either way.
+_STARTER_REWRITE = re.compile(r"/api(?:/v\d+)?/:path\*")
+
+
 def _setup_nextjs(config: ProjectConfig) -> None:
     """Point nextjs-starter's own rewrite at the backend's real API prefix."""
     env = browser_env(config)
@@ -130,7 +135,7 @@ def _setup_nextjs(config: ProjectConfig) -> None:
         print_warning(f"{next_config.name} does not read INTERNAL_API_URL; check its rewrites")
         return
     prefix = api_prefix(config)
-    patched = text.replace("/api/v1/:path*", f"{prefix}/:path*")
+    patched = _STARTER_REWRITE.sub(lambda _: f"{prefix}/:path*", text)
     if patched != text:
         next_config.write_text(patched)
     print_info(f"Configured Next.js rewrites for {prefix}")

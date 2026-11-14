@@ -11,6 +11,7 @@ from __future__ import annotations
 from mattstack.config import ProjectConfig
 from mattstack.runtime_profiles import runtime_guidance
 from mattstack.templates.component_guidance import component_gates, nested_guidance
+from mattstack.templates.frontend_runtime import api_version_note
 from mattstack.templates.stack_facts import Toolchain, backend_facts
 
 
@@ -85,6 +86,7 @@ def _cross_stack(config: ProjectConfig, tools: Toolchain) -> str:
             "- Run `docker compose up -d` before the dev servers. "
             "Do not install PostgreSQL or Redis on the host."
         )
+        lines.append(f"- {api_version_note(config)}")
         # Root recipes (just up-<profile>, just up-realtime) exist only in the
         # monorepo, so no component AGENTS.md can describe them.
         lines.extend(runtime_guidance(config))
