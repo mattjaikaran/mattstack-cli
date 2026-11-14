@@ -114,6 +114,14 @@ def generate_env_example(config: ProjectConfig, *, values: dict[str, str] | None
                 if not config.is_django_matt:
                     lines.extend(["DJANGO_ENVIRONMENT=development", "ENVIRONMENT=development"])
                     lines.extend(_ninja_lines(config, secret))
+                    if config.has_frontend:
+                        lines.extend(
+                            [
+                                "# Journeys gate: frontend e2e tests and Playwright JSON report",
+                                "JOURNEYS_E2E_DIR=../frontend/e2e",
+                                "JOURNEYS_E2E_REPORT=../frontend/test-results/journeys.json",
+                            ]
+                        )
                 lines.extend(
                     [
                         "ALLOWED_HOSTS=localhost,127.0.0.1",
