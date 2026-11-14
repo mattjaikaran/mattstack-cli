@@ -1,11 +1,9 @@
 """Root and component agent files for generated projects and `mattstack rules`.
 
-``AGENTS.md`` is the root source. ``CLAUDE.md`` imports it and ``.cursorrules``
-points at it, so no harness gets a second copy. Components keep their own
-``AGENTS.md``; agents that follow the AGENTS.md standard read the nearest one.
-``.claude/settings.json`` denies `git push` and `rm -rf`; mattstack never
-writes ``settings.local.json``, which belongs to each developer.
-``.mcp.json`` lists only the MCP servers every component declares the same way.
+``AGENTS.md`` is the only root agent file. ``.cursorrules`` points at it, so no
+harness gets a second copy. Components keep their own ``AGENTS.md``; agents that
+follow the AGENTS.md standard read the nearest one. ``.mcp.json`` lists only the
+MCP servers every component declares the same way.
 """
 
 from __future__ import annotations
@@ -18,30 +16,11 @@ from mattstack.config import ProjectConfig
 from mattstack.templates.root_agents_md import generate_agents_md
 from mattstack.templates.stack_facts import Toolchain
 
-# Claude Code expands `@path` imports in CLAUDE.md.
-CLAUDE_POINTER = "@AGENTS.md\n"
-
 CURSOR_ADAPTER = (
     "# Cursor adapter\n\n"
     "Read and follow `AGENTS.md` at the repository root. It lists each "
     "component's own rules. Do not add rules to this file.\n"
 )
-
-DENIED_COMMANDS: tuple[str, ...] = (
-    "Bash(git push)",
-    "Bash(git push *)",
-    "Bash(rm -rf *)",
-    "Bash(rm -fr *)",
-)
-
-
-def claude_settings() -> str:
-    """Return the shared Claude Code project settings."""
-    settings = {
-        "$schema": "https://json.schemastore.org/claude-code-settings.json",
-        "permissions": {"deny": list(DENIED_COMMANDS)},
-    }
-    return json.dumps(settings, indent=2) + "\n"
 
 
 def _mcp_servers(directory: Path) -> dict[str, Any] | None:
@@ -80,9 +59,7 @@ def agent_files(config: ProjectConfig, tools: Toolchain | None = None) -> dict[s
     """Return root and component agent files, keyed by path relative to the project root."""
     files = {
         "AGENTS.md": generate_agents_md(config, tools),
-        "CLAUDE.md": CLAUDE_POINTER,
         ".cursorrules": CURSOR_ADAPTER,
-        ".claude/settings.json": claude_settings(),
     }
     servers = shared_mcp_servers(component_dirs(config))
     if servers:

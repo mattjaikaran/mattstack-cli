@@ -238,7 +238,7 @@ mattstack board       Pluggable kanban board (Axis backend + stubs)
 mattstack todo        Move completed tasks to completed.md (date + SHA)
 mattstack notify      Send deploy notifications (hermes/telegram/webhook)
 mattstack verify      Enforce plan scope on changed files
-mattstack rules       Generate AGENTS.md, CLAUDE.md, .cursorrules; sync harness adapters
+mattstack rules       Generate AGENTS.md, .cursorrules; sync harness adapters
 mattstack context     Dump project context (for AI prompts)
 mattstack info        Show presets, repos, frameworks
 mattstack doctor      Check tools, the pre-push hook, and .mcp.json servers

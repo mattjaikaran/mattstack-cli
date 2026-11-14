@@ -44,7 +44,7 @@ def print_next_steps(config: ProjectConfig) -> None:
         if config.task_backend.value != "none":
             console.print(f"  [cyan]just backend-worker[/cyan]  # {task_summary(config)}")
         if config.use_realtime:
-            console.print("  [cyan]just up-realtime[/cyan]  # Centrifugo; see CLAUDE.md")
+            console.print("  [cyan]just up-realtime[/cyan]  # Centrifugo; see AGENTS.md")
     console.print("  [cyan]mattstack dev --mode host[/cyan]")
     ports = _env_ports(config.path)
     if config.has_backend:
