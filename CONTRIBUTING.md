@@ -32,11 +32,11 @@ Two tracks run at the same time:
 
 ## Batch PRs
 
-Do not open a PR for each small issue. Group issues in the same area into one
-batch PR:
+Do not open a PR for each small issue. Group issues in the same area and wave
+(a GitHub milestone, when the owner sets one) into one batch PR:
 
 - One area per PR.
-- 2,000 changed lines or fewer.
+- 2,000 inserted lines or fewer, counted as the Sizes table counts them.
 - One commit per issue, so a reviewer can read the batch issue by issue.
 - The PR closes every issue in the batch with a `Closes #N` line for each one.
 
@@ -52,6 +52,10 @@ generated files and deleted lines do not count.
 | L | At most 30 files and 2,000 inserted lines | Supervised session with a frontier model, which splits the work into S and M specs |
 
 Each spec records its size in the `Size` header field.
+
+Size each GitHub issue with the same table. A frontier model splits each L
+issue into S and M specs in `tasks/specs/` before an overnight agent takes any
+of its work; no agent takes an L issue whole.
 
 ## Overnight agents
 
@@ -72,4 +76,7 @@ opens one PR per spec. The spec format is in
 
 ## Tests
 
-The testing policy is in [AGENTS.md](AGENTS.md#testing-policy).
+The testing policy is in [AGENTS.md](AGENTS.md#testing-policy). The smoke
+checks outside the unit suite are `make smoke-scaffold` and
+`make smoke-frontend-dev`; both need network access. This repository has no
+Playwright journeys.
