@@ -1,0 +1,88 @@
+name: CI
+
+# Manual and weekly runs use the repo runner on LXC 107
+# (ci-runner-mattstack-cli, label mattstack-cli). Manual runs can target any
+# branch, so only users with write access reach that runner. Pull requests
+# always run on ubuntu-latest: no pull_request job selects the self-hosted
+# label, so fork PR code never runs there, whatever the PR's copy of this
+# file says.
+on:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # Weekly full gauntlet on the default branch. agent-run merge compares PR
+    # failures against this run.
+    - cron: "0 9 * * 0"
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Ruff lint and format
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'mattstack-cli' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - run: uv sync --locked --extra dev
+      - run: uv run ruff format --check src/ tests/
+      - run: make lint
+
+  test:
+    name: Pytest (${{ matrix.group }})
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'mattstack-cli' }}
+    timeout-minutes: 30
+    env:
+      GIT_CONFIG_GLOBAL: /dev/null
+      GIT_CONFIG_COUNT: "0"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: commands
+            paths: tests/test_commands
+          - group: generators
+            paths: tests/test_generators tests/test_templates tests/test_auditors tests/test_parsers tests/test_boards tests/test_utils
+          - group: top-level
+            paths: tests/test_*.py
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - run: uv sync --locked --extra dev
+      - run: uv run pytest -q ${{ matrix.paths }}
+
+  gauntlet:
+    name: Gauntlet
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'mattstack-cli' }}
+    timeout-minutes: 90
+    env:
+      GIT_CONFIG_GLOBAL: /dev/null
+      GIT_CONFIG_COUNT: "0"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - run: uv sync --locked --extra dev
+      # Pull requests run the quick gates; the scheduled and manual runs add
+      # mutation testing and pip-audit.
+      - run: make ${{ github.event_name == 'pull_request' && 'gauntlet-quick' || 'gauntlet' }}
+
+  scaffold-smoke:
+    name: Scaffold ${{ matrix.preset }}
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'mattstack-cli' }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [starter-fullstack, starter-api, starter-frontend]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+      - uses: extractions/setup-just@v2
+      - uses: oven-sh/setup-bun@v2
+      - run: uv sync --locked --extra dev
+      - run: make smoke-scaffold ARGS="--preset ${{ matrix.preset }}"

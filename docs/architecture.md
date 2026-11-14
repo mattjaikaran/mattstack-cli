@@ -485,9 +485,10 @@ core modules, and core modules cannot import from `commands/`.
 ## Development tools and security gate
 
 Run `uv sync --locked --extra dev` to install the development tools,
-including mypy, Bandit, and PyYAML stubs. This repository has no hosted CI:
-the pre-commit hook runs Ruff, and the pre-push hook runs
-`make gauntlet-quick` with the committed lockfile.
+including mypy, Bandit, and PyYAML stubs. `.github/workflows/ci.yml` runs the
+same gates: GitHub-hosted runners for pull requests, the self-hosted runner for
+manual and weekly runs. The pre-commit hook runs Ruff, and the
+pre-push hook runs `make gauntlet-quick` with the committed lockfile.
 
 `make smoke-scaffold` scaffolds the default presets into temporary
 directories and runs each generated project's `just ci`, reporting pass or
