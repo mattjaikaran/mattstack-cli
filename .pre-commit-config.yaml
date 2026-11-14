@@ -1,4 +1,4 @@
-# Every gate runs locally; this repository has no hosted CI.
+# Every gate runs locally; .github/workflows/ci.yml runs them again on CI.
 # Install both hook types: mattstack hooks install (or pre-commit install).
 default_install_hook_types: [pre-commit, pre-push]
 default_stages: [pre-commit]

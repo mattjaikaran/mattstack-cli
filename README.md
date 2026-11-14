@@ -356,8 +356,11 @@ and runs each generated project's `just ci`. It needs network access, `just`,
 `uv` and `bun`, so it is not part of `make gauntlet-quick`. Pass
 `ARGS="--all"` or `ARGS="--preset starter-api"` to change the selection.
 
-This repository has no hosted CI. Install the hooks once with
-`uv run mattstack hooks install`; the pre-push hook runs `make gauntlet-quick`.
+CI (`.github/workflows/ci.yml`) runs Ruff, pytest by directory, the gauntlet and
+the scaffold smoke for the default presets. Pull requests run on GitHub-hosted
+runners; manual and weekly runs run on the self-hosted runner. Install the hooks
+once with `uv run mattstack hooks install`; the pre-push hook runs
+`make gauntlet-quick`.
 
 ```bash
 git config --get core.hooksPath   # Must print nothing; pre-commit refuses otherwise

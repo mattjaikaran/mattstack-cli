@@ -64,8 +64,8 @@ opens one PR per spec. The spec format is in
 
 ## Review process
 
-1. `make gauntlet-quick` must pass. This repository has no hosted CI, so the
-   Verification section of the PR is the evidence.
+1. `make gauntlet-quick` must pass. `.github/workflows/ci.yml` runs it on every
+   pull request, and the Verification section of the PR records the local run.
 2. `matt-reviewer` reviews every PR. Fix or answer each finding.
 3. The owner, `mattjaikaran`, approves. A PR merges only with both approvals on
    its current head commit.
