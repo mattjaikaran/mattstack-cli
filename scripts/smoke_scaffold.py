@@ -28,6 +28,15 @@ from mattstack.presets import PRESETS
 DEFAULT_PRESETS = ("starter-fullstack", "starter-api", "starter-frontend")
 TAIL_LINES = 20
 
+# Backend files the monorepo must not carry (see consolidate._BACKEND_AGENT_PATHS).
+BACKEND_LEFTOVERS = (
+    "AGENTS.md",
+    "CLAUDE.md",
+    "docs/tickets",
+    "scripts/tickets.py",
+    "scripts/worker_once.py",
+)
+
 
 def _tail(output: str, lines: int = TAIL_LINES) -> list[str]:
     """Return the last ``lines`` non-empty lines of ``output``."""
@@ -145,6 +154,12 @@ def main(
                 if code != 0:
                     failure = (step, code, output)
                     break
+            if failure is None:
+                leftover = [
+                    rel for rel in BACKEND_LEFTOVERS if (root / name / "backend" / rel).exists()
+                ]
+                if leftover:
+                    failure = ("backend files", 1, "present: " + ", ".join(leftover))
 
         elapsed = time.monotonic() - started
         if failure is None:

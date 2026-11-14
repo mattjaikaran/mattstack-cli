@@ -15,11 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - `mattstack init` scaffolds into an existing empty project directory, so creating the directory with `mkdir` first works; a non-empty directory is still refused and its files are left untouched.
-- Root `AGENTS.md` now holds global rules only and lists the nested `AGENTS.md` files that exist; the nearest file wins. Components keep their own `AGENTS.md` and get no `CLAUDE.md`.
+- Root `AGENTS.md` now holds global rules only and lists the nested `AGENTS.md` files that exist; the nearest file wins. Components keep their own `AGENTS.md` (the backend's is removed, see Fixed) and get no `CLAUDE.md`.
 - Generate only the secrets the selected features use: `init` now asks the cloned django-ninja backend for its secret list and passes `--only` with the names the generated env examples declare, so a project without `--realtime` or `--ai` no longer gets Centrifugo admin, Neo4j, Django MCP, or Flower secrets in `.env` and `.env.production`. `.env.production` keeps `CENTRIFUGO_API_KEY` and `CENTRIFUGO_TOKEN_SECRET`, which `api/settings/prod.py` requires even without realtime.
 
 ### Fixed
 
+- Monorepo scaffolds no longer copy the standalone-backend agent files that assume the backend is the repo root: `backend/AGENTS.md`, `backend/CLAUDE.md`, `backend/scripts/tickets.py`, `backend/scripts/worker_once.py`, `backend/scripts/check_agent_docs.py`, `backend/docs/tickets/`, the agent-status and dev MCP scripts with their smoke tests, and the backend docs that cite backend-only `just` recipes. The backend gauntlet's TICKETS, CLI-TEST, and AGENT-DOCS gates are dropped with them, so the gauntlet no longer fails with "Project directory cli does not exist".
 - Record the pinned `@hey-api/openapi-ts` in `frontend/DEPENDENCIES.md` in the column-aligned form the frontend formatter expects, so a fresh scaffold passes both `bun run check-dependencies` and `bun run format:check`.
 - Write `backend/.python-version` with the backend image's Python (`3.13`) during `mattstack init` and `mattstack add backend`, so uv on a host with a newer interpreter no longer provisions it and fails to build wheels such as `ormsgpack`. An existing pin is kept.
 - Development images install the backend's `dev` extra, so `docker compose exec api-dev uv run ruff` and pytest work in the container; production images keep the runtime-only install.
