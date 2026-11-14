@@ -767,19 +767,17 @@ it never starts a server.
 Generate the root agent files that describe the project's stack.
 
 ```bash
-mattstack rules             # AGENTS.md, CLAUDE.md, .cursorrules, .claude/settings.json
+mattstack rules             # AGENTS.md, .cursorrules
 mattstack rules --gsd       # Also .planning/ project files
 mattstack rules sync        # Adapters from .omp/ and .context/
 ```
 
 `AGENTS.md` holds the global rules and lists each nested `AGENTS.md` that
 exists, such as `backend/AGENTS.md`; the nearest file wins. `.cursorrules`
-points at the root `AGENTS.md`. `.claude/settings.json` denies
-`git push` and `rm -rf`; mattstack never writes `.claude/settings.local.json`.
-`.mcp.json` appears only when every component declares the same server.
-Existing files stay unchanged unless you pass `--force`. `rules sync` updates
-harness adapters without replacing the component's own rules or duplicating
-Claude guidance. Both accept `--dry-run`.
+points at the root `AGENTS.md`. `.mcp.json` appears only when every component
+declares the same server. Existing files stay unchanged unless you pass
+`--force`. `rules sync` updates harness adapters without replacing the
+component's own rules. Both accept `--dry-run`.
 
 ### `mattstack context`
 
