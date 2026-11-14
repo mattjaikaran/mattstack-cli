@@ -186,7 +186,7 @@ def _journeys_recipes(config: ProjectConfig) -> str:
             "test-e2e:",
             "    cd frontend && bun run test:e2e",
         ]
-    if config.has_frontend and config.is_ninja_backend:
+    if config.is_fullstack and config.is_ninja_backend:
         lines += [
             "",
             "# Check journeys against the e2e report and the frontend's OpenAPI copy (read-only)",
