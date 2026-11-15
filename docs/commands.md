@@ -361,6 +361,23 @@ mattstack generate schema Product -f "name:str price:decimal"
 Generate base, create, update, and response schemas without a model. Options:
 `-f, --fields`, `-a, --app`, `-p, --path`, `--dry-run`, and `--force`.
 
+### `mattstack generate engine`
+
+```bash
+mattstack generate engine booking --modules artists,tours
+```
+
+Run the django-ninja boilerplate's engine generator in `backend/`
+(`manage.py generate_feature engine --app-name booking --modules artists,tours`).
+It creates `engines/booking/<module>/` apps with repositories, DTOs, services,
+schemas, and controllers at `/api/booking/<module>/`. Requires a Django Ninja
+backend. Options: `-m, --modules` (default: one module named after the engine)
+and `-p, --path`. The command then exports the backend OpenAPI schema and runs
+`mattstack sync openapi`, so the frontend client gets the new tags. Without a
+frontend, it stops after generating the backend. Engine files stay if the sync
+fails, for example when `bun install` has not run; fix the error and run
+`mattstack sync openapi`. See `docs/ARCHITECTURE.md` (Engines) in the boilerplate.
+
 ### `mattstack generate component`
 
 ```bash
