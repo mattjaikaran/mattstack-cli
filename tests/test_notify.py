@@ -26,9 +26,16 @@ def test_envelope_to_dict() -> None:
         "event": "deploy_complete",
         "app": "myapp",
         "commit": "abc123",
+        "commit_short": "",
+        "subject": "",
         "env": "staging",
         "frontend_url": "",
         "backend_url": "",
+        "provider": "",
+        "duration_seconds": "",
+        "health": "",
+        "failed_step": "",
+        "exit_code": "",
     }
 
 
@@ -63,7 +70,8 @@ def test_build_notifier_telegram(monkeypatch) -> None:
     assert isinstance(build_notifier(config), TelegramNotifier)
 
 
-def test_build_notifier_hermes() -> None:
+def test_build_notifier_hermes(monkeypatch) -> None:
+    monkeypatch.delenv("HERMES_URL", raising=False)
     config = MattstackConfig(
         notify=NotifyConfig(backend="hermes"),
         board=BoardConfig(url="https://axis.example.com/api/v1"),
