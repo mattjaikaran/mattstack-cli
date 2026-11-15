@@ -51,6 +51,7 @@ from mattstack.commands.generate_crud import (
     parse_model_spec,
     resolve_dirs,
 )
+from mattstack.commands.generate_engine import engine
 from mattstack.parsers.frontend_layout import detect_frontend_layout
 from mattstack.utils.console import console, print_error, print_info
 
@@ -62,6 +63,7 @@ generate_app = typer.Typer(
 )
 generate_app.command("model")(model)
 generate_app.command("crud")(crud)
+generate_app.command("engine")(engine)
 
 ProjectOption = Annotated[Path | None, typer.Option("--project", help="Project root path")]
 SEGMENT_RE = re.compile(r"^[a-z][a-z0-9_-]*$")
