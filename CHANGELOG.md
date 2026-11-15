@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `mattstack init`, `add`, and `rules` no longer generate `CLAUDE.md`, `.claude/settings.json`, or the `.claude/` harness adapter. Root `AGENTS.md` is the only root agent file, and `rules sync` writes the remaining adapters. Projects generated earlier keep their files.
 - Generate only the secrets the selected features use: `init` now asks the cloned django-ninja backend for its secret list and passes `--only` with the names the generated env examples declare, so a project without `--realtime` or `--ai` no longer gets Centrifugo admin, Neo4j, Django MCP, or Flower secrets in `.env` and `.env.production`. `.env.production` keeps `CENTRIFUGO_API_KEY` and `CENTRIFUGO_TOKEN_SECRET`, which `api/settings/prod.py` requires even without realtime.
 - Generated READMEs and `AGENTS.md` state the API versioning policy. Django and FastAPI APIs mount at `/api/` with no version segment. The NestJS API keeps `/api/v1/` (health at `/api/v1/health`) until nestjs-boilerplate drops URI versioning. The Next.js rewrite matches the starter's `/api/v1` rewrite with or without a version segment.
+- The dependency audit recommends oxlint and oxfmt in place of ESLint, `@typescript-eslint/*`, Prettier, and tslint. It flags those packages as deprecated, with "Use oxlint instead" or "Use oxfmt instead", the same way it flags `moment` and `request`.
 
 ### Fixed
 

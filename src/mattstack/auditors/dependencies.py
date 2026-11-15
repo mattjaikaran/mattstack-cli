@@ -24,8 +24,13 @@ DEPRECATED_PYTHON: dict[str, str] = {
 DEPRECATED_JS: dict[str, str] = {
     "moment": "Use date-fns or dayjs instead",
     "request": "Use fetch (built-in) or axios instead",
-    "tslint": "Use eslint with typescript-eslint instead",
+    "tslint": "Use oxlint instead",
+    "eslint": "Use oxlint instead",
+    "prettier": "Use oxfmt instead",
 }
+
+# Scoped packages flagged by prefix; every match is replaced by oxlint
+DEPRECATED_JS_PREFIXES = ("@typescript-eslint/",)
 
 # Type checker packages that indicate type stubs may be needed
 TYPE_CHECKERS = {"mypy", "pyright", "pytype"}
@@ -148,13 +153,16 @@ class DependencyAuditor(BaseAuditor):
                 )
 
             # Check for deprecated packages
-            if lower_name in DEPRECATED_JS:
+            advice = DEPRECATED_JS.get(lower_name)
+            if advice is None and lower_name.startswith(DEPRECATED_JS_PREFIXES):
+                advice = "Use oxlint instead"
+            if advice is not None:
                 self.add_finding(
                     Severity.WARNING,
                     rel_file,
                     dep.line,
                     f"Deprecated package: {dep.name}",
-                    DEPRECATED_JS[lower_name],
+                    advice,
                 )
 
             # Check for duplicates
