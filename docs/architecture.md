@@ -519,8 +519,9 @@ manual and weekly runs. The pre-commit hook runs Ruff, and the
 pre-push hook runs `make gauntlet-quick` with the committed lockfile.
 
 `make smoke-scaffold` scaffolds the default presets into temporary
-directories and runs each generated project's `just ci`, reporting pass or
-fail per preset. It needs network access, `just`, `uv` and `bun`, so it is
+directories, runs each generated project's `just ci`, and checks that every
+`just <recipe>` cited in an AGENTS.md resolves from the root, reporting pass
+or fail per preset. It needs network access, `just`, `uv` and `bun`, so it is
 not a gauntlet gate. Pass `ARGS="--all"` to cover every preset.
 
 Keep the Bandit gate blocking at every severity. Do not add global rule

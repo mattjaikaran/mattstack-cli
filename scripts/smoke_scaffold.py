@@ -3,6 +3,7 @@
 
 This is a network-bound smoke check, not a gauntlet gate: it clones the
 selected source repositories and needs `just`, `uv` and `bun` on PATH.
+It also checks that each `just <recipe>` cited in an AGENTS.md resolves from the root.
 
 Usage:
     python scripts/smoke_scaffold.py
@@ -15,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -35,6 +37,20 @@ BACKEND_LEFTOVERS = (
     "docs/tickets",
     "scripts/tickets.py",
     "scripts/worker_once.py",
+)
+
+# Component AGENTS.md files cite recipes as `just <recipe>`. Each file's recipes
+# carry its directory prefix at the root (see templates/root_agents_md.py).
+AGENTS_RECIPE_PREFIXES: dict[str, str] = {
+    "AGENTS.md": "",
+    "backend/AGENTS.md": "backend-",
+    "frontend/AGENTS.md": "frontend-",
+}
+# A citation opens a code span or a line. The lookahead rejects placeholders such
+# as `backend-<recipe>`, which the pattern would otherwise read as `backend`.
+_RECIPE_CITATION = re.compile(
+    r"(?:^|`)\s*just\s+([a-z][a-z0-9]*(?:-[a-z0-9]+)*)(?![-<\w])",
+    re.M,
 )
 
 
@@ -70,6 +86,32 @@ def _run(
     except subprocess.TimeoutExpired as exc:
         return None, _text(exc.output) + _text(exc.stderr)
     return result.returncode, _text(result.stdout) + _text(result.stderr)
+
+
+def _unresolved_recipes(
+    project: Path,
+    runner: Callable[..., subprocess.CompletedProcess[str]],
+    timeout: int,
+    env: dict[str, str],
+) -> list[str]:
+    """Return one line per recipe cited in an AGENTS.md that the root justfile lacks."""
+    cited: list[tuple[str, str, str]] = []  # (file, name as written, root recipe)
+    for relative, prefix in AGENTS_RECIPE_PREFIXES.items():
+        path = project / relative
+        if path.is_file():
+            text = path.read_text(encoding="utf-8")
+            cited += [(relative, name, prefix + name) for name in _RECIPE_CITATION.findall(text)]
+    if not cited:
+        return []
+    code, output = _run(runner, ["just", "--summary"], project, timeout, env)
+    if code != 0:
+        return [f"just --summary exited {code}"]
+    defined = set(output.split())
+    return [
+        f"{relative}: `just {name}` needs root recipe `{recipe}`"
+        for relative, name, recipe in cited
+        if recipe not in defined
+    ]
 
 
 def main(
@@ -160,6 +202,10 @@ def main(
                 ]
                 if leftover:
                     failure = ("backend files", 1, "present: " + ", ".join(leftover))
+            if failure is None:
+                unresolved = _unresolved_recipes(root / name, runner, args.timeout, env)
+                if unresolved:
+                    failure = ("AGENTS.md recipes", 1, "\n".join(unresolved))
 
         elapsed = time.monotonic() - started
         if failure is None:

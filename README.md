@@ -352,9 +352,10 @@ make smoke-scaffold     # Scaffold presets and run just ci in each (network)
 ```
 
 `make smoke-scaffold` scaffolds the default presets into a temporary directory
-and runs each generated project's `just ci`. It needs network access, `just`,
-`uv` and `bun`, so it is not part of `make gauntlet-quick`. Pass
-`ARGS="--all"` or `ARGS="--preset starter-api"` to change the selection.
+and runs each generated project's `just ci`, then checks that every
+`just <recipe>` cited in an AGENTS.md resolves from the root. It needs network
+access, `just`, `uv` and `bun`, so it is not part of `make gauntlet-quick`.
+Pass `ARGS="--all"` or `ARGS="--preset starter-api"` to change the selection.
 
 CI (`.github/workflows/ci.yml`) runs Ruff, pytest by directory, the gauntlet and
 the scaffold smoke for the default presets. Pull requests run on GitHub-hosted
