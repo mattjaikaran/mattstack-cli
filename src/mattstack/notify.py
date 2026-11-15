@@ -4,23 +4,32 @@ from __future__ import annotations
 
 import os
 from dataclasses import asdict, dataclass
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 import httpx
 
 from mattstack.config_file import MattstackConfig
+
+DeployEvent = Literal["deploy_complete", "deploy_failed"]
 
 
 @dataclass
 class DeployEnvelope:
     """The JSON envelope POSTed on deploy completion."""
 
-    event: str = "deploy_complete"
+    event: DeployEvent = "deploy_complete"
     app: str = ""
     commit: str = ""
+    commit_short: str = ""
+    subject: str = ""
     env: str = "production"
     frontend_url: str = ""
     backend_url: str = ""
+    provider: str = ""
+    duration_seconds: str = ""
+    health: str = ""
+    failed_step: str = ""
+    exit_code: str = ""
 
     def to_dict(self) -> dict[str, str]:
         return asdict(self)
@@ -71,11 +80,15 @@ class TelegramNotifier:
 
     def send(self, envelope: DeployEnvelope) -> None:
         url = f"https://api.telegram.org/bot{self.token}/sendMessage"
-        response = self._client.post(
-            url,
-            json={"chat_id": self.chat_id, "text": _format_message(envelope)},
-        )
-        response.raise_for_status()
+        try:
+            response = self._client.post(
+                url,
+                json={"chat_id": self.chat_id, "text": _format_message(envelope)},
+            )
+            response.raise_for_status()
+        except httpx.HTTPError as exc:
+            # httpx puts the request URL, which carries the bot token, in its message.
+            raise httpx.HTTPError(str(exc).replace(self.token, "<redacted>")) from None
 
     def close(self) -> None:
         if self._owns_client:
@@ -92,6 +105,17 @@ def _format_message(envelope: DeployEnvelope) -> str:
         lines.append(f"frontend: {envelope.frontend_url}")
     if envelope.backend_url:
         lines.append(f"backend: {envelope.backend_url}")
+    if envelope.provider:
+        lines.append(f"provider: {envelope.provider}")
+    if envelope.subject:
+        lines.append(f"subject: {envelope.subject}")
+    if envelope.duration_seconds:
+        lines.append(f"duration: {envelope.duration_seconds}s")
+    if envelope.health:
+        lines.append(f"health: {envelope.health}")
+    if envelope.event == "deploy_failed":
+        lines.append(f"step: {envelope.failed_step}")
+        lines.append(f"exit code: {envelope.exit_code}")
     return "\n".join(lines)
 
 
@@ -121,9 +145,9 @@ def build_notifier(config: MattstackConfig) -> Notifier:
         return TelegramNotifier(token, chat_id)
 
     if backend == "hermes":
-        base = (config.board.url or "").rstrip("/")
+        base = (os.environ.get("HERMES_URL") or config.board.url or "").rstrip("/")
         if not base:
-            raise ValueError("notify.backend is 'hermes' but board.url is unset")
+            raise ValueError("notify.backend is 'hermes' but HERMES_URL or board.url is unset")
         return HermesNotifier(f"{base}/deploy_webhook")
 
     raise ValueError(f"Unknown notify backend: {config.notify.backend!r}")

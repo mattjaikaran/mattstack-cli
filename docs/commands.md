@@ -772,7 +772,7 @@ ruleset that requires the `gauntlet` check. Use `--dry-run` to preview. Only a
 | `mattstack --version` | Print the installed version and exit, without the update check. A VCS install appends the short commit. |
 | `mattstack completions --install` | Install shell completions. `--show` prints the script. |
 | `mattstack verify --scope` | Fail when changed files are outside `SCOPE.md` or `--scope-file`. |
-| `mattstack notify` | Send a deploy notification through the backend in `mattstack.yml`. |
+| `mattstack notify` | Send a deploy notification through the backend in `mattstack.yml`. `hermes` posts to `$HERMES_URL/deploy_webhook`, falling back to `board.url`. |
 
 Compose is optional for `doctor` when your project does not define it. Doctor
 checks a stdio MCP server's command on `PATH` and an HTTP server's TCP port;
