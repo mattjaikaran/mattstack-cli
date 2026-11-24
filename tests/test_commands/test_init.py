@@ -113,6 +113,23 @@ def test_generate_dry_run_skips_dir_check(tmp_path: Path) -> None:
     assert result is True
 
 
+def test_generate_dry_run_does_not_write_gauntlet_toml(tmp_path: Path) -> None:
+    """A dry run must not create the project directory or gauntlet.toml."""
+    proj_dir = tmp_path / "preview"
+    config = ProjectConfig(
+        name="preview",
+        path=proj_dir,
+        project_type=ProjectType.BACKEND_ONLY,
+        dry_run=True,
+        init_git=False,
+    )
+    with patch("mattstack.generators.backend_only.BackendOnlyGenerator.run", return_value=True):
+        result = _generate(config)
+    assert result is True
+    assert not proj_dir.exists()
+    assert not (proj_dir / "gauntlet.toml").exists()
+
+
 def test_keyboard_interrupt_handling(tmp_path: Path) -> None:
     with (
         patch("mattstack.commands.init.sys.stdin.isatty", return_value=True),

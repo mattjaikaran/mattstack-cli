@@ -47,7 +47,7 @@ jobs:
           - group: commands
             paths: tests/test_commands
           - group: generators
-            paths: tests/test_generators tests/test_templates tests/test_auditors tests/test_parsers tests/test_boards tests/test_utils
+            paths: tests/test_generators tests/test_templates tests/test_gauntlet tests/test_parsers tests/test_boards tests/test_utils
           - group: top-level
             paths: tests/test_*.py
     steps:

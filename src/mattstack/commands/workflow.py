@@ -192,7 +192,7 @@ gauntlet:
   before_script:
     - uv tool install git+https://github.com/mattjaikaran/mattstack-cli
   script:
-    - mattstack audit --no-todo""")
+    - mattstack audit --no-todo --fail-if-absent""")
 
     if config.has_backend:
         stages.extend(["lint", "test"])

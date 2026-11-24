@@ -95,7 +95,7 @@ def _gsd_commands(config: ProjectConfig) -> str:
         lines.append("just setup")
     lines.append("mattstack dev    # Start everything")
     lines.append("mattstack test   # Run all tests")
-    lines.append("mattstack audit  # Static analysis")
+    lines.append("mattstack audit  # Run the Gauntlet gate")
     lines.append("```")
     return "\n".join(lines)
 

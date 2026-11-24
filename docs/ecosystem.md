@@ -177,9 +177,12 @@ Review both lockfiles before you commit. Generated Bun installs use
 CI do not detect a stale `uv.lock`. See
 [production prerequisites](deployment-guide.md#production-prerequisites).
 
-## Plugin system
+## Custom checks
 
-See the [plugin guide](plugin-guide.md) to write custom audit plugins.
+Verification checks live in Gauntlet, not in MattStack. Add a project check
+under `.gauntlet/checks/`. See the [Gauntlet guide](gauntlet.md) for the
+check contract and the tier model. MattStack no longer loads auditor plugins
+from `mattstack-plugins/`.
 
 ## Optional cross-language tools
 

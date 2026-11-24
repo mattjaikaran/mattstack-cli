@@ -57,6 +57,9 @@ LAZY_GROUPS: dict[str, LazyGroupSpec] = {
     "rules": LazyGroupSpec(
         "mattstack.commands.rules", "rules_app", "Generate AI agent files and harness adapters."
     ),
+    "gauntlet": LazyGroupSpec(
+        "mattstack.commands.gauntlet", "gauntlet_app", "Run the Gauntlet verification gate."
+    ),
 }
 
 

@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `mattstack --version` prints the installed version without a subcommand or a network call, and appends the short commit when installed from a git URL. The install gate now runs it against the built wheel.
 - `.github/workflows/ci.yml` runs Ruff, pytest by directory, the gauntlet (quick on pull requests, full when run by hand or weekly) and the scaffold smoke for the default presets as parallel jobs. Pull requests run on `ubuntu-latest`; manual and weekly runs run on the self-hosted runner label `mattstack-cli`.
 - Django Ninja + frontend projects get the journeys tooling: `init` writes `JOURNEYS_E2E_DIR=../frontend/e2e` and `JOURNEYS_E2E_REPORT=../frontend/test-results/journeys.json` to `.env` and `.env.example`, `just test-e2e` runs the frontend Playwright suite, and `just verify` runs the backend's `check-journeys` and `sync-frontend --check` against `frontend/`. The frontend presets already write the Playwright JSON report to `test-results/journeys.json`, so `/admin/journeys/` shows status after `just test-e2e`.
+- **`mattstack gauntlet`** — `check` and `run` subcommands that call Gauntlet with the project's `gauntlet.toml`. The exit code passes through unchanged.
+- **`--tier` and `--skip-if-absent/--fail-if-absent`** options on `mattstack audit`. `--tier` takes `fast`, `standard`, `full`, or `release`.
+- `mattstack/gauntlet/` holds the wire models for the Gauntlet JSON contract, the subprocess client, and the formatter.
+- [docs/gauntlet.md](docs/gauntlet.md) describes how MattStack and Gauntlet divide the work.
 
 ### Changed
 
@@ -24,8 +28,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking:** `mattstack init`, `add`, and `rules` no longer generate `CLAUDE.md`, `.claude/settings.json`, or the `.claude/` harness adapter. Root `AGENTS.md` is the only root agent file, and `rules sync` writes the remaining adapters. Projects generated earlier keep their files.
 - Generate only the secrets the selected features use: `init` now asks the cloned django-ninja backend for its secret list and passes `--only` with the names the generated env examples declare, so a project without `--realtime` or `--ai` no longer gets Centrifugo admin, Neo4j, Django MCP, or Flower secrets in `.env` and `.env.production`. `.env.production` keeps `CENTRIFUGO_API_KEY` and `CENTRIFUGO_TOKEN_SECRET`, which `api/settings/prod.py` requires even without realtime.
 - Generated READMEs and `AGENTS.md` state the API versioning policy. Django and FastAPI APIs mount at `/api/` with no version segment. The NestJS API keeps `/api/v1/` (health at `/api/v1/health`) until nestjs-boilerplate drops URI versioning. The Next.js rewrite matches the starter's `/api/v1` rewrite with or without a version segment.
-- The dependency audit recommends oxlint and oxfmt in place of ESLint, `@typescript-eslint/*`, Prettier, and tslint. It flags those packages as deprecated, with "Use oxlint instead" or "Use oxfmt instead", the same way it flags `moment` and `request`.
 - `notify` sends the deploy envelope fields the django-ninja boilerplate `deploy.sh` sends (`commit_short`, `subject`, `provider`, `duration_seconds`, `health`, `failed_step`, `exit_code`) and a `deploy_failed` event. Telegram text adds the provider, subject, duration, health, step and exit code lines. `notify.backend: hermes` posts to `HERMES_URL/deploy_webhook` and falls back to `board.url` when `HERMES_URL` is unset.
+- **Audit delegates to Gauntlet.** `mattstack audit` runs the Gauntlet binary and formats its findings. Gauntlet runs every check, and MattStack keeps no check logic.
+- Audit output groups findings by category and reports the tier, the Gauntlet version, and the blocking count. `--type` takes a Gauntlet engine (`sentinel`, `conformance`, `review`, or `quality`) instead of a domain name such as `types` or `quality`.
+- `tasks/todo.md` entries carry the stable Gauntlet finding id, so you can trace each entry to the Gauntlet vault.
+- `mattstack gauntlet check` and `mattstack gauntlet run` forward the options they do not declare, so `--offline`, `--privacy=local`, and `--staged` reach Gauntlet.
+- A skipped audit declares itself. The JSON envelope carries `skipped` and `skip_reason`, so a consumer does not read a skipped run as a clean pass.
+- **Breaking:** `mattstack audit` now fails when the Gauntlet binary is missing, unless you pass `--skip-if-absent`. The same applies to `mattstack audit --no-todo` in an existing generated project. Install Gauntlet, or pass `--skip-if-absent` to skip the run.
+
+### Deprecated
+
+- `mattstack audit --live` and `--base-url` have no effect. Gauntlet does not probe live endpoints.
+- `mattstack audit --fix` has no effect and prints a warning. Gauntlet does not auto-fix. Run `mattstack lint --fix` instead.
+
+### Removed
+
+- `mattstack/auditors/`: the six built-in auditors, the HTML report, the report writer, and the plugin loader. `auditors/base.py` and `auditors/versions.py` stay for `mattstack audit --versions`.
+- `parsers/dependencies.py` and `parsers/test_files.py`, with their tests. Only the auditors used them.
+- `mattstack-plugins/` auditor plugins. Add a check to Gauntlet instead. Gauntlet records every run in its vault, which a Python plugin cannot do.
+- `docs/plugin-guide.md`.
 
 ### Fixed
 

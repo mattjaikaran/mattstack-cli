@@ -5,8 +5,8 @@ generated project, and how later commands change that project safely. For
 flags and examples, see the [CLI reference](commands.md). For production
 targets, see the [deployment guide](deployment-guide.md). For custom
 boilerplate repos, presets, and optional tools, see the
-[ecosystem guide](ecosystem.md). For custom auditors, see the
-[plugin guide](plugin-guide.md).
+[ecosystem guide](ecosystem.md). For verification checks, see the
+[Gauntlet guide](gauntlet.md).
 
 ## Two views: the CLI and the generated project
 
@@ -320,8 +320,6 @@ flowchart LR
   P[Pydantic schemas] -->|just backend-openapi| O[backend/docs/openapi/openapi.json]
   O -->|mattstack sync openapi| G[frontend/src/api/generated]
   G --> C{mattstack sync check}
-  O --> A{mattstack audit -t types}
-  G --> A
 ```
 
 - `parsers/openapi_spec.py` finds the contract (`--schema`, the Ninja export,
@@ -330,15 +328,9 @@ flowchart LR
   `@hey-api/openapi-ts` with the `@hey-api/typescript`, `@hey-api/sdk`,
   `zod`, and `@tanstack/react-query` plugins. `sync check` regenerates into a
   temporary directory and compares file hashes with the committed output.
-- `auditors/types.py` and `auditors/types_parity.py` compare every
-  `components.schemas` entry with its `z<Name>` constant in `zod.gen.ts`:
-  keys, required, nullable, enum and literal values, `$ref` targets, union
-  branches, formats, and `min`/`max`/`gt`/`lt`/`pattern` bounds. Each
-  difference is an `ERROR` finding. `parsers/zod_schemas.py` reads the Zod
-  file with a bracket-, string-, and regex-aware scanner.
-- `tests/test_auditors/test_types.py` is the round-trip test. Its fixture is
-  a real Ninja export and the pinned generator's output; regenerate both when
-  you change `HEY_API_VERSION`.
+- The `types-in-sync` custom check in `gauntlet.toml` runs `mattstack sync check`,
+  which fails when the committed client drifts from the contract. The schema-to-Zod
+  parity comparison that `mattstack audit` ran is removed with the built-in auditors.
 
 ### Mapping
 
@@ -375,17 +367,17 @@ Zod 4.
   so parsed values are `bigint`, not `number`. Pydantic emits no int64
   format unless you declare it.
 - **Untyped objects:** a property with `type: object` and no `properties` or
-  `additionalProperties` is dropped from the Zod object; the parity audit
-  reports it as missing. Use a model or `dict[str, T]`.
+  `additionalProperties` is dropped from the Zod object. Use a model or
+  `dict[str, T]`.
 - **writeOnly and readOnly:** `writeOnly` fields (for example a password)
   are absent from `z<Name>` and present in `z<Name>Writable`; `readOnly`
-  fields are the reverse. The audit compares both.
+  fields are the reverse.
 - **Not emitted:** `multipleOf`, `@field_validator` and `@model_validator`
   bodies. Put constraints on `Field(...)`, `Literal`, or an `Enum`.
-- **OpenAPI 3.0:** a boolean `exclusiveMinimum` becomes `.gt(true)`; the
-  audit reports it. Django Ninja exports OpenAPI 3.1.
-- **Scope:** the audit compares component schemas only, not operation
-  query or path parameters.
+- **OpenAPI 3.0:** a boolean `exclusiveMinimum` becomes `.gt(true)`.
+  Django Ninja exports OpenAPI 3.1.
+- **Scope:** component schemas only, not operation query or path
+  parameters.
 
 ## Component guidance and quality gates
 
@@ -450,7 +442,8 @@ src/mattstack/
 │   ├── sync.py, openapi.py  # OpenAPI client generation and drift check
 │   ├── dev.py, test.py, lint.py, health.py, env.py
 │   ├── deps.py, hooks.py, workflow.py  # Dependencies, Git hooks, opt-in hosted CI
-│   ├── audit.py        # AUDITOR_CLASSES and plugin loading
+│   ├── audit.py        # Runs Gauntlet and formats its findings (no checks)
+│   ├── gauntlet.py     # Subgroup: check, run (pass-through to the Gauntlet binary)
 │   ├── rules.py, context*.py  # Agent config files and context dumps
 │   ├── board.py, todo.py, protect.py, verify.py, notify.py  # Control plane
 │   └── client.py, doctor.py, info.py, version.py, completions.py
@@ -459,8 +452,9 @@ src/mattstack/
 ├── templates/          # Python functions that return file content (no Jinja2)
 │   ├── agent_files.py, root_agents_md.py  # Root AGENTS.md, .cursorrules, .mcp.json
 │   └── root_justfile*.py, gauntlet_toml.py, ci_toolchain.py  # Local gates; opt-in CI pins
+├── gauntlet/           # Gauntlet integration: wire models, subprocess client, formatter
 ├── parsers/            # Contract and source parsers (openapi_spec.py, zod_schemas.py, routes)
-├── auditors/           # BaseAuditor subclasses; types_parity.py, versions.py (drift)
+├── auditors/           # base.py and versions.py: the --versions drift check
 ├── boards/             # Board backends (axis, none; Hermes, Jira, Linear are stubs)
 └── utils/              # Console, Git, Docker, processes, ports; env_secrets.py, sources.py, versions.py
 ```
@@ -477,7 +471,8 @@ core modules, and core modules cannot import from `commands/`.
    on an existing project use `resolve_project()` or `stack.py`.
 4. Parsers have no extra dependencies. The OpenAPI contract, not Python
    source, is the input for frontend types.
-5. Auditors subclass `BaseAuditor` and return `list[AuditFinding]`.
+5. Verification is external. `mattstack audit` shells out to `gauntlet check --json`.
+   No check logic lives in this repo.
 6. Code generators plan into a `FilePlan` and write only through
    `finish()`.
 
@@ -486,22 +481,20 @@ core modules, and core modules cannot import from `commands/`.
 These principles guide new code. Only the layer rules are machine-checked.
 
 - **Single responsibility.** A template returns text. A generator plans its
-  writes into a `FilePlan` and runs its `steps`. An auditor returns
-  `AuditFinding` objects. A parser reads one contract or source format.
+  writes into a `FilePlan` and runs its `steps`. The Gauntlet formatter renders
+  findings. A parser reads one contract or source format.
 - **Open/closed.** Extend behavior through the seams in
-  [Extension workflows](#extension-workflows): subclass `BaseGenerator` or
-  `BaseAuditor`, add an adapter to `get_board_backend()`, or load a plugin
-  from `mattstack-plugins/`. Add a subclass before you add a branch to a
-  shared dispatcher.
+  [Extension workflows](#extension-workflows): subclass `BaseGenerator`, or
+  add an adapter to `get_board_backend()`. Add verification checks to Gauntlet,
+  not to this repo. Add a subclass before you add a branch to a shared dispatcher.
 - **Liskov substitution.** A subclass or adapter returns the base class's
   types and raises no exception that callers do not already handle.
-- **Dependency inversion.** Commands depend on `BaseGenerator`,
-  `BaseAuditor` and the `BoardBackend` protocol, not on a concrete adapter.
+- **Dependency inversion.** Commands depend on `BaseGenerator` and the `BoardBackend` protocol, not on a concrete adapter.
 
 ### Module boundaries
 
 - `commands/` is the CLI layer. It may import the core modules: generators,
-  auditors, parsers, post_processors, templates, utils, and the top-level
+  auditors, gauntlet, parsers, post_processors, templates, utils, and the top-level
   `config`, `presets`, `user_config`, `project`, `config_file`,
   `stack_detection` and `stack` modules.
 - Core modules never import `commands/`, and no two core modules import
@@ -579,15 +572,10 @@ strength.
 7. Add tests in `tests/test_presets.py`, `tests/test_project.py`, and
    `tests/test_templates/test_frontend_commands.py`.
 
-### Add an audit domain
+### Add a verification check
 
-1. Create the parser in `parsers/`.
-2. Create the auditor in `auditors/`, subclassing `BaseAuditor`.
-3. Add the domain to `AuditType` in `auditors/base.py`.
-4. Add the auditor to `AUDITOR_CLASSES` in `commands/audit.py`.
-
-For a project-specific check, write a plugin in `mattstack-plugins/`
-instead. See the [plugin guide](plugin-guide.md).
+1. Add the check to Gauntlet (`.gauntlet/checks/` or the Gauntlet catalog).
+2. Do not add it to MattStack. MattStack only formats Gauntlet findings.
 
 ### Add a command or subgroup
 

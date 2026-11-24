@@ -69,7 +69,7 @@ def test_justfile_emits_the_resolved_command(tmp_path: Path) -> None:
 def test_justfile_ships_a_read_only_gauntlet_target(tmp_path: Path) -> None:
     """The local gate must not write tasks/todo.md, matching the CI job."""
     content = generate_justfile(_config(tmp_path, FrontendFramework.REACT_VITE))
-    assert "    mattstack audit --no-todo\n" in content
+    assert "    mattstack audit --no-todo --fail-if-absent\n" in content
 
 
 def test_justfile_sync_api_uses_the_openapi_command(tmp_path: Path) -> None:

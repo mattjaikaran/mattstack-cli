@@ -33,7 +33,7 @@ mattstack dev                                # Start applications and infrastruc
 mattstack test --parallel                    # Run tests
 mattstack lint --parallel --fix              # Lint + fix
 mattstack fmt                                # Format all
-mattstack audit --html | --versions          # Static analysis; version drift
+mattstack audit --html | --versions          # Gauntlet findings; version drift
 mattstack deps check | update | audit        # Dependencies
 mattstack health --live                      # Service health
 mattstack hooks install                      # Git hooks

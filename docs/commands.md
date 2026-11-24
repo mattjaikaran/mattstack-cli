@@ -483,7 +483,6 @@ it. Commit the generated files; `mattstack sync check` keeps them current.
 mattstack sync                      # Same as `mattstack sync openapi`
 mattstack sync openapi              # Regenerate src/api/generated in the frontend
 mattstack sync check                # Exit 1 when the committed output is stale
-mattstack audit --type types        # Field-level OpenAPI ↔ Zod parity
 ```
 
 `sync types`, `sync zod`, `sync api-client`, and `sync all` are deprecated
@@ -575,29 +574,39 @@ configurations remain authoritative and are preserved.
 
 ## Audit
 
-Run static analysis across six built-in domains and any
-[audit plugins](plugin-guide.md).
+Run the Gauntlet verification engine and format its findings. MattStack
+implements no checks. Every check runs in Gauntlet. See the
+[Gauntlet guide](gauntlet.md).
 
 ```bash
-mattstack audit                                   # All domains
-mattstack audit --type types                      # Pydantic and TypeScript drift
-mattstack audit --type quality                    # TODOs, stubs, hardcoded credentials
-mattstack audit --type endpoints,tests --no-todo
-mattstack audit --type dependencies --type vulnerabilities
-mattstack audit --severity error
-mattstack audit --live --base-url http://localhost:8000   # GET probes only
-mattstack audit --html                            # Writes audit-report.html
-mattstack audit --json > audit.json
+mattstack audit                             # Full tier
+mattstack audit --tier standard             # Standard tier
+mattstack audit --type sentinel             # Deterministic engine only
+mattstack audit --type review               # AI review engine only
+mattstack audit --severity error            # Errors only
+mattstack audit --html                      # Writes audit-report.html
+mattstack audit --json > audit.json         # Machine-readable output
+mattstack audit --no-todo --fail-if-absent  # CI form: fail if Gauntlet is missing
 ```
 
-Other options: `--fix` removes debug statements, and a positional path selects
-the project.
+| Option | Effect |
+|---|---|
+| `--tier` | Gauntlet tier: `fast`, `standard`, `full`, or `release`. Default `full`. |
+| `--type`, `-t` | Gauntlet engine to run: `sentinel`, `conformance`, `review`, or `quality`. |
+| `--severity`, `-s` | Filter displayed findings by severity. |
+| `--json` | Print the run as JSON to stdout. |
+| `--html` | Write `audit-report.html`. |
+| `--no-todo` | Skip the `tasks/todo.md` update. |
+| `--skip-if-absent` | Skip the run when Gauntlet is not installed. The output says so. |
+| `--fail-if-absent` | Fail when Gauntlet is not installed. |
+| `--versions` | Run only the version drift report. See below. |
+| `--live`, `--base-url`, `--fix` | Deprecated. No effect. `--fix` prints a warning. |
 
 Without `--json` or `--no-todo`, audit writes error and warning findings to a
 marked section of `tasks/todo.md`. It replaces an existing section or creates
 the file. JSON mode never writes the todo file. JSON output goes to stdout and
-diagnostics to stderr. Audit returns nonzero for error findings, even when a
-display filter hides them.
+diagnostics to stderr. Audit returns nonzero when Gauntlet's run status is not
+`pass`, even when a display filter hides the findings.
 
 `--versions` runs only the version drift report. It lists each tool and
 service version (Python, uv, Bun, Node, Postgres, Valkey, and key packages)
@@ -610,6 +619,20 @@ below it disagrees. The report exits 1 on any drift. `--json` prints
 ```bash
 mattstack audit --versions
 ```
+
+### `mattstack gauntlet`
+
+`mattstack gauntlet` forwards to the Gauntlet binary. It reads the binary path
+from `gauntlet.toml` and returns Gauntlet's exit code unchanged, so a blocking
+failure still exits 2.
+
+```bash
+mattstack gauntlet check --tier fast
+mattstack gauntlet check --tier full --offline
+mattstack gauntlet run vault show <id>
+```
+
+Options that `check` and `run` do not declare pass through to Gauntlet.
 
 ---
 

@@ -1,5 +1,5 @@
-"""Audit modules for static analysis of generated projects."""
+"""Version-drift audit and the finding types it reports."""
 
-from mattstack.auditors.base import AuditConfig, AuditFinding, AuditType, BaseAuditor, Severity
+from mattstack.auditors.base import AuditFinding, AuditType, Severity
 
-__all__ = ["AuditConfig", "AuditFinding", "AuditType", "BaseAuditor", "Severity"]
+__all__ = ["AuditFinding", "AuditType", "Severity"]

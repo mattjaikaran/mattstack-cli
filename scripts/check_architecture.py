@@ -2,7 +2,7 @@
 """Architecture layer enforcement for mattstack-cli.
 
 Rules:
-    1. commands/ may import from core (generators, auditors, parsers, post_processors,
+    1. commands/ may import from core (gauntlet, generators, parsers, post_processors,
        templates, utils, plus top-level modules: config, presets, user_config, detected).
     2. Core modules MUST NOT import from commands/ (no reverse imports).
     3. No circular imports between core modules.
@@ -23,7 +23,7 @@ SRC_DIR = PROJECT_ROOT / "src" / "mattstack"
 CLI_LAYER = {"commands"}
 CORE_LAYER = {
     "generators",
-    "auditors",
+    "gauntlet",
     "parsers",
     "post_processors",
     "templates",

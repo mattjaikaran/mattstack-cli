@@ -252,7 +252,7 @@ def _gauntlet_recipe(config: ProjectConfig) -> str:
             ]
     if config.is_fullstack and not config.is_nestjs_backend:
         lines.append("    mattstack sync check")
-    lines.append("    mattstack audit --no-todo")
+    lines.append("    mattstack audit --no-todo --fail-if-absent")
     return "\n".join(lines)
 
 

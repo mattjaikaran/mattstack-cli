@@ -32,8 +32,9 @@ def github_triggers() -> str:
 def gauntlet_job(tools: CiTools) -> str:
     """Build the Gauntlet job; its name is the status check `mattstack protect` requires.
 
-    It installs mattstack from git and runs the built-in auditors, which exit 1
-    on any error-severity finding. `--no-todo` keeps CI from writing tasks/todo.md.
+    It installs mattstack from git and runs `mattstack audit`, which runs the Gauntlet
+    binary. `--fail-if-absent` fails the job when the binary is missing, and any
+    blocking finding fails it too. `--no-todo` keeps CI from writing tasks/todo.md.
     """
     return f"""  gauntlet:
     runs-on: ubuntu-latest
@@ -45,7 +46,7 @@ def gauntlet_job(tools: CiTools) -> str:
       - name: Install mattstack
         run: uv tool install git+https://github.com/mattjaikaran/mattstack-cli
       - name: Run the Gauntlet gate
-        run: mattstack audit --no-todo"""
+        run: mattstack audit --no-todo --fail-if-absent"""
 
 
 def _run(command: str, directory: str | None) -> str:

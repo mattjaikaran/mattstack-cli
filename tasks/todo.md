@@ -70,10 +70,6 @@ only for a consumer-visible contract.
   production secrets, and S3 provisioning are unverified. Keep the issue open
   until you supply and authorize those prerequisites. No billable deployment
   runs.
-- [ ] PR #1, audit delegates to `gauntlet check --json`: draft, blocked until
-  the Gauntlet binary ships. It deletes `auditors/`, but `main` has since
-  added `auditors/types_parity.py` and `auditors/versions.py`; expect
-  conflicts.
 - [ ] When Gauntlet is released, replace `scripts/gauntlet.py` and the gate
   table in `CLAUDE.md` with thin wrappers, then delete the duplicate gate
   runners.
@@ -101,7 +97,7 @@ None of these exist in `src/` (checked 2026-10-06).
 - Add preset: `starter-aspnet-api`
 - Add preset: `starter-aspnet-fullstack` (with React frontend)
 - Create `parsers/csharp_schemas.py` — parse C# classes with `[Required]`, `[StringLength]`, property types
-- Extend type auditor for C# ↔ TypeScript cross-language checks
+- Extend the Gauntlet type check for C# ↔ TypeScript cross-language checks
 - Add `ProjectType.ASPNET_BACKEND` or handle via `backend_repo_key` routing
 - Add deploy support: Docker, Azure App Service, AWS ECS
 
@@ -110,7 +106,7 @@ None of these exist in `src/` (checked 2026-10-06).
 - Create `kotlin-android-starter` repo — Jetpack Compose, MVVM, Retrofit, Room
 - Add preset: `starter-android` (add to fullstack like iOS)
 - Create `parsers/kotlin_schemas.py` — parse data classes with `@Serializable` annotation
-- Extend type auditor for Kotlin ↔ Python/TS cross-language checks
+- Extend the Gauntlet type check for Kotlin ↔ Python/TS cross-language checks
 - Add `config.include_android` flag (mirrors `include_ios` pattern)
 - Wire into generators (similar to iOS flow)
 - CI template for Android builds (GitHub Actions)
@@ -120,7 +116,7 @@ None of these exist in `src/` (checked 2026-10-06).
 - Create `react-native-starter` repo — Expo, TypeScript, React Navigation
 - Add preset: `starter-mobile` (add to fullstack like iOS)
 - Reuse existing TS parser (React Native is TypeScript)
-- Existing TS/Zod auditor applies — no new parser needed
+- Existing TS/Zod Gauntlet check applies — no new parser needed
 - Add `config.include_mobile` flag
 - Add deploy support: EAS Build (Expo)
 - Wire into generators (similar to iOS flow)
@@ -131,7 +127,7 @@ None of these exist in `src/` (checked 2026-10-06).
 - Add preset: `starter-sveltekit-fullstack` (SvelteKit + Django API)
 - Add preset: `starter-sveltekit` (SvelteKit standalone)
 - Create `parsers/svelte_schemas.py` — extract TS from `<script lang="ts">` blocks, Zod schemas
-- Extend auditor for SvelteKit routes (`+page.server.ts`, `+server.ts`)
+- Extend the Gauntlet route check for SvelteKit routes (`+page.server.ts`, `+server.ts`)
 - Add `FrontendFramework.SVELTEKIT` enum value
 - Add deploy support: Cloudflare, Docker, DigitalOcean
 
@@ -140,7 +136,7 @@ None of these exist in `src/` (checked 2026-10-06).
 - Create `nuxt-boilerplate` repo — Nuxt 3, TypeScript, auto-imports, composables
 - Add preset: `starter-nuxt-fullstack`, `starter-nuxt`
 - Create `parsers/vue_schemas.py` — extract TS from `<script setup lang="ts">` blocks
-- Extend auditor for Nuxt routes (`server/api/**/*.ts`)
+- Extend the Gauntlet route check for Nuxt routes (`server/api/**/*.ts`)
 - Add `FrontendFramework.NUXT` enum value
 - Add deploy support: Cloudflare, Docker, DigitalOcean
 
@@ -151,6 +147,45 @@ None of these exist in `src/` (checked 2026-10-06).
 - Each needs docker-compose service definitions where applicable
 - Each needs README template additions
 - Each needs CLAUDE.md template additions
-- Type auditor `TYPE_COMPATIBILITY` dict needs language pair entries
+- Extend the Gauntlet type check for new language pairs
 - `NAME_CONVERTERS` dict needs language pair entries
 - Tests for each new parser, generator, and preset
+
+## Phase 23: Gauntlet audit delegation (open items)
+
+`mattstack audit` delegates every check to Gauntlet. Completed work belongs in
+`tasks/completed.md`.
+
+### Remaining
+
+- [ ] Install Gauntlet on this machine and run `mattstack audit` on a real generated
+      project. The integration is verified only against a fake binary.
+- [ ] Remove `--live`, `--base-url`, and `--fix` from `mattstack audit` once Gauntlet is
+      installed everywhere. They are deprecated and have no effect today.
+- [ ] Decide whether the default tier stays `full`. `full` runs the review engine, which
+      needs a local Ollama.
+- [ ] Add a `--tier fast` pre-commit example to `commands/hooks.py` so the scaffolded hook
+      runs the same gate.
+- [ ] Add a `gauntlet-quick` target that runs `--tier fast` for a pre-commit hook.
+- [ ] Report two Gauntlet spec defects upstream:
+      1. `docs/spec/init.md` writes `[checks.sentinel:coverage]` without quotes. Bare TOML
+         keys cannot contain `:`.
+      2. The per-check key form is `[checks.coverage]` in `docs/spec/gauntlet-toml.md` and
+         `[checks.sentinel:coverage]` in `docs/spec/init.md`. Settle it before any consumer
+         writes per-check tables.
+- [ ] Track the Gauntlet TypeScript adapter. Until it ships, a MattStack frontend sits
+      outside the gate.
+- [ ] Extract the pure type-mapping layer from `commands/sync.py` into its own module. The
+      PR branch measured that file past 700 lines, over the 400-line gate.
+
+### Deferred
+
+- Plan conformance for scaffolded projects. `[conformance.plan]` needs a roadmap file, so
+  the generated config leaves it commented out.
+- Ticket conformance. The generated config sets `[conformance.tickets] source = "none"`.
+- Per-project check thresholds. Users edit `gauntlet.toml`; MattStack does not prompt.
+- Mapping the old domains (`types`, `tests`, `endpoints`, `dependencies`,
+  `vulnerabilities`) to Gauntlet engines. Gauntlet has no equivalent yet.
+- Rust detection in `detected.py`. `init` passes `has_rust=False`.
+- Per-check tuning in the generated config, after Gauntlet settles the key form.
+  Coverage, CRAP, and TDD rely on Gauntlet's defaults.

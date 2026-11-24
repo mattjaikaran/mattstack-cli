@@ -226,7 +226,8 @@ mattstack sync        OpenAPI → types, SDK, Zod, TanStack Query (openapi, chec
 mattstack test        Run all tests (parallel supported)
 mattstack lint        Lint all code (parallel supported)
 mattstack fmt         Format all code
-mattstack audit       Static analysis (6 domains); --versions for version drift
+mattstack audit       Run Gauntlet and format its findings; --versions for version drift
+mattstack gauntlet    Call the Gauntlet verification engine (check, run)
 mattstack dev         Start all services
 mattstack deps        Dependency management (check, update, audit)
 mattstack health      Service health checks
@@ -308,21 +309,37 @@ Keep evidence specific:
 
 ## Audit
 
-Six audit domains in one pass:
+MattStack delegates every check to [Gauntlet](https://github.com/mattjaikaran/gauntlet),
+the verification engine. MattStack scaffolds and manages the project; Gauntlet verifies it.
+`mattstack audit` runs `gauntlet check --tier=<tier> --json` and formats the findings. It
+implements no checks of its own.
 
 ```bash
-mattstack audit                         # All domains
-mattstack audit --type types          # OpenAPI ↔ Zod field parity
-mattstack audit --type quality        # TODOs, stubs, hardcoded creds
-mattstack audit --type endpoints      # Missing/unimplemented endpoints
-mattstack audit --type tests          # Coverage gaps
-mattstack audit --type dependencies   # Outdated packages
-mattstack audit --type vulnerabilities # CVE scan
-mattstack audit --html                  # HTML dashboard
-mattstack audit --versions              # Tool/service version drift; exit 1 on drift
+mattstack audit                          # Run the full tier
+mattstack audit --tier standard          # Deterministic checks + plan conformance
+mattstack audit --type sentinel          # Limit to the deterministic engine
+mattstack audit --type review            # Limit to the AI review board
+mattstack audit -s error                 # Show errors only
+mattstack audit --json                   # Machine-readable output
+mattstack audit --html                   # HTML dashboard
+mattstack audit --versions               # Tool/service version drift; exit 1 on drift
+mattstack gauntlet check --tier fast     # Call Gauntlet through mattstack
+mattstack gauntlet run vault show        # Any Gauntlet subcommand
 ```
 
-Results are printed as a Rich table and appended to `tasks/todo.md`.
+| Engine | What it checks |
+|--------|----------------|
+| `sentinel` | Format, lint, type check, tests, coverage, complexity, secrets, suppression, git integrity |
+| `conformance` | The diff against the plan and the linked ticket |
+| `review` | AI review board: architect, senior engineer, security, performance, readability |
+| `quality` | Mutation score and performance regression (release tier) |
+
+Results are printed as a Rich table and appended to `tasks/todo.md`. Pass `--no-todo` to
+skip the update. Pass `--fail-if-absent` to fail when Gauntlet is not installed, or
+`--skip-if-absent` to skip the run with one line.
+
+Generated projects include a `gauntlet.toml` that wraps their local gates. Install Gauntlet
+separately; see [the Gauntlet guide](docs/gauntlet.md).
 
 ---
 
@@ -414,9 +431,9 @@ presets:
     backend_framework: nestjs
 ```
 
-### Custom audit plugins
+### Custom audit checks
 
-See [docs/plugin-guide.md](docs/plugin-guide.md).
+Add the check to Gauntlet, not to MattStack. See [docs/gauntlet.md](docs/gauntlet.md).
 
 ---
 
@@ -427,7 +444,7 @@ See [docs/plugin-guide.md](docs/plugin-guide.md).
 - [Architecture](docs/architecture.md)
 - [Ecosystem & customization](docs/ecosystem.md)
 - [Deployment guide](docs/deployment-guide.md)
-- [Audit plugin guide](docs/plugin-guide.md)
+- [Gauntlet integration](docs/gauntlet.md)
 
 ---
 

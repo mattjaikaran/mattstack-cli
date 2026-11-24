@@ -193,11 +193,11 @@ def audit(
     ] = None,
     audit_type: Annotated[
         list[str] | None,
-        typer.Option("--type", "-t", help="Audit types: repeat or comma-separate values"),
+        typer.Option("--type", "-t", help="Gauntlet engine (repeatable)"),
     ] = None,
     live: Annotated[
         bool,
-        typer.Option("--live", help="Enable live endpoint probing (GET only)"),
+        typer.Option("--live", help="Deprecated. Gauntlet does not probe endpoints."),
     ] = False,
     no_todo: Annotated[
         bool,
@@ -209,7 +209,7 @@ def audit(
     ] = False,
     fix: Annotated[
         bool,
-        typer.Option("--fix", help="Auto-remove debug statements"),
+        typer.Option("--fix", help="Deprecated. Gauntlet does not auto-fix."),
     ] = False,
     base_url: Annotated[
         str,
@@ -223,12 +223,23 @@ def audit(
         bool,
         typer.Option("--html", help="Generate HTML dashboard report"),
     ] = False,
+    tier: Annotated[
+        str,
+        typer.Option("--tier", help="Gauntlet tier: fast, standard, full, release"),
+    ] = "full",
+    skip_if_absent: Annotated[
+        bool | None,
+        typer.Option(
+            "--skip-if-absent/--fail-if-absent",
+            help="Skip the audit when Gauntlet is not installed (default: from gauntlet.toml)",
+        ),
+    ] = None,
     versions: Annotated[
         bool,
         typer.Option("--versions", help="Report tool/service versions; exit 1 on drift"),
     ] = False,
 ) -> None:
-    """Run static analysis on a generated project."""
+    """Run Gauntlet checks on a project and format the findings."""
     from mattstack.commands.audit import run_audit
 
     run_audit(
@@ -241,6 +252,8 @@ def audit(
         base_url=base_url,
         min_severity=severity,
         html_output=html,
+        tier=tier,
+        skip_if_absent=skip_if_absent,
         versions=versions,
     )
 
