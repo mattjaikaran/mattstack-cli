@@ -96,3 +96,7 @@ a claimed spec. The claim is the push that creates `agent/<Spec ID>`.
 | [S-CLI-20](S-CLI-20-github-workflow-triggers-runner.md) GitHub workflow: dispatch, weekly schedule, `--runs-on`, `just ci` checks | READY | none | S-CLI-01 |
 | [S-CLI-21](S-CLI-21-frontend-dev-server-smoke.md) frontend dev server smoke script | READY | none | S-CLI-17 |
 | [S-CLI-22](S-CLI-22-endpoint-audit-controller-scope.md) endpoint audit: controller prefix and class auth | READY | none | none |
+| [S-CLI-32](S-CLI-32-db-tune.md) `mattstack db tune`: pgtune web settings from memory and CPU | READY | none | none |
+| [S-CLI-33](S-CLI-33-audit-scale.md) `audit --type scale`: flag single-process production blockers (WARNING only) | READY | none | none |
+| [S-CLI-34](S-CLI-34-add-pgbouncer.md) `add pgbouncer`: transaction-mode pool in compose, DB host routing, Django settings patch | READY | none | none |
+| [S-CLI-35](S-CLI-35-read-replicas.md) read replicas for the Django backend (needs human decisions) | DRAFT | none | S-CLI-34 |
