@@ -283,7 +283,17 @@ def _check_agent_docs() -> bool:
     if not rejected:
         print(f"agent-docs: broken copy without {heading!r} still passed")
         return False
-    print("agent-docs: repo passes; broken copy rejected")
+
+    with tempfile.TemporaryDirectory(prefix="mattstack-agent-docs-") as tmp:
+        readded = Path(tmp)
+        shutil.copy(root / "AGENTS.md", readded / "AGENTS.md")
+        (readded / "CLAUDE.md").write_text("@AGENTS.md\n", encoding="utf-8")
+        claude_rejected = [p for p in module.check(readded) if p.startswith("CLAUDE.md:")]
+
+    if not claude_rejected:
+        print("agent-docs: copy with a re-added CLAUDE.md still passed")
+        return False
+    print("agent-docs: repo passes; broken copy and re-added CLAUDE.md rejected")
     return True
 
 
