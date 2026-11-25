@@ -5,7 +5,7 @@
 | Spec ID | S-CLI-18 |
 | Backlog item | GitHub issue #131 (rewrite); GitHub issue #95: move agent instructions to AGENTS.md (`CLAUDE.md` imports it) and harden agent context with a link check in a pre-commit hook |
 | Role | coding |
-| Status | READY |
+| Status | DONE |
 | Assigned executor | unattended executor (agent-run) |
 | Base commit | eb306fa |
 | Branch | agent/S-CLI-18 |
@@ -20,6 +20,15 @@
 | Max changed lines | 150 |
 | Verification commands | `uv run python scripts/check_agent_docs.py`; `uv run python scripts/gauntlet.py --gate install`; `uv run ruff format --check src/ tests/ scripts/gauntlet.py`; `uv run ruff check src/ tests/ scripts/gauntlet.py`; `uv run mypy src/`; `uv run bandit -q -r src/ -c pyproject.toml`; `uv run python scripts/check_architecture.py`; `uv run python scripts/check_file_length.py` |
 | Acceptance criteria | A1; A2; A3; A4; A5 (table below) |
+
+## Resolution (2026-11-25)
+
+`_check_agent_docs` and its missing-heading negative control were already on
+`main` from PR #113, so step 1 does not add a second function. The remaining
+work, a second negative control that requires a copy with a re-added
+`CLAUDE.md` to fail `check`, landed on branch `agent/S-CLI-18`, stacked on
+S-CLI-23. `uv run python scripts/gauntlet.py --gate install` prints
+`agent-docs: repo passes; broken copy and re-added CLAUDE.md rejected`.
 
 ## Context and verified citations
 
