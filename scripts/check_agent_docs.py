@@ -3,9 +3,9 @@
 
 Rules:
     1. ``AGENTS.md`` exists and has every required ``## `` heading.
-    2. ``CLAUDE.md`` exists and its first non-blank line is exactly ``@AGENTS.md``.
-    3. Relative Markdown links and ``@path`` imports in ``AGENTS.md``,
-       ``CLAUDE.md`` and ``CONTRIBUTING.md`` name existing paths.
+    2. ``CLAUDE.md`` does not exist; AGENTS.md is the only agent instruction file.
+    3. Relative Markdown links and ``@path`` imports in ``AGENTS.md`` and
+       ``CONTRIBUTING.md`` name existing paths.
 
 Exit 0 on pass, 1 on failure.
 """
@@ -27,8 +27,7 @@ REQUIRED_HEADINGS = (
     "Spec workflow",
     "Security",
 )
-AGENT_DOCS = ("AGENTS.md", "CLAUDE.md", "CONTRIBUTING.md")
-POINTER = "@AGENTS.md"
+AGENT_DOCS = ("AGENTS.md", "CONTRIBUTING.md")
 LINK_TARGET = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 IMPORT_LINE = re.compile(r"^@(\S+)$")
 SKIP_PREFIXES = ("http://", "https://", "mailto:")
@@ -91,15 +90,8 @@ def check(root: Path) -> list[str]:
                 problems.append(f"AGENTS.md: missing heading '## {heading}'")
 
     claude = root / "CLAUDE.md"
-    if not claude.is_file():
-        problems.append("CLAUDE.md: file is missing")
-    else:
-        lines = [
-            line.strip() for line in claude.read_text(encoding="utf-8").splitlines() if line.strip()
-        ]
-        first = lines[0] if lines else ""
-        if first != POINTER:
-            problems.append(f"CLAUDE.md: first non-blank line is {first!r}, expected {POINTER!r}")
+    if claude.exists() or claude.is_symlink():
+        problems.append("CLAUDE.md: must not exist; AGENTS.md is the only agent instruction file")
 
     for name in AGENT_DOCS:
         path = root / name
@@ -123,7 +115,7 @@ def main(argv: list[str] | None = None) -> int:
         for problem in problems:
             print(problem, file=sys.stderr)
         return 1
-    print("Agent docs check passed: AGENTS.md is the source and CLAUDE.md imports it.")
+    print("Agent docs check passed: AGENTS.md is the only agent instruction file.")
     return 0
 
 

@@ -10,6 +10,7 @@ components, syncs the OpenAPI client, and audits projects for quality.
 - Python 3.12+, uv (never pip), ruff, hatchling, Apache-2.0
 - Inspect commands with `uv run mattstack --help`; inspect presets and source
   mappings with `uv run mattstack info`.
+- Agent layout contract: [docs/agent-layout.md](docs/agent-layout.md)
 
 ## Commands
 
