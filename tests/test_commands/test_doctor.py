@@ -33,10 +33,6 @@ def test_pre_push_hook_fails_until_installed(
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     monkeypatch.setenv("GIT_CONFIG_COUNT", "0")
-    # Git exports these to hooks; run from a linked worktree's pre-push hook,
-    # they would point the temp repo at the outer repository.
-    for name in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR"):
-        monkeypatch.delenv(name, raising=False)
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
     (tmp_path / ".pre-commit-config.yaml").write_text(PRE_PUSH_CONFIG, encoding="utf-8")
 
