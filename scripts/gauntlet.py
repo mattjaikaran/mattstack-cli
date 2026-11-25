@@ -269,7 +269,7 @@ def _check_agent_docs() -> bool:
     heading = module.REQUIRED_HEADINGS[0]
     with tempfile.TemporaryDirectory(prefix="mattstack-agent-docs-") as tmp:
         broken = Path(tmp)
-        for name in ("AGENTS.md", "CLAUDE.md"):
+        for name in ("AGENTS.md",):
             shutil.copy(root / name, broken / name)
         agents = broken / "AGENTS.md"
         kept = [
