@@ -23,6 +23,28 @@ components; the CLI does not invent a second copy.
   `gh release create` with both files. No workflow publishes releases, so
   0.9.0 was tagged without one.
 
+## Roadmap 2026-11 (specs S-CLI-23 to S-CLI-43)
+
+Plan: [docs/plans/2026-11-25-roadmap.md](../docs/plans/2026-11-25-roadmap.md).
+Each item is a spec in [tasks/specs/](specs/README.md) and a GitHub issue.
+
+- [ ] Agent layout in this repo and generated projects: S-CLI-23, S-CLI-24,
+  S-CLI-25, then S-CLI-18. Contract: [docs/agent-layout.md](../docs/agent-layout.md).
+- [ ] Boilerplate agent-layout migration: one issue per boilerplate repo,
+  tracked in the fleet tracking issue. Bodies: `tasks/fleet/agent-layout/`.
+- [ ] Fleet: S-CLI-26 `fleet list`, S-CLI-27 `fleet check`, S-CLI-28 `fleet issue`.
+- [ ] Postgres stability: S-CLI-29 `audit --type migrations`, S-CLI-30
+  `db doctor`, S-CLI-31 CRUD query-count guard.
+- [ ] Scaling: S-CLI-32 `db tune`, S-CLI-33 `audit --type scale`, S-CLI-34
+  `add pgbouncer`; S-CLI-35 read replicas is DRAFT (needs decisions).
+- [ ] Vector and graph: S-CLI-36 AGE + pgvector image, S-CLI-37 `generate
+  embedding`, S-CLI-38 `audit --type vectors`, S-CLI-39 Qdrant/Neo4j health.
+- [ ] Standards: S-CLI-40 `audit --baseline`, S-CLI-41 `sync check
+  --breaking`, S-CLI-43 `adr`; S-CLI-42 architecture contracts is DRAFT.
+- [ ] Gauntlet candidates: when Gauntlet ships, move the migrations,
+  vectors, scale, and OpenAPI breaking-change checks there instead of
+  keeping a third copy.
+
 ## Open bugs and gaps
 
 - [ ] `mattstack hooks install` fails when Git `core.hooksPath` is set,
@@ -30,7 +52,7 @@ components; the CLI does not invent a second copy.
   (`commands/hooks.py`). `hooks status` also reads `.git/hooks` directly
   instead of the configured hooks directory.
 - [ ] `init --graph age` exits 2 because the `apache/age` image has no
-  pgvector (`commands/init_runtime.py`).
+  pgvector (`commands/init_runtime.py`). Spec: S-CLI-36.
 - [ ] Generated GitHub and GitLab CI use `postgres:N` for AI projects. Use the
   same `pgvector/pgvector:pgN` image as Compose (`commands/workflow.py`).
 - [ ] Route parser: read class-level `auth=` on `@api_controller`; it now
@@ -150,7 +172,8 @@ None of these exist in `src/` (checked 2026-10-06).
 - Each needs Makefile targets added to `root_makefile.py`
 - Each needs docker-compose service definitions where applicable
 - Each needs README template additions
-- Each needs CLAUDE.md template additions
+- Each needs AGENTS.md template additions (no CLAUDE.md; see
+  `docs/agent-layout.md`)
 - Type auditor `TYPE_COMPATIBILITY` dict needs language pair entries
 - `NAME_CONVERTERS` dict needs language pair entries
 - Tests for each new parser, generator, and preset

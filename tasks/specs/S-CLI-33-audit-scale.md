@@ -3,94 +3,88 @@
 | Field | Value |
 |---|---|
 | Spec ID | S-CLI-33 |
-| Backlog item | `docs/plans/2026-11-25-roadmap.md:90-99` (section 4, "Scaling: vertical and horizontal", audit item) |
+| Backlog item | `docs/plans/2026-11-25-roadmap.md` (section 4, "Scaling", scale audit item) |
 | Role | coding |
 | Status | READY |
 | Assigned executor | unattended executor (agent-run) |
 | Base commit | e89fac4 |
 | Branch | agent/S-CLI-33 |
 | Depends on | none |
-| Conflicts with | none |
-| Files owned | `src/mattstack/auditors/scale.py` (new), `src/mattstack/auditors/base.py` (one enum value), `src/mattstack/commands/audit.py` (one dict entry) |
+| Conflicts with | S-CLI-29 (`src/mattstack/auditors/base.py`, `src/mattstack/commands/audit.py`); S-CLI-38 (`src/mattstack/auditors/base.py`, `src/mattstack/commands/audit.py`); S-CLI-40 (`src/mattstack/commands/audit.py`) |
+| Files owned | `src/mattstack/auditors/scale.py` (new), `src/mattstack/auditors/base.py` (one enum member), `src/mattstack/commands/audit.py` (one `AUDITOR_CLASSES` entry) |
 | Migrations | none |
 | Runtime locks | none |
 | Human needed | none |
 | Size | M |
 | Max files | 15 |
 | Max changed lines | 800 |
-| Verification commands | `uv run ruff format --check src/ tests/`; `uv run ruff check src/ tests/`; `uv run mypy src/`; `uv run bandit -q -r src/ -c pyproject.toml`; `uv run python scripts/check_architecture.py`; `uv run python scripts/check_file_length.py`; `uv run python scripts/gauntlet.py --gate install`; plus acceptance rows A1-A5 below |
-| Acceptance criteria | A1; A2; A3; A4; A5 (table below) |
+| Verification commands | `uv run ruff format --check src/ tests/`; `uv run ruff check src/ tests/`; `uv run mypy src/`; `uv run bandit -q -r src/ -c pyproject.toml`; `uv run python scripts/check_architecture.py`; `uv run python scripts/check_file_length.py`; `uv run python scripts/gauntlet.py --gate install`; plus acceptance rows A1-A6 below |
+| Acceptance criteria | A1 fresh scaffold has no ERROR; A2 bad fixture fires four rules; A3 test-only settings fire nothing; A4 no prod settings gives one INFO; A5 `--json` output has no ERROR; A6 default `audit` run includes the scale auditor and no ERROR |
 
 ## Context and verified citations
 
-Base commit `e89fac4`. Line numbers were read at that commit.
+Base commit `e89fac4`. Items marked `(unverified)` must be confirmed by the executor before use. A failed confirmation is a stop condition.
 
-- `src/mattstack/auditors/base.py:11` `class Severity`. `:17` `class AuditType(StrEnum)`, with `TYPES = "types"` at `:18` through `VULNERABILITIES = "vulnerabilities"` at `:23`. Add `SCALE = "scale"` after `:23`.
-- `src/mattstack/auditors/base.py:47-48` `AuditConfig.project_path: Path`; `:55` `min_severity`. `BaseAuditor.__init__(self, config)` at `:70`. `add_finding(severity, file, line, message, suggestion)` and `_rel` are on the base class (signatures read earlier; the executor confirms the exact keyword names with `sed -n 70,120p`).
-- `src/mattstack/commands/audit.py:37-44` `AUDITOR_CLASSES` dict. Add `AuditType.SCALE: ScaleAuditor`. `:47` `run_audit`. `:122` loop `for audit_type, auditor_cls in AUDITOR_CLASSES.items()`. Without `--type`, all auditors run. The default run includes scale after this change, so its findings must be WARNING and must not change the exit code. `typer.Exit(code=1)` is raised at `:69`, `:88`, `:102`, `:200`, `:222` (the executor confirms none of these is triggered by WARNING-only findings).
-- `src/mattstack/auditors/types.py` (62 lines) is the pattern for a small auditor.
-- `src/mattstack/config.py:330-331` `ProjectConfig.backend_dir` returns `self.path / "backend"`. Audit has no ProjectConfig, so the auditor uses `self.config.project_path / "backend"` (same convention; unverified that every auditor does the same).
-- Architecture: `scripts/check_architecture.py:130-134` (core modules must not import `commands/`). The scale auditor must not import anything from `commands/`. `scripts/check_file_length.py:15` `MAX_LINES = 400`.
-- Django-ninja boilerplate (`~/dev/boilerplates/django-ninja-boilerplate`, `origin/main`), read earlier:
-  - `api/settings/common.py:250` `"CONN_MAX_AGE": 0`. Lines 205-211 explain why it must stay 0 with the psycopg pool.
-  - `api/settings/common.py:458-481` `CACHES`. Backends are `django_vcache.backend.ValkeyCache` (vcache, default), `django_valkey.cache.ValkeyCache` (valkey), and `django.core.cache.backends.redis.RedisCache` (redis). All are shared caches, so they are not LocMemCache.
-  - `api/settings/common.py:490` session engine `django.contrib.sessions.backends.cache`.
-  - `api/settings/test.py:53` LocMemCache, used by tests only. Must not be flagged.
-  - `api/settings/common.py:367-372` S3 storage branch, guarded by production and `AWS_STORAGE_BUCKET_NAME`. The literal text `storages.backends.s3boto3` used by the R3 check is `(unverified)`. The executor confirms it with `grep -n s3 api/settings/common.py` before relying on it.
-  - `api/healthcheck.py:46` `@api_controller("/health", tags=["Health"])`, mounted at `/api/health`.
-  - Production settings file: `api/settings/prod.py` (exists on the boilerplate; the executor confirms its path).
-- Delta rule (parent): the boilerplate already ships deployment manifests (deploy/k3s and Helm, `(unverified)`). This spec adds only the CLI audit rules. It does not change those manifests.
+- `src/mattstack/auditors/base.py:17-23` `AuditType` enum. The new member `SCALE = "scale"` goes after line 23.
+- `src/mattstack/auditors/base.py:56-62` `run_all` returns True when `audit_types is None`, and `should_run` returns `run_all or audit_type in (audit_types or [])`. **Verified.** Consequence: once registered, the scale auditor runs on every plain `mattstack audit`, including the gauntlet recipe that runs `mattstack audit --no-todo` (verified in the generated root justfile source under `src/mattstack/`). Every finding this auditor emits must therefore be WARNING or INFO. ERROR is forbidden.
+- `src/mattstack/commands/audit.py:150` `error_count = sum(1 for f in report.findings if f.severity == Severity.ERROR)`. **Verified.** Only ERROR findings affect the exit path, so WARNING findings do not change any existing exit status.
+- `src/mattstack/commands/audit.py:37-44` `AUDITOR_CLASSES` mapping. Add one entry for `AuditType.SCALE`.
+- The audit command's type option: `(unverified)` the option name (`--type`) and its handling of comma lists. Confirm with `uv run mattstack audit --help`.
+- Architecture: `auditors/` is a core layer and must not import from `commands/` (`scripts/check_architecture.py:7,130-134`). **Verified** from the prior pass. Therefore `auditors/scale.py` must NOT import `settings_texts` from `commands/codegen/backend_layout.py:137`. The module owns its own file discovery and reads raw text. It may use `stack_detection.settings_module_from_manage` (core) if it needs the module name.
+- `settings_texts` strips comments with `#.*` and reads every settings file. The scale auditor does NOT reuse it. Comment handling is per-line: skip any line whose first non-space character is `#`. The rules do not depend on comments.
 
 ## Goal and non-goals
 
-Goal: `mattstack audit --type scale` reads production settings and backend code, and reports WARNING findings for patterns that break when the app runs with more than one process or replica:
+Goal: a new auditor, `scale`, reports settings and layout patterns that block running more than one web process. Every check is WARNING, except the no-prod-settings case, which is INFO.
 
-- R1 `LocMemCache` configured in a production settings file. Per-process cache.
-- R2 `SESSION_ENGINE` set to `django.contrib.sessions.backends.file`. Per-host sessions.
-- R3 `MEDIA_ROOT` set in production with no S3 or other remote storage string in the same settings file. Local uploads.
-- R4 An in-process scheduler import (`apscheduler`, `BackgroundScheduler`, `schedule`) in `backend/**/*.py`. Each replica would run its own copy.
-- R5 No `/health` route found in `backend/**/*.py`. Load balancers need one.
+Rules (every rule ID is the constant shown; the executor copies the strings exactly):
 
-Each finding is WARNING. Settings with `CONN_MAX_AGE = 0`, `CACHES` pointing at a shared backend, or `SESSION_ENGINE` set to the cache or db backend must produce no finding.
+- R1 `scale.local_mem_cache`: production settings select `django.core.cache.backends.locmem.LocMemCache`. Each process has its own cache, so cache state diverges across processes.
+- R2 `scale.file_sessions`: production settings set `SESSION_ENGINE` to `django.contrib.sessions.backends.file`. Sessions live on one machine's disk.
+- R3 `scale.local_media`: production settings set `MEDIA_ROOT` and do not reference an S3 storage backend (`storages.backends.s3boto3`, `(unverified)`: the exact backend string the boilerplate uses; confirm in `~/dev/boilerplates/django-ninja-boilerplate` on `origin/main`).
+- R4 `scale.in_process_scheduler`: any backend `.py` file (excluding `tests/` and `migrations/`) imports `apscheduler`, `schedule`, or uses `BackgroundScheduler`. Each process would run its own copy of every job.
+- R5 `scale.no_health_route`: no backend `urls*.py` or api module contains the string `health`. Load balancers need a health route. WARNING.
 
 Non-goals:
-- No ERROR severity. No change to exit codes.
-- No auto-fix (`--fix` is not used).
-- No live checks (`--live` is not used).
-- No changes to the boilerplate.
-- No tests under `tests/`. No pytest. Proof comes from the acceptance rows.
+- No ERROR findings. No change to exit codes of existing audits.
+- No `CONN_MAX_AGE` rule. The ninja boilerplate hardcodes `CONN_MAX_AGE: 0` on purpose (`api/settings/common.py:250`, `origin/main`), and the pool replaces it, so a `CONN_MAX_AGE` check would be a false positive on a fresh scaffold.
+- No DB pool rule. Pool settings are S-CLI-34's concern.
+- No changes under `tests/`. No pytest.
+
+## Settings discovery (exact rule)
+
+- Production settings files are matched by glob against the project's backend directory: `backend/**/settings/prod*.py` and `backend/**/settings/production*.py`. Only these files are checked by R1-R3.
+- If no production settings file exists, the auditor emits ONE INFO finding with rule `scale.no_prod_settings` and skips R1-R3. It does not fall back to `settings.py`, because `settings.py` is usually a dev configuration.
+- R4 and R5 scan backend files, not settings files.
 
 ## Implementation steps
 
-1. Add `SCALE = "scale"` to `AuditType` in `src/mattstack/auditors/base.py` after line 23.
-2. Create `src/mattstack/auditors/scale.py` with `class ScaleAuditor(BaseAuditor)` and `run() -> list[AuditFinding]`:
-   - Find production settings: `backend/**/settings/prod*.py` and `backend/**/settings/production*.py` (glob, sorted). If none exist, add one INFO finding ("no production settings module found; settings rules skipped") and skip R1-R3.
-   - R1-R3 are text checks on each production settings file: `LocMemCache` in `CACHES`; `sessions.backends.file`; `MEDIA_ROOT` with no `storages` or `S3` substring in the same file.
-   - R4 and R5 scan `backend/**/*.py`, skipping `tests/`, `migrations/`, and `.venv`.
-   - R1 must not flag `test.py`. Only production files are read.
-3. Register `AuditType.SCALE: ScaleAuditor` in `AUDITOR_CLASSES` (`src/mattstack/commands/audit.py:37-44`) and add the import.
-4. Keep `scale.py` under 400 lines.
-5. Run the verification commands once at the end. Do not add tests to `tests/`.
+1. `auditors/base.py`: add `SCALE = "scale"` to `AuditType` after line 23.
+2. `auditors/scale.py` (new): a class implementing the existing auditor interface (`(unverified)`: the base-class name and method signature in `auditors/base.py`; the executor copies an existing auditor such as the one at `auditors/` for the signature). Implements discovery, R1-R5, and `scale.no_prod_settings`. Every finding uses `Severity.WARNING`, except `scale.no_prod_settings`, which uses `Severity.INFO`.
+3. `commands/audit.py`: add `AuditType.SCALE: ScaleAuditor` to `AUDITOR_CLASSES`.
+4. Run the verification commands once at the end. Do not add tests to `tests/`.
 
-## Acceptance criteria
+## Machine-checkable acceptance
 
-Each row runs the CLI from the repo root. `$TMP` is a fresh `mktemp -d`. The fixtures are built with heredocs in the row. JSON assertions search the output text rather than a fixed schema, because the exact JSON shape is `(unverified)`.
+Each row runs from the repo root. `$TMP` is a fresh `mktemp -d`. Fixtures are built by writing files into `$TMP` with `printf` or `cat <<'EOF'`.
 
-| ID | Cwd | Exact command | Expected exit/status | Exact output or JSON assertion |
+Rule IDs in the output are the strings above. Assertions are on stdout text, because the JSON shape is `(unverified)`.
+
+| ID | Cwd | Exact command | Expected exit/status | Exact output or assertion |
 |---|---|---|---|---|
-| A1 | repo root | `mkdir -p "$TMP/clean/backend/api/settings" && printf 'CONN_MAX_AGE = 0\nCACHES = {"default": {"BACKEND": "django_valkey.cache.ValkeyCache"}}\nSESSION_ENGINE = "django.contrib.sessions.backends.cache"\n' > "$TMP/clean/backend/api/settings/prod.py" && uv run mattstack audit --type scale "$TMP/clean" --json > "$TMP/clean.json"; echo "exit=$?"` then `uv run python -c 'import sys; t=open(sys.argv[1]).read(); bad=[k for k in ["LocMemCache","sessions.backends.file","MEDIA_ROOT"] if k in t]; assert not bad, bad; print("A1 ok")' "$TMP/clean.json"` | `exit=0`, then stdout `A1 ok` | No finding is reported for the clean fixture. |
-| A2 | repo root | `mkdir -p "$TMP/bad/backend/api/settings" "$TMP/bad/backend/jobs" && printf 'CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}\nSESSION_ENGINE = "django.contrib.sessions.backends.file"\nMEDIA_ROOT = "/srv/media"\n' > "$TMP/bad/backend/api/settings/prod.py" && printf 'from apscheduler.schedulers.background import BackgroundScheduler\n' > "$TMP/bad/backend/jobs/sched.py" && uv run mattstack audit --type scale "$TMP/bad" --json > "$TMP/bad.json"; echo "exit=$?"` then `uv run python -c 'import sys; t=open(sys.argv[1]).read(); missing=[k for k in ["LocMemCache","sessions.backends.file","MEDIA_ROOT","apscheduler"] if k not in t]; assert not missing, missing; print("A2 ok")' "$TMP/bad.json"` | `exit=0` (warnings do not change exit), then stdout `A2 ok` | Each of the four rule triggers appears in the output. |
-| A3 | repo root | `mkdir -p "$TMP/testonly/backend/api/settings" && printf 'CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}\n' > "$TMP/testonly/backend/api/settings/test.py" && uv run mattstack audit --type scale "$TMP/testonly" --json > "$TMP/testonly.json"; echo "exit=$?"` | `exit=0` | `uv run python -c 'import sys; t=open(sys.argv[1]).read(); assert "LocMemCache" not in t, t; print("A3 ok")' "$TMP/testonly.json"` prints `A3 ok`. LocMemCache in `test.py` is not flagged. |
-| A4 | repo root | `mkdir -p "$TMP/noprod/backend/api" && printf 'x = 1\n' > "$TMP/noprod/backend/api/settings.py" && uv run mattstack audit --type scale "$TMP/noprod" --json > "$TMP/noprod.json"; echo "exit=$?"` | `exit=0` | `uv run python -c 'import sys; t=open(sys.argv[1]).read(); assert "no production settings" in t, t; print("A4 ok")' "$TMP/noprod.json"` prints `A4 ok`. |
-| A5 | repo root | `uv run mattstack audit --type scale --help; echo "exit=$?"` then `uv run mattstack audit --type nosuchtype "$TMP/clean"; echo "exit=$?"` | Help exits 0. Unknown type exits non-zero (existing behaviour). | Help output lists `scale` as a type or accepts `--type`. The unknown-type run prints an error. |
+| A1 | repo root | `uv run mattstack init "$TMP/fresh" --preset starter-fullstack >/dev/null 2>&1; uv run mattstack audit --type scale "$TMP/fresh" > "$TMP/a1.out" 2>&1; echo "exit=$?"; ! grep -q 'ERROR' "$TMP/a1.out" && echo no-error` | `exit=0` or `exit=` with warnings only, then `no-error` | A fresh scaffold has no ERROR finding from the scale auditor. Warnings are allowed, because the boilerplate may still fire R5 or R1. Init flags are `(unverified)`: confirm with `uv run mattstack init --help`. |
+| A2 | repo root | `mkdir -p "$TMP/bad/backend/config/settings" && cd "$TMP/bad" && printf 'CACHES={"default":{"BACKEND":"django.core.cache.backends.locmem.LocMemCache"}}\nSESSION_ENGINE="django.contrib.sessions.backends.file"\nMEDIA_ROOT="/srv/media"\n' > backend/config/settings/prod.py && printf 'from apscheduler.schedulers.background import BackgroundScheduler\n' > backend/config/jobs.py && cd - >/dev/null && uv run mattstack audit --type scale "$TMP/bad" > "$TMP/a2.out" 2>&1; for r in scale.local_mem_cache scale.file_sessions scale.local_media scale.in_process_scheduler; do grep -c "$r" "$TMP/a2.out"; done` | each count `1` or more | Four lines, each at least 1: R1, R2, R3, R4. R5 also fires here (no `health` route), which is fine. |
+| A3 | repo root | `mkdir -p "$TMP/t/backend/config/settings" && printf 'CACHES={"default":{"BACKEND":"django.core.cache.backends.locmem.LocMemCache"}}\n' > "$TMP/t/backend/config/settings/test.py" && uv run mattstack audit --type scale "$TMP/t" > "$TMP/a3.out" 2>&1; grep -c 'scale.local_mem_cache' "$TMP/a3.out"` | `0` | Test settings are not checked. `scale.no_prod_settings` may appear, that is fine. |
+| A4 | repo root | `mkdir -p "$TMP/np/backend/config/settings" && printf 'DEBUG=True\n' > "$TMP/np/backend/config/settings/dev.py" && uv run mattstack audit --type scale "$TMP/np" > "$TMP/a4.out" 2>&1; grep -c 'scale.no_prod_settings' "$TMP/a4.out"; grep -c 'INFO' "$TMP/a4.out"` | `1` then `1` or more | Exactly one `scale.no_prod_settings`, emitted as INFO. |
+| A5 | repo root | `uv run mattstack audit --type scale "$TMP/bad" --json > "$TMP/a5.json" 2>/dev/null; uv run python -c 'import sys; t=open(sys.argv[1]).read(); assert "scale.local_mem_cache" in t, "no finding"; assert "\"ERROR\"" not in t and "\"error\"" not in t, "error severity present"; print("A5 ok")' "$TMP/a5.json"` | exit 0, stdout `A5 ok` | `--json` output contains the findings and no error-severity marker. `(unverified)`: JSON severity key casing; the executor checks the actual output and adjusts the two literal strings only if the shape differs. |
+| A6 | repo root | `uv run mattstack audit "$TMP/fresh" > "$TMP/a6.out" 2>&1; grep -c 'scale' "$TMP/a6.out"; ! grep -q 'ERROR' "$TMP/a6.out" && echo no-error` | count `1` or more, then `no-error` | A plain `audit` run includes the scale auditor (the count is at least 1), and the fresh scaffold has no ERROR from it. Other auditors may report errors; this row checks only the scale auditor's contribution, so the executor compares against the base-commit output of `audit` on the same fixture and confirms the ERROR set is unchanged. |
 
 ## Stop conditions and PR evidence
 
-Stop and report, without editing other files, if any of these happen:
-- A citation in this spec no longer matches at the base commit. Re-verify it with `sed -n` before continuing.
-- Any WARNING-only run changes the exit code of `audit`. Check `audit.py:69`, `:88`, `:102`, `:200`, `:222` first.
-- The clean fixture (A1) produces a finding. That is a false positive. Do not loosen the rule to make A1 pass without reporting it.
-- The R3 string check (`storages.backends.s3boto3`) is not present in the boilerplate. Report it; do not invent a new string.
-- `scale.py` would exceed 400 lines.
+Stop and report if any of these happen:
+- A citation in this spec no longer matches at the base commit. Re-verify with `sed -n` before continuing.
+- A rule string cannot be checked without importing from `commands/`. Stop; do not add the import (architecture rule).
+- A fresh scaffold produces an ERROR from the scale auditor. Downgrade the rule to WARNING and report; never leave an ERROR.
+- A2 fires fewer than four rules on the bad fixture. Fix the rule, not the fixture.
 
-PR evidence: stdout and exit codes of A1-A5, plus the output of each verification command.
+PR evidence: stdout and exit codes of A1-A6, plus the output of each verification command.

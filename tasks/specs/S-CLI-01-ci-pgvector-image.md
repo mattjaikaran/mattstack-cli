@@ -10,7 +10,7 @@
 | Base commit | 9bf4cfe |
 | Branch | agent/S-CLI-01 |
 | Depends on | none |
-| Conflicts with | none |
+| Conflicts with | S-CLI-20 (`src/mattstack/commands/workflow.py`) |
 | Files owned | `src/mattstack/templates/ci_toolchain.py`, `src/mattstack/commands/workflow.py`, `tests/test_commands/test_workflow.py` |
 | Migrations | none |
 | Runtime locks | none |

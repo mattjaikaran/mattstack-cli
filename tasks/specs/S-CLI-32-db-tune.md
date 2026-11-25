@@ -10,7 +10,7 @@
 | Base commit | e89fac4 |
 | Branch | agent/S-CLI-32 |
 | Depends on | none |
-| Conflicts with | none |
+| Conflicts with | S-CLI-30 (`src/mattstack/commands/db.py`) |
 | Files owned | `src/mattstack/pg_tuning.py` (new), `src/mattstack/commands/db_tune.py` (new), `src/mattstack/commands/db.py` (register one command) |
 | Migrations | none |
 | Runtime locks | none |
@@ -23,7 +23,7 @@
 
 ## Context and verified citations
 
-Base commit `e89fac4`. Line numbers were read at that commit. The pgtune source was read from `le0pard/pgtune` on `master`, fetched 2026-11-25.
+Base commit `e89fac4`. Line numbers were read at that commit. The pgtune source was read from `le0pard/pgtune` at commit `ce7a7325f6cc2a7b72062736ccc5971603c79974` (master HEAD at fetch time, 2026-11-25). Every pgtune citation below refers to this commit.
 
 - `src/mattstack/commands/db.py:27` defines `db_app = typer.Typer(name="db", ...)`. It is the Django `db` group, lazy-loaded by `src/mattstack/cli.py:41` (`LazyGroupSpec("mattstack.commands.db", "db_app", ...)`). The file is 374 lines, so only a few lines can be added there (400-line cap, `scripts/check_file_length.py:15`, `MAX_LINES = 400`).
 - `src/mattstack/config.py` already has no pgtune concept. There is no existing memory or CPU input anywhere in `src/`.
@@ -31,7 +31,7 @@ Base commit `e89fac4`. Line numbers were read at that commit. The pgtune source 
 - pgtune source, `src/features/configuration/configurationSelectors.js` (fetched 2026-11-25):
   - shared_buffers = floor(RAM/4) for web, rounded down to whole MB (`selectSharedBuffers`, lines 98-108; `roundDownToMb` at lines 57-59).
   - effective_cache_size = floor(RAM x 3/4) for web (lines 123-133).
-  - maintenance_work_mem = floor(RAM/16) for web, capped at 8 GB on Linux (lines 137-168).
+  - maintenance_work_mem = floor(RAM/16) for web, capped at 8 GB on Linux (lines 142-167).
   - wal_buffers = clamp(floor(shared_buffers / 8 / 32) x 8 kB, 64 kB, 16 MB) (lines 203-209).
   - checkpoint_completion_target = 0.9 when PostgreSQL < 14, otherwise not set (lines 196-200).
   - min_wal_size = 1 GB and max_wal_size = 4 GB for web (lines 171-190).
@@ -47,7 +47,7 @@ Base commit `e89fac4`. Line numbers were read at that commit. The pgtune source 
   - `pg12-linux-web-4gb-2cpu-san-2000-connections.conf`: max_connections 2000, shared_buffers 1GB, effective_cache_size 3GB, maintenance_work_mem 256MB, wal_buffers 16MB, random_page_cost 1.1, effective_io_concurrency 300, work_mem 4MB, checkpoint_completion_target 0.9, min_wal_size 1GB, max_wal_size 4GB. No parallel keys (2 CPUs).
   - Note: the snapshots also contain keys that are out of scope here (`wal_compression`, `vacuum_cost_page_miss`, `autovacuum_vacuum_cost_delay`, `jit`). Do not emit them.
 - The brief's wording "work_mem = (RAM - shared_buffers) / (3 x max_connections)" is simplified. The source divides by `(max_connections + parallel_workers) x 3`. Use the source.
-- The brief's maintenance_work_mem cap of 2 GB is wrong for Linux. The source caps it at 8 GB (line 152). Use 8 GB.
+- The brief's maintenance_work_mem cap of 2 GB is wrong for Linux. The source caps it at 8 GB (lines 142-167). Use 8 GB.
 
 ## Goal and non-goals
 
@@ -77,7 +77,7 @@ Non-goals:
 4. Do not change `docker_compose.py`, `compose_env.py`, or any template.
 5. Run the verification commands once at the end. Do not run the formulas in a test file.
 
-## Acceptance criteria
+## Machine-checkable acceptance
 
 Each row runs the CLI from the repo root. `$TMP` is a fresh `mktemp -d`.
 

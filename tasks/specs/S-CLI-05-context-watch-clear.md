@@ -10,7 +10,7 @@
 | Base commit | 9bf4cfe |
 | Branch | agent/S-CLI-05 |
 | Depends on | none |
-| Conflicts with | none |
+| Conflicts with | S-CLI-25 (`src/mattstack/commands/context.py`, `tests/test_commands/test_context.py`) |
 | Files owned | `src/mattstack/commands/context.py`, `tests/test_commands/test_context.py` |
 | Migrations | none |
 | Runtime locks | none |

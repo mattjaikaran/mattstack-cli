@@ -10,7 +10,7 @@
 | Base commit | 599d338 |
 | Branch | agent/S-CLI-15 |
 | Depends on | none |
-| Conflicts with | S-CLI-16 |
+| Conflicts with | S-CLI-16; S-CLI-24 (`tests/test_post_processors.py`) |
 | Files owned | `src/mattstack/post_processors/frontend_config.py`, `src/mattstack/post_processors/frontend_openapi_pin.py` (new), `tests/test_post_processors.py` |
 | Migrations | none |
 | Runtime locks | none |

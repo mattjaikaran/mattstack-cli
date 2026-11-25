@@ -9,7 +9,7 @@
 | Assigned executor | none until a human approves the open decisions below |
 | Base commit | e89fac4 |
 | Branch | agent/S-CLI-35 |
-| Depends on | none (S-CLI-34 is related: both touch compose and settings; see Conflicts) |
+| Depends on | none |
 | Conflicts with | S-CLI-34 (`templates/docker_compose.py`, `templates/compose_env.py`, `post_processors/customizer.py`) |
 | Files owned | none yet (to be decided after the human decisions) |
 | Migrations | none |
@@ -53,7 +53,7 @@ Without decisions 1-3 this spec cannot be claimed. It is recorded as DRAFT so th
 
 Not set. Written after decisions 1-3 are recorded here by a human.
 
-## Acceptance criteria
+## Machine-checkable acceptance
 
 None yet. Acceptance rows will be added when the spec becomes READY.
 

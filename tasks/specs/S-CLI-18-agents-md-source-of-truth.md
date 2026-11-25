@@ -9,8 +9,8 @@
 | Assigned executor | unattended executor (agent-run) |
 | Base commit | eb306fa |
 | Branch | agent/S-CLI-18 |
-| Depends on | none |
-| Conflicts with | none |
+| Depends on | S-CLI-23 |
+| Conflicts with | S-CLI-23 (`scripts/gauntlet.py`); S-CLI-26 (`scripts/gauntlet.py`); S-CLI-27 (`scripts/gauntlet.py`); S-CLI-28 (`scripts/gauntlet.py`); S-CLI-40 (`scripts/gauntlet.py`); S-CLI-41 (`scripts/gauntlet.py`) |
 | Files owned | `scripts/gauntlet.py` |
 | Migrations | none |
 | Runtime locks | none |

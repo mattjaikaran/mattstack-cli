@@ -10,7 +10,7 @@
 | Base commit | 9337e65 |
 | Branch | agent/S-CLI-11 |
 | Depends on | none |
-| Conflicts with | none |
+| Conflicts with | S-CLI-13 (`src/mattstack/cli.py`, `tests/test_commands/test_cli.py`); S-CLI-24 (`src/mattstack/cli.py`); S-CLI-26 (`src/mattstack/cli.py`); S-CLI-43 (`src/mattstack/cli.py`) |
 | Files owned | `src/mattstack/cli.py`, `tests/test_commands/test_cli.py` |
 | Migrations | none |
 | Runtime locks | none |
