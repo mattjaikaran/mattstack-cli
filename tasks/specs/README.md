@@ -35,7 +35,7 @@ conditions.
 
 ## Executor rules
 
-- Read `CLAUDE.md`, `docs/architecture.md` and the spec before you edit.
+- Read `AGENTS.md`, `docs/architecture.md` and the spec before you edit.
 - Change only the spec's Files owned. Do not edit `tasks/todo.md`,
   `tasks/completed.md` or `tasks/specs/`.
 - Use `uv` only. Add no dependency.
