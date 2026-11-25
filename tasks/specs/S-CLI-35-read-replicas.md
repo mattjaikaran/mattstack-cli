@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Spec ID | S-CLI-35 |
-| Backlog item | `docs/plans/2026-11-25-roadmap.md:90-99` (section 4, "Scaling: vertical and horizontal", read-replica item) |
+| Backlog item | GitHub issue #144; `docs/plans/2026-11-25-roadmap.md:90-99` (section 4, "Scaling: vertical and horizontal", read-replica item) |
 | Role | coding |
 | Status | DRAFT |
 | Assigned executor | none until a human approves the open decisions below |

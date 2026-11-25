@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Spec ID | S-CLI-25 |
-| Backlog item | Agent layout contract (`docs/agent-layout.md`): retire `CLAUDE.md` and the Claude-specific surfaces |
+| Backlog item | GitHub issue #134; Agent layout contract (`docs/agent-layout.md`): retire `CLAUDE.md` and the Claude-specific surfaces |
 | Role | coding |
 | Status | READY |
 | Assigned executor | unattended executor (agent-run) |

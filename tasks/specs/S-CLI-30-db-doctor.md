@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Spec ID | S-CLI-30 |
-| Backlog item | `docs/plans/2026-11-25-roadmap.md:84` (Theme 3, `db doctor`). The roadmap is an untracked draft: it is not in git and has no entry in `tasks/todo.md`. |
+| Backlog item | GitHub issue #139; `docs/plans/2026-11-25-roadmap.md:84` (Theme 3, `db doctor`). The roadmap is an untracked draft: it is not in git and has no entry in `tasks/todo.md`. |
 | Role | coding |
 | Status | READY |
 | Assigned executor | agent-run |

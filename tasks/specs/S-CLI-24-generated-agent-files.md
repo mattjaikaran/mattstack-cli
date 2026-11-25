@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Spec ID | S-CLI-24 |
-| Backlog item | Agent layout contract (`docs/agent-layout.md`): AGENTS.md is the only agent instruction file in generated projects |
+| Backlog item | GitHub issue #133; Agent layout contract (`docs/agent-layout.md`): AGENTS.md is the only agent instruction file in generated projects |
 | Role | coding |
 | Status | READY |
 | Assigned executor | unattended executor (agent-run) |

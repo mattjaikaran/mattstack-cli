@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Spec ID | S-CLI-37 |
-| Backlog item | `tasks/todo.md` (AI layer: generated embedding model, the pattern `core/ai/models/document.py` already uses) |
+| Backlog item | GitHub issue #146; `tasks/todo.md` (AI layer: generated embedding model, the pattern `core/ai/models/document.py` already uses) |
 | Role | coding |
 | Status | READY |
 | Assigned executor | unattended executor (agent-run) |

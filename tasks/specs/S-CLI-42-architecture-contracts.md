@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Spec ID | S-CLI-42 |
-| Backlog item | `docs/plans/2026-11-25-roadmap.md:118-119` (section 6: architecture contracts in generated projects) |
+| Backlog item | GitHub issue #151; `docs/plans/2026-11-25-roadmap.md:118-119` (section 6: architecture contracts in generated projects) |
 | Role | coding (after decisions) |
 | Status | DRAFT |
 | Assigned executor | none. Not claimable until D1-D3 below are recorded |

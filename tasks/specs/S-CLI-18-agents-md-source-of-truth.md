@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Spec ID | S-CLI-18 |
-| Backlog item | GitHub issue #95: move agent instructions to AGENTS.md (`CLAUDE.md` imports it) and harden agent context with a link check in a pre-commit hook |
+| Backlog item | GitHub issue #131 (rewrite); GitHub issue #95: move agent instructions to AGENTS.md (`CLAUDE.md` imports it) and harden agent context with a link check in a pre-commit hook |
 | Role | coding |
 | Status | READY |
 | Assigned executor | unattended executor (agent-run) |

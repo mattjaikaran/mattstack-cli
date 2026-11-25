@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Spec ID | S-CLI-38 |
-| Backlog item | `tasks/todo.md` (AI layer: static checks for pgvector usage in generated and hand-written backends) |
+| Backlog item | GitHub issue #147; `tasks/todo.md` (AI layer: static checks for pgvector usage in generated and hand-written backends) |
 | Role | coding |
 | Status | READY |
 | Assigned executor | unattended executor (agent-run) |

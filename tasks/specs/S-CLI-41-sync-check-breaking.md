@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Spec ID | S-CLI-41 |
-| Backlog item | `docs/plans/2026-11-25-roadmap.md:116-117` (section 6: `sync check --breaking`) |
+| Backlog item | GitHub issue #150; `docs/plans/2026-11-25-roadmap.md:116-117` (section 6: `sync check --breaking`) |
 | Role | coding |
 | Status | READY |
 | Assigned executor | unattended executor (agent-run) |

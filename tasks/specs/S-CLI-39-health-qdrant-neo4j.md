@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Spec ID | S-CLI-39 |
-| Backlog item | `tasks/todo.md` (AI layer: health reports for the optional vector and graph services) |
+| Backlog item | GitHub issue #148; `tasks/todo.md` (AI layer: health reports for the optional vector and graph services) |
 | Role | coding |
 | Status | READY |
 | Assigned executor | unattended executor (agent-run) |

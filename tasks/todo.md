@@ -31,7 +31,7 @@ Each item is a spec in [tasks/specs/](specs/README.md) and a GitHub issue.
 - [ ] Agent layout in this repo and generated projects: S-CLI-23, S-CLI-24,
   S-CLI-25, then S-CLI-18. Contract: [docs/agent-layout.md](../docs/agent-layout.md).
 - [ ] Boilerplate agent-layout migration: one issue per boilerplate repo,
-  tracked in the fleet tracking issue. Bodies: `tasks/fleet/agent-layout/`.
+  tracked in #153. Bodies: `tasks/fleet/agent-layout/`.
 - [ ] Fleet: S-CLI-26 `fleet list`, S-CLI-27 `fleet check`, S-CLI-28 `fleet issue`.
 - [ ] Postgres stability: S-CLI-29 `audit --type migrations`, S-CLI-30
   `db doctor`, S-CLI-31 CRUD query-count guard.

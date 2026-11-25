@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Spec ID | S-CLI-40 |
-| Backlog item | `docs/plans/2026-11-25-roadmap.md:114-115` (section 6, "Standards that ratchet": `audit --baseline`) |
+| Backlog item | GitHub issue #149; `docs/plans/2026-11-25-roadmap.md:114-115` (section 6, "Standards that ratchet": `audit --baseline`) |
 | Role | coding |
 | Status | READY |
 | Assigned executor | unattended executor (agent-run) |

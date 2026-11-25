@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Spec ID | S-CLI-33 |
-| Backlog item | `docs/plans/2026-11-25-roadmap.md` (section 4, "Scaling", scale audit item) |
+| Backlog item | GitHub issue #142; `docs/plans/2026-11-25-roadmap.md` (section 4, "Scaling", scale audit item) |
 | Role | coding |
 | Status | READY |
 | Assigned executor | unattended executor (agent-run) |

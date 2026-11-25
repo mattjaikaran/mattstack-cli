@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Spec ID | S-CLI-26 |
-| Backlog item | `docs/plans/2026-11-25-roadmap.md:66-76` (fleet command, theme 2). That file is an untracked draft at e89fac4; commit it before claiming. |
+| Backlog item | GitHub issue #135; `docs/plans/2026-11-25-roadmap.md:66-76` (fleet command, theme 2). That file is an untracked draft at e89fac4; commit it before claiming. |
 | Role | coding |
 | Status | READY |
 | Assigned executor | agent-run |

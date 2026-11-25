@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Spec ID | S-CLI-34 |
-| Backlog item | `docs/plans/2026-11-25-roadmap.md:90-99` (section 4, "Scaling: vertical and horizontal", PgBouncer item) |
+| Backlog item | GitHub issue #143; `docs/plans/2026-11-25-roadmap.md:90-99` (section 4, "Scaling: vertical and horizontal", PgBouncer item) |
 | Role | coding |
 | Status | READY |
 | Assigned executor | unattended executor (agent-run) |

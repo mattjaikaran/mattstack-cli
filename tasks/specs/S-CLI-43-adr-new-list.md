@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Spec ID | S-CLI-43 |
-| Backlog item | `docs/plans/2026-11-25-roadmap.md:120` (section 6: `adr new <title>` writes `docs/adr/NNNN-title.md`) |
+| Backlog item | GitHub issue #152; `docs/plans/2026-11-25-roadmap.md:120` (section 6: `adr new <title>` writes `docs/adr/NNNN-title.md`) |
 | Role | coding |
 | Status | READY |
 | Assigned executor | unattended executor (agent-run) |

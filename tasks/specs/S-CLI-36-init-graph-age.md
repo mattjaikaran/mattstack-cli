@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Spec ID | S-CLI-36 |
-| Backlog item | `tasks/todo.md:32-33` (the AI layer's `--graph age` path: the rejection at `init_runtime.py:63-68` says the `apache/age` image has no pgvector) |
+| Backlog item | GitHub issue #145; `tasks/todo.md:32-33` (the AI layer's `--graph age` path: the rejection at `init_runtime.py:63-68` says the `apache/age` image has no pgvector) |
 | Role | coding |
 | Status | READY |
 | Assigned executor | unattended executor (agent-run) |
