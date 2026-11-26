@@ -38,6 +38,11 @@ Citations were read at base commit `e89fac4`. `src/` and `scripts/` have not cha
 - `justfile:451` `check-arch:`; `:452` runs `scripts/check_architecture.py`. The script exists.
 - `.pre-commit-config.yaml:186` wires `check_architecture`.
 
+**Generated monorepo (`uv run mattstack init proj --preset starter-fullstack -o "$TMP"` at `e89fac4`, checked 2026-11-25):**
+- `backend/` has no `justfile`, `Makefile` or `.pre-commit-config.yaml`; consolidation moves component recipes to the root.
+- Root `justfile` recipe `backend-check-conventions:` runs `cd backend && uv run python scripts/check_conventions.py`, the only root line with a token. `backend/scripts/check_architecture.py` and `check_conventions.py` exist.
+- `frontend/package.json` `scripts` values contain `check_conventions` three times.
+
 **Frontend gate files (origin/main):**
 - `react-vite-boilerplate/package.json:35`: `"check-conventions": "bun run scripts/check_conventions.ts"` (the `scripts` value contains `check_conventions`).
 - `nextjs-starter/package.json:18`: same pattern.
@@ -67,6 +72,7 @@ Note: S-CLI-18 and S-CLI-41 were listed as conflicts in the old DRAFT. They edit
    - If `resolve_project` raises `EnvFileError` (`project.py:107`, raised at `:248-251`), emit one `WARNING` finding at the project root with the error message and continue. Do not crash the audit.
    - A component has a gate when any of these matches the token set `{check_architecture, check-architecture, check_conventions}`:
      - the text of `justfile`, `Makefile`, or `.pre-commit-config.yaml` in the component dir (read as text; a missing file counts as no match);
+     - in a monorepo (component dir differs from the project root), the root `justfile`, `Makefile`, and `.pre-commit-config.yaml`, counted for a component only on a line that contains both a token and the component dir's name followed by `/` or preceded by `cd ` (for example `cd backend && uv run python scripts/check_conventions.py`), so one root file can gate one component without gating the other;
      - the `scripts` values in the component's `package.json` (frontend only; parse with `json`).
    - Gate found: no finding for that component.
    - No gate found: one `AuditFinding` with severity `Severity.WARNING`, `category=AuditType.ARCHITECTURE`, file = the component dir relative to the project root, line `0`, `suggestion` = one line naming the fix (add a `check_architecture` or `check_conventions` recipe or script to that component), and a message like `no architecture gate found (expected check_architecture or check_conventions in justfile, Makefile, .pre-commit-config.yaml, or package.json scripts)`.
@@ -80,7 +86,7 @@ Each row runs from the repo root. `$TMP` is created in A1. Warnings do not chang
 | ID | Command | Expected |
 |---|---|---|
 | A1 | `TMP=$(mktemp -d) && uv run mattstack init proj --preset starter-fullstack -o "$TMP" >/dev/null 2>&1; uv run mattstack audit --type architecture "$TMP/proj" 2>&1; echo "exit=$?"` | `exit=0`; the output has zero architecture WARNING lines (fresh scaffold has gates in backend and frontend) |
-| A2 | `printf '# stripped\n' > "$TMP/proj/backend/justfile"; : > "$TMP/proj/backend/Makefile"; : > "$TMP/proj/backend/.pre-commit-config.yaml"; uv run mattstack audit --type architecture "$TMP/proj" 2>&1; echo "exit=$?"` | `exit=0`; exactly one architecture WARNING, for the `backend` component |
+| A2 | `sed -i.bak -E '/check_architecture\|check-architecture\|check_conventions/d' "$TMP/proj/justfile"; uv run mattstack audit --type architecture "$TMP/proj" 2>&1; echo "exit=$?"` | `exit=0`; exactly one architecture WARNING, for the `backend` component (the root recipe was its only gate; the frontend keeps its `package.json` gate) |
 | A3 | `TMP3=$(mktemp -d) && uv run mattstack init proj --preset starter-fullstack -o "$TMP3" >/dev/null 2>&1; sed -i.bak 's/check_conventions/nope/g' "$TMP3/proj/frontend/package.json"; uv run mattstack audit --type architecture "$TMP3/proj" 2>&1; echo "exit=$?"` | `exit=0`; exactly one architecture WARNING, for the `frontend` component (fresh scaffold, so the backend keeps its gate) |
 | A4 | `uv run mattstack audit "$TMP/proj" 2>&1 \| grep -ci architecture` | `0` (opt-in: the default audit does not run the architecture type) |
 | A5 | `uv run mattstack audit --type architecture --help >/dev/null; echo "exit=$?"` | `exit=0`, the `--type` option is accepted |
