@@ -10,7 +10,7 @@
 | Base commit | 3458590 |
 | Branch | agent/S-CLI-36 |
 | Depends on | none |
-| Conflicts with | S-CLI-37, S-CLI-38, S-CLI-39, S-CLI-09, S-CLI-10; S-CLI-34 (`src/mattstack/commands/add.py`, `src/mattstack/config.py`, `src/mattstack/templates/compose_env.py`); S-CLI-40 (`src/mattstack/cli_scaffold.py`) |
+| Conflicts with | S-CLI-37, S-CLI-38, S-CLI-39, S-CLI-09, S-CLI-10; S-CLI-34 (`src/mattstack/commands/add.py`, `src/mattstack/config.py`, `src/mattstack/templates/compose_env.py`); S-CLI-35 (`src/mattstack/config.py`, `src/mattstack/commands/add.py`, `src/mattstack/templates/compose_env.py`, `src/mattstack/templates/root_env.py`); S-CLI-40 (`src/mattstack/cli_scaffold.py`) |
 | Files owned | `src/mattstack/config.py`, `src/mattstack/cli_scaffold.py`, `src/mattstack/commands/init_runtime.py`, `src/mattstack/templates/compose_env.py`, `src/mattstack/templates/root_env.py`, `src/mattstack/templates/postgres_age.py` (new), `src/mattstack/generators/backend_only.py`, `src/mattstack/generators/fullstack.py`, `src/mattstack/commands/add.py`, `scripts/smoke_graph_age.py` (new) |
 | Migrations | none |
 | Runtime locks | none |

@@ -36,11 +36,13 @@ Each item is a spec in [tasks/specs/](specs/README.md) and a GitHub issue.
 - [ ] Postgres stability: S-CLI-29 `audit --type migrations`, S-CLI-30
   `db doctor`, S-CLI-31 CRUD query-count guard.
 - [ ] Scaling: S-CLI-32 `db tune`, S-CLI-33 `audit --type scale`, S-CLI-34
-  `add pgbouncer`; S-CLI-35 read replicas is DRAFT (needs decisions).
+  `add pgbouncer`; S-CLI-35 read replicas is READY (decided in #157; claim
+  waits on django-ninja-boilerplate#96).
 - [ ] Vector and graph: S-CLI-36 AGE + pgvector image, S-CLI-37 `generate
   embedding`, S-CLI-38 `audit --type vectors`, S-CLI-39 Qdrant/Neo4j health.
 - [ ] Standards: S-CLI-40 `audit --baseline`, S-CLI-41 `sync check
-  --breaking`, S-CLI-43 `adr`; S-CLI-42 architecture contracts is DRAFT.
+  --breaking`, S-CLI-43 `adr`; S-CLI-42 architecture contracts is READY
+  (decided in #157).
 - [ ] Gauntlet candidates: when Gauntlet ships, move the migrations,
   vectors, scale, and OpenAPI breaking-change checks there instead of
   keeping a third copy.

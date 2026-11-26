@@ -10,7 +10,7 @@
 | Base commit | e89fac4 |
 | Branch | agent/S-CLI-40 |
 | Depends on | none |
-| Conflicts with | S-CLI-18, S-CLI-23 and S-CLI-41 (all four edit `scripts/gauntlet.py`; this spec adds one check inside `_gate_install`); S-CLI-26 (`scripts/gauntlet.py`); S-CLI-27 (`scripts/gauntlet.py`); S-CLI-28 (`scripts/gauntlet.py`); S-CLI-29 (`src/mattstack/commands/audit.py`); S-CLI-33 (`src/mattstack/commands/audit.py`); S-CLI-36 (`src/mattstack/cli_scaffold.py`); S-CLI-38 (`src/mattstack/commands/audit.py`) |
+| Conflicts with | S-CLI-18, S-CLI-23 and S-CLI-41 (all four edit `scripts/gauntlet.py`; this spec adds one check inside `_gate_install`); S-CLI-26 (`scripts/gauntlet.py`); S-CLI-27 (`scripts/gauntlet.py`); S-CLI-28 (`scripts/gauntlet.py`); S-CLI-29 (`src/mattstack/commands/audit.py`); S-CLI-33 (`src/mattstack/commands/audit.py`); S-CLI-36 (`src/mattstack/cli_scaffold.py`); S-CLI-38 (`src/mattstack/commands/audit.py`); S-CLI-42 (`src/mattstack/commands/audit.py`) |
 | Files owned | `src/mattstack/auditors/baseline.py` (new), `src/mattstack/commands/audit.py`, `src/mattstack/cli_scaffold.py`, `src/mattstack/auditors/report.py`, `scripts/gauntlet.py` |
 | Migrations | none |
 | Runtime locks | none |
