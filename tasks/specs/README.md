@@ -102,18 +102,18 @@ a claimed spec. The claim is the push that creates `agent/<Spec ID>`.
 | [S-CLI-26](S-CLI-26-fleet-list.md) `fleet list` shows each boilerplate's local state against origin/main | READY | none | S-CLI-11, S-CLI-13, S-CLI-18, S-CLI-23, S-CLI-20, S-CLI-24, S-CLI-25, S-CLI-27, S-CLI-28, S-CLI-40, S-CLI-41, S-CLI-43 |
 | [S-CLI-27](S-CLI-27-fleet-check.md) `fleet check` evaluates conformance rules on origin/main | READY | S-CLI-26 | S-CLI-18, S-CLI-23, S-CLI-28, S-CLI-20, S-CLI-25, S-CLI-40, S-CLI-41 |
 | [S-CLI-28](S-CLI-28-fleet-issue.md) `fleet issue` opens one issue per matching repo, skipping duplicates | READY | S-CLI-26 | S-CLI-18, S-CLI-23, S-CLI-27, S-CLI-20, S-CLI-25, S-CLI-40, S-CLI-41 |
-| [S-CLI-29](S-CLI-29-audit-migrations.md) `mattstack audit --type migrations` | READY | none | S-CLI-33, S-CLI-38, S-CLI-40 |
+| [S-CLI-29](S-CLI-29-audit-migrations.md) `mattstack audit --type migrations` | READY | none | S-CLI-33, S-CLI-38, S-CLI-40, S-CLI-42 |
 | [S-CLI-30](S-CLI-30-db-doctor.md) `mattstack db doctor` | READY | none | S-CLI-32 |
 | [S-CLI-31](S-CLI-31-crud-query-count-guard.md) CRUD list query-count guard | READY | none | none |
 | [S-CLI-32](S-CLI-32-db-tune.md) `mattstack db tune`: pgtune web settings from memory and CPU | READY | none | S-CLI-30 |
-| [S-CLI-33](S-CLI-33-audit-scale.md) `audit --type scale`: flag single-process production blockers (WARNING only) | READY | none | S-CLI-29, S-CLI-38, S-CLI-40 |
+| [S-CLI-33](S-CLI-33-audit-scale.md) `audit --type scale`: flag single-process production blockers (WARNING only) | READY | none | S-CLI-29, S-CLI-38, S-CLI-40, S-CLI-42 |
 | [S-CLI-34](S-CLI-34-add-pgbouncer.md) `add pgbouncer`: transaction-mode pool in Compose with direct-DB migrations | READY | none | S-CLI-35, S-CLI-36 |
-| [S-CLI-35](S-CLI-35-read-replicas.md) read replicas for the Django backend (needs human decisions) | DRAFT | none | S-CLI-34 |
-| [S-CLI-36](S-CLI-36-init-graph-age.md) `init --graph age` builds a Postgres image with Apache AGE and pgvector | READY | none | S-CLI-37, S-CLI-38, S-CLI-39, S-CLI-09, S-CLI-10, S-CLI-34, S-CLI-40 |
+| [S-CLI-35](S-CLI-35-read-replicas.md) `mattstack add read-replica`: opt-in Compose streaming replica (claim waits on django-ninja-boilerplate #96) | READY | none | S-CLI-34, S-CLI-36 |
+| [S-CLI-36](S-CLI-36-init-graph-age.md) `init --graph age` builds a Postgres image with Apache AGE and pgvector | READY | none | S-CLI-37, S-CLI-38, S-CLI-39, S-CLI-09, S-CLI-10, S-CLI-34, S-CLI-35, S-CLI-40 |
 | [S-CLI-37](S-CLI-37-generate-embedding.md) `mattstack generate embedding` adds a pgvector embedding model with an HNSW index | READY | none | S-CLI-09, S-CLI-10 |
-| [S-CLI-38](S-CLI-38-audit-vectors.md) `mattstack audit --type vectors` checks pgvector fields, indexes, and opclasses | READY | none | S-CLI-09, S-CLI-10, S-CLI-29, S-CLI-33, S-CLI-40 |
+| [S-CLI-38](S-CLI-38-audit-vectors.md) `mattstack audit --type vectors` checks pgvector fields, indexes, and opclasses | READY | none | S-CLI-09, S-CLI-10, S-CLI-29, S-CLI-33, S-CLI-40, S-CLI-42 |
 | [S-CLI-39](S-CLI-39-health-qdrant-neo4j.md) `mattstack health` checks Qdrant and Neo4j, and respects compose profiles | READY | none | S-CLI-20 |
-| [S-CLI-40](S-CLI-40-audit-baseline.md) `audit --baseline` records findings and fails only on new ones | READY | none | S-CLI-18, S-CLI-23, S-CLI-41, S-CLI-26, S-CLI-27, S-CLI-28, S-CLI-29, S-CLI-33, S-CLI-36, S-CLI-38 |
+| [S-CLI-40](S-CLI-40-audit-baseline.md) `audit --baseline` records findings and fails only on new ones | READY | none | S-CLI-18, S-CLI-23, S-CLI-41, S-CLI-26, S-CLI-27, S-CLI-28, S-CLI-29, S-CLI-33, S-CLI-36, S-CLI-38, S-CLI-42 |
 | [S-CLI-41](S-CLI-41-sync-check-breaking.md) `sync check --breaking` diffs the OpenAPI spec against a base ref | READY | none | S-CLI-18, S-CLI-23, S-CLI-40, S-CLI-26, S-CLI-27, S-CLI-28 |
-| [S-CLI-42](S-CLI-42-architecture-contracts.md) Architecture contracts in generated projects (DRAFT) | DRAFT | none | S-CLI-18, S-CLI-40, S-CLI-41 |
+| [S-CLI-42](S-CLI-42-architecture-contracts.md) Architecture contracts in generated projects (`audit --type architecture`) | READY | S-CLI-29 | S-CLI-29, S-CLI-33, S-CLI-38, S-CLI-40 |
 | [S-CLI-43](S-CLI-43-adr-new-list.md) `mattstack adr new` and `mattstack adr list` | READY | none | S-CLI-11, S-CLI-13, S-CLI-24, S-CLI-26 |

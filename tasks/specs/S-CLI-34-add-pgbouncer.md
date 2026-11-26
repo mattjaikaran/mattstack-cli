@@ -10,7 +10,7 @@
 | Base commit | e89fac4 |
 | Branch | agent/S-CLI-34 |
 | Depends on | none |
-| Conflicts with | S-CLI-35 (`templates/docker_compose.py`, `templates/compose_env.py`); S-CLI-36 (`src/mattstack/commands/add.py`, `src/mattstack/config.py`, `src/mattstack/templates/compose_env.py`) |
+| Conflicts with | S-CLI-35 (`templates/docker_compose.py`, `templates/compose_env.py`, `runtime_profiles.py`); S-CLI-36 (`src/mattstack/commands/add.py`, `src/mattstack/config.py`, `src/mattstack/templates/compose_env.py`) |
 | Files owned | `src/mattstack/commands/add_pgbouncer.py` (new), `src/mattstack/commands/add.py` (dispatch only), `src/mattstack/config.py`, `src/mattstack/runtime_profiles.py`, `src/mattstack/templates/docker_compose.py`, `src/mattstack/templates/compose_env.py`, `src/mattstack/templates/pgbouncer_service.py` (new) |
 | Migrations | none |
 | Runtime locks | none |

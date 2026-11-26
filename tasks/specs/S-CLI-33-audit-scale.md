@@ -10,7 +10,7 @@
 | Base commit | e89fac4 |
 | Branch | agent/S-CLI-33 |
 | Depends on | none |
-| Conflicts with | S-CLI-29 (`src/mattstack/auditors/base.py`, `src/mattstack/commands/audit.py`); S-CLI-38 (`src/mattstack/auditors/base.py`, `src/mattstack/commands/audit.py`); S-CLI-40 (`src/mattstack/commands/audit.py`) |
+| Conflicts with | S-CLI-29 (`src/mattstack/auditors/base.py`, `src/mattstack/commands/audit.py`); S-CLI-38 (`src/mattstack/auditors/base.py`, `src/mattstack/commands/audit.py`); S-CLI-40 (`src/mattstack/commands/audit.py`); S-CLI-42 (`src/mattstack/auditors/base.py`, `src/mattstack/commands/audit.py`) |
 | Files owned | `src/mattstack/auditors/scale.py` (new), `src/mattstack/auditors/base.py` (one enum member), `src/mattstack/commands/audit.py` (one `AUDITOR_CLASSES` entry) |
 | Migrations | none |
 | Runtime locks | none |
