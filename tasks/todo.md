@@ -92,13 +92,11 @@ only for a consumer-visible contract.
   production secrets, and S3 provisioning are unverified. Keep the issue open
   until you supply and authorize those prerequisites. No billable deployment
   runs.
-- [ ] PR #1, audit delegates to `gauntlet check --json`: draft, blocked until
-  the Gauntlet binary ships. It deletes `auditors/`, but `main` has since
-  added `auditors/types_parity.py` and `auditors/versions.py`; expect
-  conflicts.
-- [ ] When Gauntlet is released, replace `scripts/gauntlet.py` and the gate
-  table in `CLAUDE.md` with thin wrappers, then delete the duplicate gate
-  runners.
+- [ ] [Delegate audit checks to Gauntlet (#159)](https://github.com/mattjaikaran/mattstack-cli/issues/159):
+  blocked until Gauntlet ships a release. PR #1 is closed; its branch
+  `feat/gauntlet-audit-delegation` is the reference. #159 lists what changed
+  since (new auditors and specs S-CLI-29, 33, 38, 40, 42), plus replacing
+  `scripts/gauntlet.py` and the gate table in `AGENTS.md` with thin wrappers.
 - [ ] Propose a generic Gauntlet check "generated files match source": run a
   command into a temporary directory and compare it with the committed
   output. mattstack would use it for OpenAPI, Zod, and SDK drift.
