@@ -19,7 +19,7 @@
 | Max files | 8 |
 | Max changed lines | 400 |
 | Verification commands | `uv run ruff format --check src/`; `uv run ruff check src/`; `uv run mypy src/`; `uv run bandit -q -r src/ -c pyproject.toml`; `uv run python scripts/check_architecture.py`; `uv run python scripts/check_file_length.py`; `uv run python scripts/gauntlet.py --gate install` |
-| Acceptance criteria | A1-A11 (table below) |
+| Acceptance criteria | A1-A12 (table below) |
 
 ## Context and verified citations
 
@@ -103,13 +103,13 @@ Citations were read at base commit `e89fac4`. `src/` has not changed since then.
 7. **`src/mattstack/templates/compose_env.py`.** In `db_service` (`:139`), only when `not production and config.use_read_replica`:
    - add `REPLICATION_PASSWORD: "${REPLICATION_PASSWORD:-replicator}"` to the environment;
    - add the volume `./docker/postgres/replica/primary-init.sh:/docker-entrypoint-initdb.d/10-replication.sh:ro`.
-   Also define `replica_env_lines(config) -> list[str]` here, not in `read_replica_service.py`. It returns `[]` unless `config.use_read_replica`. Otherwise it returns a note that the replica is opt-in with `--profile replica`, then an uncommented `DB_REPLICA_PORT=5433` (the Compose port mapping `${DB_REPLICA_PORT:-5433}` reads it too, as `DB_PORT` works for the primary at `root_env.py:59`), then the commented `# DATABASE_REPLICA_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${DB_REPLICA_PORT}/${POSTGRES_DB}`. It reuses the references `DATABASE_URL` uses (`root_env.py:35-37`, `:68`, `:97`), so no password is hard-coded. The replica is a physical copy of the primary, so the primary's `postgres` role and its random `POSTGRES_PASSWORD` (`root_env.py:366`, `${DB_PASSWORD}`) authenticate on it. Uncommenting the one `DATABASE_REPLICA_URL` line is then enough. It lives here so that step 4 adds no second import line to `root_env.py`.
+   Also define `replica_env_lines(config) -> list[str]` here, not in `read_replica_service.py`. It returns `[]` unless `config.use_read_replica`. Otherwise it returns a note that the replica is opt-in with `--profile replica`, then an uncommented `DB_REPLICA_PORT=5433` (the Compose port mapping `${DB_REPLICA_PORT:-5433}` reads it too, as `DB_PORT` works for the primary at `root_env.py:59`), then the commented `# DATABASE_REPLICA_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@localhost:${DB_REPLICA_PORT}/${POSTGRES_DB}`. The URL uses the same `${POSTGRES_*}` references as `DATABASE_URL` (`root_env.py:35-37`, `:68`, `:97`), so no password is hard-coded. Write those three references as string literals in `compose_env.py`. Do not import `_USER`, `_PASSWORD` or `_DB` from `root_env.py`: `root_env.py:24` already imports from `compose_env.py`, so that import would be a cycle. The replica is a physical copy of the primary, so the primary's `postgres` role and its random `POSTGRES_PASSWORD` (`root_env.py:366`, `${DB_PASSWORD}`) authenticate on it. It lives here so that step 4 adds no second import line to `root_env.py`.
 8. **`src/mattstack/commands/add_read_replica.py` (new).** `run_add_read_replica(project_path: Path, *, dry_run: bool, force: bool) -> None`:
    - load the project config the same way `run_add` does (`add.py:262`); exit 1 if there is no backend;
    - set `use_read_replica = True` and save with `save_project_config`. Step 3 writes the key, and A10 checks it;
    - write `docker/postgres/replica/entrypoint.sh` and `docker/postgres/replica/primary-init.sh` using the rerun contract from `add.py:159-197` (`<name>.mattstack-new` when content differs, `--force` overwrites, `dry_run` writes nothing);
    - regenerate `docker-compose.yml` and `.env.example` through `_update_root_files` with the same flags. Step 4 renders `.env.example`, so this step does not append to it. `--force` overwrites `.env.example` like every other root file. Import `_update_root_files` inside the function to avoid an import cycle with `add.py`;
-   - print next steps: `docker compose --profile replica up -d db-replica`, and uncomment `DATABASE_REPLICA_URL` (`DB_REPLICA_PORT` is already set). Also print the note that an existing `postgres_data` volume skips the init script, so the role and the `pg_hba.conf` line must be added by hand, with the two commands printed.
+   - print next steps: `docker compose --profile replica up -d db-replica`, then copy both `DB_REPLICA_PORT=5433` and the `DATABASE_REPLICA_URL` line from `.env.example` into `.env` and uncomment the URL. The command never edits `.env` (a non-goal), so an existing `.env` lacks `DB_REPLICA_PORT`, and without it the URL has no port and libpq would connect to the primary on 5432. Also print the note that an existing `postgres_data` volume skips the init script, so the role and the `pg_hba.conf` line must be added by hand, with the two commands printed.
 9. **`src/mattstack/commands/add.py`.** In `run_add` (`:262`), before the component check (`:270`), dispatch `component == "read-replica"` to `run_add_read_replica`, imported inside the branch. Do not change `VALID_COMPONENTS`. Keep the branch short.
 
 ## Machine-checkable acceptance
@@ -129,6 +129,7 @@ Each row runs from the repo root. `$TMP` is a temp dir created by row A1.
 | A9 | `grep -c 'DATABASE_REPLICA_URL' "$TMP/proj/docker-compose.yml"` (after `add read-replica`) | `0` (compose never hard-codes the replica URL, so default-off routing falls back to the primary) |
 | A10 | `grep -c '^ *read_replica: true$' "$TMP/proj/mattstack.yml"` (after A1) | `1` |
 | A11 | `uv run python -c "import sys; from pathlib import Path; from mattstack.project import resolve_project, save_project_config; from mattstack.commands.add import _update_root_files; c = resolve_project(Path(sys.argv[1])).config; print(c.use_read_replica); save_project_config(c); _update_root_files(c, dry_run=False, force=False)" "$TMP/proj"; grep -c '^  db-replica:' "$TMP/proj/docker-compose.yml"; find "$TMP/proj" -name '*.mattstack-new' \| wc -l` | `True`, then `1`, then `0`. A5 sets the flag itself, so only A11 proves the flag survives a reload and a regeneration. |
+| A12 | `grep -c '^DB_REPLICA_PORT=5433$' "$TMP/proj/.env.example"; grep -c 'DB_REPLICA_PORT=5433' src/mattstack/commands/add_read_replica.py; grep -c 'import.*root_env' src/mattstack/templates/compose_env.py` | `1`, then at least `1` (the next steps tell the user to copy the port line), then `0` (no import cycle) |
 
 A8 must pass before the PR is marked ready. If Docker is unavailable, open the PR as a draft and report A7 and A8 as not run.
 
