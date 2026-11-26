@@ -81,7 +81,7 @@ Each row runs from the repo root. `$TMP` is created in A1. Warnings do not chang
 |---|---|---|
 | A1 | `TMP=$(mktemp -d) && uv run mattstack init "$TMP/proj" --preset starter-fullstack >/dev/null 2>&1; (cd "$TMP/proj" && uv run mattstack audit --type architecture); echo "exit=$?"` | `exit=0`; the output has zero architecture WARNING lines (fresh scaffold has gates in backend and frontend) |
 | A2 | `printf '# stripped\n' > "$TMP/proj/backend/justfile"; : > "$TMP/proj/backend/Makefile"; : > "$TMP/proj/backend/.pre-commit-config.yaml"; (cd "$TMP/proj" && uv run mattstack audit --type architecture); echo "exit=$?"` | `exit=0`; exactly one architecture WARNING, for the `backend` component |
-| A3 | `sed -i.bak 's/check_conventions/nope/g' "$TMP/proj/frontend/package.json"; (cd "$TMP/proj" && uv run mattstack audit --type architecture); echo "exit=$?"` | `exit=0`; exactly one architecture WARNING, for the `frontend` component (the backend keeps its gate) |
+| A3 | `TMP3=$(mktemp -d) && uv run mattstack init "$TMP3/proj" --preset starter-fullstack >/dev/null 2>&1; sed -i.bak 's/check_conventions/nope/g' "$TMP3/proj/frontend/package.json"; (cd "$TMP3/proj" && uv run mattstack audit --type architecture); echo "exit=$?"` | `exit=0`; exactly one architecture WARNING, for the `frontend` component (fresh scaffold, so the backend keeps its gate) |
 | A4 | `(cd "$TMP/proj" && uv run mattstack audit) \| grep -ci architecture` | `0` (opt-in: the default audit does not run the architecture type) |
 | A5 | `uv run mattstack audit --type architecture --help >/dev/null; echo "exit=$?"` | `exit=0`, the `--type` option is accepted |
 
