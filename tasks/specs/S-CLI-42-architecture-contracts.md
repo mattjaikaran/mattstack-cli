@@ -79,10 +79,10 @@ Each row runs from the repo root. `$TMP` is created in A1. Warnings do not chang
 
 | ID | Command | Expected |
 |---|---|---|
-| A1 | `TMP=$(mktemp -d) && uv run mattstack init "$TMP/proj" --preset starter-fullstack >/dev/null 2>&1; (cd "$TMP/proj" && uv run mattstack audit --type architecture); echo "exit=$?"` | `exit=0`; the output has zero architecture WARNING lines (fresh scaffold has gates in backend and frontend) |
-| A2 | `printf '# stripped\n' > "$TMP/proj/backend/justfile"; : > "$TMP/proj/backend/Makefile"; : > "$TMP/proj/backend/.pre-commit-config.yaml"; (cd "$TMP/proj" && uv run mattstack audit --type architecture); echo "exit=$?"` | `exit=0`; exactly one architecture WARNING, for the `backend` component |
-| A3 | `TMP3=$(mktemp -d) && uv run mattstack init "$TMP3/proj" --preset starter-fullstack >/dev/null 2>&1; sed -i.bak 's/check_conventions/nope/g' "$TMP3/proj/frontend/package.json"; (cd "$TMP3/proj" && uv run mattstack audit --type architecture); echo "exit=$?"` | `exit=0`; exactly one architecture WARNING, for the `frontend` component (fresh scaffold, so the backend keeps its gate) |
-| A4 | `(cd "$TMP/proj" && uv run mattstack audit) \| grep -ci architecture` | `0` (opt-in: the default audit does not run the architecture type) |
+| A1 | `TMP=$(mktemp -d) && uv run mattstack init proj --preset starter-fullstack -o "$TMP" >/dev/null 2>&1; uv run mattstack audit --type architecture "$TMP/proj" 2>&1; echo "exit=$?"` | `exit=0`; the output has zero architecture WARNING lines (fresh scaffold has gates in backend and frontend) |
+| A2 | `printf '# stripped\n' > "$TMP/proj/backend/justfile"; : > "$TMP/proj/backend/Makefile"; : > "$TMP/proj/backend/.pre-commit-config.yaml"; uv run mattstack audit --type architecture "$TMP/proj" 2>&1; echo "exit=$?"` | `exit=0`; exactly one architecture WARNING, for the `backend` component |
+| A3 | `TMP3=$(mktemp -d) && uv run mattstack init proj --preset starter-fullstack -o "$TMP3" >/dev/null 2>&1; sed -i.bak 's/check_conventions/nope/g' "$TMP3/proj/frontend/package.json"; uv run mattstack audit --type architecture "$TMP3/proj" 2>&1; echo "exit=$?"` | `exit=0`; exactly one architecture WARNING, for the `frontend` component (fresh scaffold, so the backend keeps its gate) |
+| A4 | `uv run mattstack audit "$TMP/proj" 2>&1 \| grep -ci architecture` | `0` (opt-in: the default audit does not run the architecture type) |
 | A5 | `uv run mattstack audit --type architecture --help >/dev/null; echo "exit=$?"` | `exit=0`, the `--type` option is accepted |
 
 Also run, and paste the exit codes into the PR:
