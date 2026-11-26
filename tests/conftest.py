@@ -9,6 +9,13 @@ import pytest
 from mattstack.config import ProjectConfig, ProjectType, TaskBackend, Variant
 
 
+@pytest.fixture(autouse=True)
+def _clear_git_hook_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Git exports these to hooks; a temp repo must not inherit the outer one."""
+    for name in ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR"):
+        monkeypatch.delenv(name, raising=False)
+
+
 @pytest.fixture
 def tmp_output(tmp_path: Path) -> Path:
     return tmp_path

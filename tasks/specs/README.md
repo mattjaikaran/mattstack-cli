@@ -91,7 +91,7 @@ a claimed spec. The claim is the push that creates `agent/<Spec ID>`.
 | [S-CLI-15](S-CLI-15-openapi-ts-dependencies-entry.md) openapi-ts in DEPENDENCIES.md | READY | none | S-CLI-16, S-CLI-24 |
 | [S-CLI-16](S-CLI-16-backend-python-version-pin.md) install gate smokes the backend `.python-version` pin | DONE | S-CLI-09, S-CLI-10 | S-CLI-15 |
 | [S-CLI-17](S-CLI-17-scaffold-smoke-script.md) scaffold smoke script (`just ci` per preset) | READY | none | none |
-| [S-CLI-18](S-CLI-18-agents-md-source-of-truth.md) AGENTS.md as the single instruction file | READY | S-CLI-23 | S-CLI-23, S-CLI-26, S-CLI-27, S-CLI-28, S-CLI-40, S-CLI-41 |
+| [S-CLI-18](S-CLI-18-agents-md-source-of-truth.md) AGENTS.md as the single instruction file | DONE | S-CLI-23 | S-CLI-23, S-CLI-26, S-CLI-27, S-CLI-28, S-CLI-40, S-CLI-41 |
 | [S-CLI-19](S-CLI-19-contributing-and-pr-template.md) CONTRIBUTING.md and PR template | READY | S-CLI-18 | none |
 | [S-CLI-20](S-CLI-20-github-workflow-triggers-runner.md) GitHub workflow: dispatch, weekly schedule, `--runs-on`, `just ci` checks | READY | none | S-CLI-01, S-CLI-25, S-CLI-26, S-CLI-27, S-CLI-28 |
 | [S-CLI-21](S-CLI-21-frontend-dev-server-smoke.md) frontend dev server smoke script | READY | none | S-CLI-17 |
